@@ -388,6 +388,43 @@
     .spot__views { display: flex; gap: 8px; margin: 0 0 6px; }
     .spot__views .btn[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--surface); }
 
+    /* A reported person's recent posts: a small grid inside their card, at the
+       app's own 3:4, so the owner can judge the account without opening the app. */
+    .posts {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+      max-width: 520px;
+    }
+    .posts__item { min-width: 0; }
+    .posts__item a { display: block; }
+    .posts__img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      object-fit: cover;
+      border-radius: 6px;
+      background: var(--border-soft);
+      border: 1px solid var(--border);
+    }
+    .posts__item .spot__missing { width: 100%; }
+    .posts__item .pill { display: inline-block; margin-top: 4px; }
+    .posts__cap {
+      font-size: 11.5px;
+      color: #334155;
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Failures in the push health table: there, but quieter than the numbers sent. */
+    .tbl .fail { color: var(--bad-fg); opacity: 0.75; font-size: 11.5px; }
+    .tbl td .pill { margin-left: 6px; }
+
     @media (max-width: 720px) {
       body { flex-direction: column; }
       .side {
@@ -496,7 +533,11 @@
        loaded, so a panel can tell "still fetching" from "the answer is nothing". */
     var stats = { overview: null, funnel: null, reach: null, stuck: null, pulse: null,
                   retention: null, storage: null, campaigns: null, versions: null,
-                  traffic: null };
+                  traffic: null, where: null, pushHealth: null };
+    /* A reported person's recent posts, by their id, once the owner asks for
+       them. Kept here rather than on the card because every refetch draws the
+       cards again. Each is { loading } | { missing } | { error } | { rows }. */
+    var recentPosts = {};
     var ANALYTICS = ["overview", "traffic", "pulse", "funnel", "reach", "stuck", "retention", "versions"];
     var panel = "overview";
     var TITLES = {
@@ -553,8 +594,32 @@
         body: JSON.stringify(body || {}),
       });
       if (res.status === 401) { signOut(); throw new Error("Session expired. Sign in again."); }
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        var failed = new Error(await res.text());
+        failed.status = res.status;
+        throw failed;
+      }
       return res.json();
+    }
+
+    /* A function the dashboard knows about but the database does not have yet.
+       The page deploys before the owner applies the SQL behind it, so this is an
+       expected state rather than an error: PostgREST answers 404 with PGRST202. */
+    function isMissing(err) {
+      return !!err && (err.status === 404 || /PGRST202/.test(String(err.message || err)));
+    }
+
+    /* For the newer cards: never rejects, so one missing function cannot mark the
+       rest of the dashboard broken. { rows } on success, { missing: true } when the
+       function is not there yet, { error } for anything else. */
+    async function softRpc(name, body) {
+      try {
+        var out = await rpc(name, body);
+        return { rows: Array.isArray(out) ? out : [] };
+      } catch (err) {
+        if (isMissing(err)) return { missing: true };
+        return { error: String(err && err.message || err).slice(0, 140) };
+      }
     }
 
     /* Traffic is the one panel whose numbers are not in our database. Vercel Web
@@ -669,6 +734,7 @@
       /* Only rows that carry a path: a row without one can never be signed, and
          asking again after every draw would loop. */
       if (panel === "photos") signVisible(rows.filter(framePath));
+      if (panel === "users") signVisible(openPosts().filter(framePath));
       $("page-sub").textContent = rows.length
         ? plural(rows.length, panel === "invites" ? "person waiting"
                             : panel === "feedback" ? "unread" : "open")
@@ -726,7 +792,7 @@
 
         } else if (panel === "users") {
           var ut = el("div", "card__title", "@" + (r.reported_username || "unknown"));
-          if (r.reported_hidden) ut.appendChild(el("span", "pill", "hidden from discovery"));
+          if (r.reported_hidden) ut.appendChild(el("span", "pill", "hidden from suggestions"));
           if (r.report_count > 1) ut.appendChild(el("span", "pill pill--bad", r.report_count + " reports"));
           var dismissU = el("button", "btn", "Dismiss");
           dismissU.addEventListener("click", function () {
@@ -743,7 +809,28 @@
           if (r.reported_posts != null) facts.push(plural(Number(r.reported_posts), "post"));
           if (r.reported_blocked_by != null) facts.push("blocked by " + r.reported_blocked_by);
           var metaU = "first reported " + ago(r.created_at);
-          c = card(ut, metaU, whoU.length ? null : r.reason, [dismissU]);
+          var buttonsU = [];
+          /* Only when the server says which way the flag stands: an older
+             list_user_reports sends no reported_hidden, and a toggle guessing
+             "not hidden" could not be trusted. */
+          if (typeof r.reported_hidden === "boolean") {
+            var toggleU = el("button", r.reported_hidden ? "btn" : "btn btn--go",
+                             r.reported_hidden ? "Show in suggestions" : "Hide from suggestions");
+            toggleU.addEventListener("click", function () {
+              if (!r.reported_hidden && !confirm("Hide @" + (r.reported_username || "unknown")
+                  + " from suggestions? They stop appearing in Find friends as someone to follow."
+                  + " People can still find them by name, and their profile, posts and rolls are"
+                  + " unchanged. You can show them again from here.")) return;
+              act(c, "admin_set_user_hidden", { p_user_id: r.reported_id, p_hidden: !r.reported_hidden });
+            });
+            buttonsU.push(toggleU);
+          }
+          var postsState = recentPosts[r.reported_id];
+          var postsU = el("button", "btn", postsState ? "Close recent posts" : "Recent posts");
+          postsU.setAttribute("aria-expanded", String(!!postsState));
+          postsU.addEventListener("click", function () { toggleRecentPosts(r.reported_id); });
+          buttonsU.push(postsU, dismissU);
+          c = card(ut, metaU, whoU.length ? null : r.reason, buttonsU);
           var mainU = c.querySelector(".card__main");
           if (facts.length) mainU.appendChild(el("div", "report__caption", facts.join(" · ")));
           if (whoU.length) {
@@ -760,6 +847,7 @@
             });
             mainU.appendChild(listU);
           }
+          if (postsState) mainU.appendChild(recentPostsNode(postsState, r));
 
         } else {
           /* The build and device are the point of this queue: they are what a
@@ -773,8 +861,8 @@
           dismissF.addEventListener("click", function () {
             act(c, "dismiss_feedback", { p_id: r.id });
           });
-          /* An entry whose author cannot be named gets no award buttons: there is
-             nobody to give the badge to. */
+          /* An entry with no user_id gets no award buttons: there is nobody to
+             give the badge to. */
           var awardsF = authorKey(r) ? AWARDS.map(function (badge) {
             var done = awarded[authorKey(r) + ":" + badge.id] === true;
             var b = el("button", "btn", done ? badge.name + " awarded" : "Award " + badge.name);
@@ -923,6 +1011,66 @@
         : url === null ? "Cannot load" : "Loading");
     }
 
+    /* Every post in an open "Recent posts" grid, so they ride the same signing
+       batch as everything else the panel shows. */
+    function openPosts() {
+      var all = [];
+      Object.keys(recentPosts).forEach(function (id) {
+        if (recentPosts[id].rows) all = all.concat(recentPosts[id].rows);
+      });
+      return all;
+    }
+
+    /* Opens or closes a reported person's recent posts. Opening fetches every
+       time, so a grid closed and opened again is never stale. */
+    async function toggleRecentPosts(userId) {
+      if (recentPosts[userId]) {
+        delete recentPosts[userId];
+        render();
+        return;
+      }
+      recentPosts[userId] = { loading: true };
+      render();
+      var out = await softRpc("admin_user_recent_posts", { p_user_id: userId, p_limit: 9 });
+      /* Closed again while it was loading: leave it closed. */
+      if (!recentPosts[userId]) return;
+      recentPosts[userId] = out;
+      if (panel === "users") render();
+    }
+
+    function recentPostsNode(state, r) {
+      if (state.loading) return el("div", "card__meta", "Loading recent posts.");
+      if (state.missing) return el("div", "card__meta", "Not available yet.");
+      if (state.error) return el("div", "card__meta", "Could not load recent posts: " + state.error);
+      if (!state.rows.length) return el("div", "card__meta", "No posts.");
+      var grid = el("div", "posts");
+      state.rows.slice(0, 9).forEach(function (p) {
+        var item = el("div", "posts__item");
+        var path = framePath(p);
+        var url = path ? signed[path] : null;
+        if (url) {
+          var a = document.createElement("a");
+          a.href = url; a.target = "_blank"; a.rel = "noopener";
+          var img = document.createElement("img");
+          img.className = "posts__img";
+          img.loading = "lazy";
+          img.alt = "Post by @" + (r.reported_username || "unknown")
+            + (p.created_at ? ", " + ago(p.created_at) : "");
+          img.src = url;
+          a.appendChild(img);
+          item.appendChild(a);
+        } else {
+          item.appendChild(el("div", "spot__missing",
+            !path ? "No image"
+            : url === null ? (p.hidden ? "Cannot load: hidden" : "Cannot load") : "Loading"));
+        }
+        if (p.hidden) item.appendChild(el("span", "pill pill--bad", "hidden"));
+        if (p.caption) item.appendChild(el("div", "posts__cap", p.caption));
+        grid.appendChild(item);
+      });
+      return grid;
+    }
+
     function frameNode(r) {
       var path = framePath(r);
       var url = signed[path];
@@ -959,7 +1107,7 @@
       var unsigned = rows.filter(function (r) { return !(framePath(r) in signed); });
       if (unsigned.length) {
         signFrames(unsigned.map(framePath)).then(function () {
-          if (panel === "spotlight" || panel === "photos") render();
+          if (panel === "spotlight" || panel === "photos" || panel === "users") render();
         }).catch(function () {});
       }
     }
@@ -1017,7 +1165,7 @@
           if (r.hidden) t.appendChild(el("span", "pill pill--bad", "hidden"));
           if (r.covered) t.appendChild(el("span", "pill pill--bad", "covered"));
           if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
-          if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from discovery (App Review?)"));
+          if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from suggestions"));
           if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
           main.appendChild(t);
           main.appendChild(el("div", "card__meta", r.removed_at
@@ -1057,7 +1205,7 @@
       if (r.hidden) t.appendChild(el("span", "pill pill--bad", "hidden"));
       if (r.covered) t.appendChild(el("span", "pill pill--bad", "covered"));
       if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
-      if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from discovery (App Review?)"));
+      if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from suggestions"));
       if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
       main.appendChild(t);
       main.appendChild(el("div", "card__meta", "Put up " + dayLabel(r.put_up_at)
@@ -1231,7 +1379,9 @@
         cells.forEach(function (cell) {
           var td = document.createElement("td");
           if (cell && typeof cell === "object") {
-            td.textContent = cell.text;
+            /* A node, for a cell that needs two tones (push health's failures),
+               built with el() like everything else, so still never innerHTML. */
+            if (cell.node) td.appendChild(cell.node); else td.textContent = cell.text;
             if (cell.cls) td.className = cell.cls;
           } else {
             td.textContent = String(cell);
@@ -1247,6 +1397,168 @@
     }
 
     function pct(a, b) { return b ? Math.round((a / b) * 100) + "%" : "\u2013"; }
+
+    /* An IANA zone as a place a person would say. Etc/GMT zones are signed the
+       POSIX way, backwards: Etc/GMT+8 is eight hours BEHIND UTC, so UTC-8. Every
+       other zone is its last segment, which is the city ("America/Argentina/
+       Buenos_Aires" is "Buenos Aires"). Null is a phone on a build that does not
+       send its zone yet. */
+    function placeName(zone) {
+      if (!zone) return "Not reported yet (older versions)";
+      var z = String(zone);
+      var m = /^Etc\/GMT([+-])(\d{1,2})$/.exec(z);
+      if (m) return Number(m[2]) === 0 ? "UTC" : "UTC" + (m[1] === "+" ? "-" : "+") + Number(m[2]);
+      if (/^(Etc\/)?(UTC|UCT|GMT|GMT0|GMT[+-]0|Universal|Zulu|Greenwich)$/.test(z)) return "UTC";
+      var parts = z.split("/");
+      return parts[parts.length - 1].replace(/_/g, " ");
+    }
+
+    function renderWhere(host, w) {
+      section(host, "Where people are", "by the phone's time zone setting, most people first");
+      if (!w) { host.appendChild(el("div", "card__meta", "Still loading.")); return; }
+      if (w.missing) { host.appendChild(el("div", "card__meta", "Not available yet.")); return; }
+      if (w.error) { host.appendChild(el("div", "card__meta", "Could not load: " + w.error)); return; }
+      var note = el("div", "card__note",
+        "This is the phone's time zone setting, not its location. It fills in as people update to 1.6.2.");
+      if (!w.rows.length) {
+        host.appendChild(el("div", "empty", "Nobody has reported a time zone yet."));
+        host.appendChild(note);
+        return;
+      }
+      /* Grouped by the readable name, so two zones that read the same (an old
+         alias and its current name) are one row, with both zones listed. */
+      var byPlace = {};
+      var places = [];
+      w.rows.forEach(function (r) {
+        var name = placeName(r.timezone);
+        var p = byPlace[name];
+        if (!p) {
+          p = byPlace[name] = { name: name, people: 0, seen: 0, zones: [], unknown: !r.timezone };
+          places.push(p);
+        }
+        p.people += Number(r.people) || 0;
+        p.seen += Number(r.seen_this_week) || 0;
+        if (r.timezone && p.zones.indexOf(r.timezone) === -1) p.zones.push(r.timezone);
+      });
+      /* Most people first; the not-reported row always last, since it is not a place. */
+      places.sort(function (a, b) {
+        if (a.unknown !== b.unknown) return a.unknown ? 1 : -1;
+        return b.people - a.people || b.seen - a.seen || (a.name < b.name ? -1 : 1);
+      });
+      table(host, ["Place", { text: "People", cls: "num" }, { text: "Seen this week", cls: "num" }, "Zone"],
+        places.map(function (p) {
+          return [p.name,
+                  { text: String(p.people), cls: "num" },
+                  { text: String(p.seen), cls: "num" },
+                  { text: p.zones.join(", "), cls: "who" }];
+        }));
+      host.appendChild(note);
+    }
+
+    function pad2(n) { return (n < 10 ? "0" : "") + n; }
+    /* Day keys are moved by their parts in UTC, never parsed as local midnight,
+       for the same reason weekLabel avoids Date: west of UTC that is the day before. */
+    function dayBack(key, n) {
+      var p = String(key).split("-");
+      var d = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]) - n));
+      return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
+    }
+    function shortDay(key) {
+      var p = String(key).split("-");
+      return MONTHS[Number(p[1]) - 1].slice(0, 3) + " " + Number(p[2]);
+    }
+
+    var PUSH_KINDS = ["social", "develop", "digest", "one_shot"];
+
+    function renderPushHealth(host, h) {
+      section(host, "Push health", "sent per kind, the last 7 days newest first");
+      if (!h) { host.appendChild(el("div", "card__meta", "Still loading.")); return; }
+      if (h.missing) { host.appendChild(el("div", "card__meta", "Not available yet.")); return; }
+      if (h.error) { host.appendChild(el("div", "card__meta", "Could not load: " + h.error)); return; }
+      if (!h.rows.length) {
+        host.appendChild(el("div", "empty", "No pushes recorded in the last 14 days."));
+        return;
+      }
+
+      /* The newest day is today here or the newest day the server sent, whichever
+         is later, so a kind that went quiet still shows its empty days rather
+         than the table quietly ending on its last send. */
+      var now = new Date();
+      var newest = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+      var kinds = {};
+      var order = [];
+      h.rows.forEach(function (r) {
+        var day = String(r.day || "").slice(0, 10);
+        if (day > newest) newest = day;
+        var k = r.kind || "unknown";
+        var kd = kinds[k];
+        if (!kd) { kd = kinds[k] = { byDay: {}, sent: 0, failed: 0, failedKnown: false }; order.push(k); }
+        var cell = kd.byDay[day] || (kd.byDay[day] = { sent: 0, failed: null });
+        var s = Number(r.sent) || 0;
+        cell.sent += s;
+        kd.sent += s;
+        if (r.failed !== null && r.failed !== undefined) {
+          var f = Number(r.failed) || 0;
+          cell.failed = (cell.failed || 0) + f;
+          kd.failed += f;
+          kd.failedKnown = true;
+        }
+      });
+      order.sort(function (a, b) {
+        var ia = PUSH_KINDS.indexOf(a), ib = PUSH_KINDS.indexOf(b);
+        if (ia === -1) ia = PUSH_KINDS.length;
+        if (ib === -1) ib = PUSH_KINDS.length;
+        return ia - ib || (a < b ? -1 : 1);
+      });
+      var days = [];
+      for (var i = 0; i < 14; i++) days.push(dayBack(newest, i));
+      var week = days.slice(0, 7);
+
+      var unrecorded = [];
+      var quiet = 0;
+      var rowsOut = order.map(function (k) {
+        var kd = kinds[k];
+        var label = k.replace(/_/g, " ");
+        if (!kd.failedKnown) unrecorded.push(label);
+        /* A possible silent outage: nothing sent for the most recent three days
+           or more, by a kind that did send earlier in the window. One shot is
+           left out: a campaign is quiet between sends by design. */
+        var streak = 0;
+        while (streak < days.length && !((kd.byDay[days[streak]] || {}).sent > 0)) streak++;
+        var sentBefore = days.slice(streak).some(function (d) { return (kd.byDay[d] || {}).sent > 0; });
+        var warn = k !== "one_shot" && streak >= 3 && sentBefore;
+        if (warn) quiet++;
+        var kindNode = el("span", null, label);
+        if (warn) kindNode.appendChild(el("span", "pill", "0 sent for " + plural(streak, "day")));
+
+        var cells = [{ node: kindNode, cls: "who" }];
+        week.forEach(function (d) {
+          var c = kd.byDay[d] || { sent: 0, failed: null };
+          var n = el("span", null, String(c.sent));
+          if (c.failed > 0) n.appendChild(el("span", "fail", " \u00b7 " + c.failed + " failed"));
+          cells.push({ node: n, cls: "num" });
+        });
+        cells.push({ text: String(kd.sent), cls: "num" });
+        cells.push(kd.failedKnown
+          ? (kd.failed > 0 ? { node: el("span", "fail", String(kd.failed)), cls: "num" }
+                           : { text: "0", cls: "num" })
+          : { text: "\u2013", cls: "num" });
+        return cells;
+      });
+
+      table(host, ["Kind"].concat(week.map(function (d) { return { text: shortDay(d), cls: "num" }; }))
+                         .concat([{ text: "Sent, 14 days", cls: "num" }, { text: "Failed, 14 days", cls: "num" }]),
+            rowsOut);
+      if (unrecorded.length) {
+        host.appendChild(el("div", "stat__sub",
+          "\u2013 failures not recorded for this kind (" + unrecorded.join(", ") + ")."));
+      }
+      if (quiet) {
+        host.appendChild(el("div", "card__note",
+          "A marked kind sent nothing for three days or more after sending earlier in the window. "
+          + "That can be a quiet stretch, or a cron or function that stopped; its logs will say which."));
+      }
+    }
 
     function renderStats(host) {
       var d = stats[panel];
@@ -1481,6 +1793,7 @@
           statCard(st.reactions, "reactions"),
           statCard(st.comments, "comments")
         ]));
+        renderPushHealth(host, stats.pushHealth);
         return;
       }
 
@@ -1578,6 +1891,7 @@
           + "Connect's opt-in sample. Not yet reported mixes people on older versions with "
           + "people who simply have not opened the app; it drains as they launch, and only "
           + "what remains after a week or two is really behind."));
+        renderWhere(host, stats.where);
         return;
       }
 
@@ -1657,8 +1971,17 @@
         say($("panel-status"), "");
         await load();
       } catch (err) {
-        say($("panel-status"), "That did not go through: " + String(err.message || err).slice(0, 140), "bad");
         Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = false; });
+        /* A function the dashboard shipped ahead of: said quietly on the card it
+           belongs to, once, not in the error colour. */
+        if (isMissing(err)) {
+          say($("panel-status"), "");
+          if (!cardEl.querySelector(".act__missing")) {
+            cardEl.querySelector(".card__main").appendChild(el("div", "card__meta act__missing", "Not available yet."));
+          }
+          return;
+        }
+        say($("panel-status"), "That did not go through: " + String(err.message || err).slice(0, 140), "bad");
       }
     }
 
@@ -1678,26 +2001,13 @@
        false, or raises "already", is read as the author already holding it. */
     var awarded = {};
 
-    /* The author, as list_feedback names them. It returns a username rather than
-       an id, so the id is looked up at tap time from users (id and username are
-       readable to any signed in account, and username is unique). A user_id on
-       the row, if the list ever carries one, is used as is. */
+    /* The author is the user_id the feedback row was written with, never a
+       username looked up at tap time: a username can be given up and taken by
+       someone else between the page loading and the tap, and the badge would
+       land on the wrong account. A row with no user_id (an older server, or a
+       deleted account) has nobody to give the badge to, so it gets no buttons. */
     function authorKey(r) {
-      if (r.user_id) return String(r.user_id);
-      return r.username ? "@" + r.username : null;
-    }
-    async function authorId(r) {
-      if (r.user_id) return r.user_id;
-      var res = await fetch(URL_BASE + "/rest/v1/users?select=id&username=eq." + encodeURIComponent(r.username), {
-        headers: { "apikey": ANON_KEY, "Authorization": "Bearer " + token },
-      });
-      if (res.status === 401) { signOut(); throw new Error("Session expired. Sign in again."); }
-      if (!res.ok) throw new Error(await res.text());
-      var rows = await res.json();
-      if (!Array.isArray(rows) || rows.length !== 1 || !rows[0].id) {
-        throw new Error("Could not find @" + r.username + ". They may have changed their username, so reload and try again.");
-      }
-      return rows[0].id;
+      return r.user_id ? String(r.user_id) : null;
     }
 
     function awardMessage(err) {
@@ -1716,7 +2026,7 @@
       Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = true; });
       var msg = null;
       try {
-        var out = await rpc("grant_badge", { p_user_id: await authorId(r), p_badge_id: badge.id });
+        var out = await rpc("grant_badge", { p_user_id: r.user_id, p_badge_id: badge.id });
         awarded[authorKey(r) + ":" + badge.id] = true;
         if (out === false) msg = who + " already had the " + badge.name + " badge.";
       } catch (err) {
@@ -1779,11 +2089,18 @@
 
       /* The open week rides last and is popped off before anything else reads
          `settled`, so the queue and stat slices below keep their alignment. */
+      /* The newer cards ride beside the pass, not in it: softRpc never rejects,
+         so a function the owner has not applied yet shows "Not available yet" on
+         its own card and never joins the "Could not load" line. */
+      var soft = Promise.all([softRpc("admin_where"), softRpc("admin_push_health", { p_days: 14 })]);
       var settled = await Promise.allSettled(
         names.map(function (n) { return rpc(n); })
           .concat(statNames.map(function (n) { return rpc(n); }))
           .concat([traffic()])
           .concat([openWeek()]));
+      var softOut = await soft;
+      stats.where = softOut[0];
+      stats.pushHealth = softOut[1];
       var openResult = settled.pop();
       spotOpen = openResult.status === "fulfilled" ? openResult.value : { error: true };
 
