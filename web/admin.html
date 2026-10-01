@@ -726,12 +726,40 @@
 
         } else if (panel === "users") {
           var ut = el("div", "card__title", "@" + (r.reported_username || "unknown"));
+          if (r.reported_hidden) ut.appendChild(el("span", "pill", "hidden from discovery"));
           if (r.report_count > 1) ut.appendChild(el("span", "pill pill--bad", r.report_count + " reports"));
           var dismissU = el("button", "btn", "Dismiss");
           dismissU.addEventListener("click", function () {
             act(c, "dismiss_user_report", { p_reported_id: r.reported_id });
           });
-          c = card(ut, ago(r.created_at), r.reason, [dismissU]);
+          /* The same detail as a reported photo: who reported, each with their own reason,
+             and enough about the account to judge it. Older servers sent only the latest
+             reason, so fall back to that. */
+          var whoU = Array.isArray(r.reporters) ? r.reporters : [];
+          var facts = [];
+          if (r.reported_display_name) facts.push(r.reported_display_name);
+          if (r.reported_number != null) facts.push("#" + r.reported_number);
+          if (r.reported_joined_at) facts.push("joined " + ago(r.reported_joined_at));
+          if (r.reported_posts != null) facts.push(plural(Number(r.reported_posts), "post"));
+          if (r.reported_blocked_by != null) facts.push("blocked by " + r.reported_blocked_by);
+          var metaU = "first reported " + ago(r.created_at);
+          c = card(ut, metaU, whoU.length ? null : r.reason, [dismissU]);
+          var mainU = c.querySelector(".card__main");
+          if (facts.length) mainU.appendChild(el("div", "report__caption", facts.join(" · ")));
+          if (whoU.length) {
+            var listU = el("ul", "report__who");
+            whoU.forEach(function (w) {
+              var li = el("li", null);
+              li.appendChild(el("span", "report__by", "@" + (w.username || "deleted account")));
+              var tail = " · " + ago(w.created_at);
+              if (w.follows) tail += " · follows them";
+              if (w.blocked) tail += " · blocked them";
+              li.appendChild(el("span", "report__when", tail));
+              li.appendChild(el("div", "card__note", w.reason || "No reason given"));
+              listU.appendChild(li);
+            });
+            mainU.appendChild(listU);
+          }
 
         } else {
           /* The build and device are the point of this queue: they are what a
