@@ -285,6 +285,11 @@ final class DarkroomViewModel {
             guard photoService.hasMore else { return }
             applied = try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)
         } else {
+            // Not while a delete is waiting on its Undo: `photos` leaves the hidden shots out, so
+            // a resume would rebuild the shared list without them, and an Undo would then come
+            // back for one poll only before the owned list took it away again. The sentinel and
+            // the geometry backstop re-fire as soon as the commit or the Undo changes the count.
+            guard pendingHiddenIds.isEmpty else { return }
             applied = try? await photoService.resumePersonalPhotos(userId: userId, keeping: photos)
         }
         // `== true` and not `!= false`: a thrown fetch (`try?` nil) and a superseded fetch both
