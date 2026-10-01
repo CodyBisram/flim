@@ -2240,6 +2240,11 @@ On device:
     the camera's timer and roll picker; an invite link opened while signed in shows "You're
     already on FLIM. Invite links are for someone new."; offline, a failed reaction still buzzes;
     a VoiceOver notice is read once; after a reveal abandoned at frame 2, no rating card.
+13. Darkroom (build 425): today (October, empty) reads "Nothing left in October." with
+    September as its own heading row well below it. Tap it: September's nights load. On Year,
+    tap an older month and zoom out mid-load, go back to a loaded month, wait 70 seconds: the
+    nights stay. Airplane mode, pick an unloaded month: Retry, never "Nothing left"; network
+    back on: it loads by itself. Delete a shot, scroll to the month's end, Undo: it stays.
 12. Feed pills: on a fresh launch every card you have already read shows NO "N new"; a card
     you are reading keeps its pill until it leaves the screen; scroll it off and back and the
     pill is gone. Also right after a reinstall (the marks come back from the account).
