@@ -127,11 +127,19 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
 /// invites-left used, so the push reaches people who use the app, not everyone with a token).
 /// The seat count is read at send time and said as a number; with none left the cohort is
 /// empty and nothing sends. Lands on the invite sheet.
+///
+/// A failed count THROWS, never reads as zero (review OPEN #90, 2026-10-01): zero seats left is
+/// what makes founding-full send, and the scheduled caller runs every half hour, so one
+/// transient error used to send "The founding hundred is full" to every founder early and burn
+/// the real send. A throw answers with a server error, the workflow's request fails, nothing is
+/// sent, and the schedule tries again in half an hour.
 async function foundingSeatsLeft(): Promise<number> {
-  const { count } = await supabase
+  const { count, error } = await supabase
     .from("users").select("id", { count: "exact", head: true })
     .not("signup_ordinal", "is", null).neq("username", "applereview");
-  return count === null ? 0 : Math.max(0, 100 - count);
+  if (error) throw new Error(`founding seat count failed: ${error.message}`);
+  if (count === null) throw new Error("founding seat count came back empty");
+  return Math.max(0, 100 - count);
 }
 function foundingSeatsTitle(left: number): string {
   return left === 1 ? "One seat left in the first hundred." : `${left} seats left in the first hundred.`;
