@@ -1086,7 +1086,35 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // Only reactions from people the tagged person FOLLOWS reach them (owner, 2026-10-01). A new
+  // account follows its inviter on the way in and can then react its way back through the
+  // inviter's whole page; every old photo it touched pinged everyone tagged in it, strangers to
+  // them. A tagged person now hears about a reaction only from someone they chose to follow.
+  // One read for the whole run. A failed read sends none of these pushes: the reactions are
+  // already marked done above, so this is a quiet miss, never a push to the wrong person.
+  const allTagged = [...new Set([...tagsByPost.values()].flat())];
+  const allReactors = [...new Set([...postAgg.values()].flatMap((p) => [...p.reactorIds]))];
+  const followsByTagged = new Map<string, Set<string>>();
+  let followsReadFailed = false;
+  if (allTagged.length > 0 && allReactors.length > 0) {
+    const { data: followRows, error: followErr } = await supabase
+      .from("follows")
+      .select("follower_id, following_id")
+      .in("follower_id", allTagged)
+      .in("following_id", allReactors);
+    if (followErr) {
+      followsReadFailed = true;
+      console.warn(JSON.stringify({ at: "tagged_reaction_follows_read_failed", error: followErr.message }));
+    }
+    for (const f of followRows ?? []) {
+      const set = followsByTagged.get(f.follower_id as string) ?? new Set<string>();
+      set.add(f.following_id as string);
+      followsByTagged.set(f.follower_id as string, set);
+    }
+  }
+
   for (const [postId, p] of postAgg) {
+    if (followsReadFailed) break;
     if (p.hidden) continue; // hidden post, or its photo (which hides the post via the same trigger)
     const tagged = tagsByPost.get(postId);
     if (!tagged || tagged.length === 0) continue;
@@ -1104,8 +1132,10 @@ Deno.serve(async (req: Request) => {
       if (p.ownerId && p.createdAt && !coveredPostVisibleTo(coveredCtx, taggedId, p.ownerId, p.createdAt)) {
         continue;
       }
-      // Never notify someone about their own reaction: count only reactions from OTHER people.
-      const others = [...p.reactorIds].filter((id) => id !== taggedId);
+      // Never notify someone about their own reaction: count only reactions from OTHER people,
+      // and only from people this tagged person follows (see above).
+      const follows = followsByTagged.get(taggedId);
+      const others = [...p.reactorIds].filter((id) => id !== taggedId && (follows?.has(id) ?? false));
       if (others.length === 0) continue;
 
       const title = others.length === 1
