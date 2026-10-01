@@ -145,6 +145,51 @@ struct DarkroomView: View {
     @SceneStorage("darkroom.anchor") private var storedAnchor = ""
     @State private var zoom: DarkroomZoom = .month
     @State private var anchor = DarkroomYearMonth(date: .now)
+
+    // MARK: - The month rung's empty-state evidence (see `DarkroomMonthBodyRule`)
+
+    /// One anchor month within one load generation: what an outcome is recorded against and what
+    /// the one automatic fetch is keyed on.
+    private struct AnchorFetchKey: Hashable {
+        let anchor: DarkroomYearMonth
+        let generation: Int
+    }
+
+    /// Bumped at the start of every `reload()`. Outcomes and automatic attempts belong to one
+    /// generation, so a reload (a pull, a tab return, the sort deck closing, Try again) always
+    /// earns the month a fresh look.
+    @State private var loadGeneration = 0
+    /// How the latest fetch for each anchor ended in the current generation: `reload()`'s own
+    /// page fetch for the anchor it started on, and every `landOnAnchorMonth` fetch.
+    @State private var anchorFetchOutcomes: [AnchorFetchKey: DarkroomAnchorFetchOutcome] = [:]
+    /// Anchors that already had their one automatic fetch this generation: the loop guard.
+    @State private var automaticFetchKeys: Set<AnchorFetchKey> = []
+
+    private var currentAnchorFetchKey: AnchorFetchKey {
+        AnchorFetchKey(anchor: anchor, generation: loadGeneration)
+    }
+
+    /// What `monthContent` shows. The scoped empty state is a claim about the server, so it needs
+    /// the server's word: see `DarkroomMonthBodyRule.decide` for the rule and the bug behind it.
+    private var monthBody: DarkroomMonthBody {
+        DarkroomMonthBodyRule.decide(
+            hasRowsForAnchor: !monthScopedUnits.isEmpty,
+            fetchInFlight: anchoredJumpTarget != nil || pendingMonthLanding != nil
+                || vm.isLoading || isLoadingSummaries,
+            summaryShotCount: monthSummaries.map { rows in
+                rows.first { $0.yearMonth == anchor }?.shotCount ?? 0
+            },
+            outcome: anchorFetchOutcomes[currentAnchorFetchKey],
+            automaticAttempts: automaticFetchKeys.contains(currentAnchorFetchKey) ? 1 : 0
+        )
+    }
+
+    /// Nothing anywhere says this account has a single kept shot: no server total above zero and
+    /// no month in the summary. Only then is the whole-library "Your Darkroom's empty." true.
+    private var libraryKnownEmpty: Bool {
+        (vm.totalCount ?? 0) == 0 && (monthSummaries ?? []).isEmpty
+    }
+
     /// The set of nights currently mounted in `nightList`'s `LazyVStack`, kept only while
     /// `zoom == .month`: the coarse "topmost mounted unit" the zoom bar's crumb follows while
     /// scrolling. See `updateMonthAnchorFromScroll`'s own doc.
@@ -257,7 +302,8 @@ struct DarkroomView: View {
         DarkroomMonthPaging.shouldContinuePaging(
             oldestLoadedMonth: dayUnits.last.map { DarkroomYearMonth(date: $0.dayKey) },
             anchor: anchor,
-            hasMore: photoService.hasMore
+            // This list's own answer, not the shared session's: see `DarkroomViewModel.hasMore`.
+            hasMore: vm.hasMore(photoService)
         )
     }
 
@@ -529,7 +575,9 @@ Text("Darkroom")
         // A Darkroom that failed to load (a launch with no signal) loads itself when the
         // connection comes back. Nothing happens when nothing failed.
         .onChange(of: network.isConnected) { _, on in
-            if on, vm.error != nil, vm.photos.isEmpty, !vm.isLoading {
+            // The month rung's own error state too: a month whose fetch failed offline can sit
+            // on it while other months' rows are loaded.
+            if on, !vm.isLoading, (vm.error != nil && vm.photos.isEmpty) || (zoom == .month && monthBody == .error) {
                 Task { await reload() }
             }
         }
@@ -573,83 +621,90 @@ Text("Darkroom")
     /// loading/error/empty states, same as before the zoom ladder existed.
     @ViewBuilder
     private var monthContent: some View {
-        if (vm.isLoading && vm.photos.isEmpty)
-            || (monthScopedUnits.isEmpty && anchoredJumpTarget != nil) {
-            // The second clause: an anchored jump is in flight for a month whose rows are not
-            // loaded yet. `vm.photos` still holds the PREVIOUS anchor's rows, so the plain
-            // isLoading/isEmpty gate would render an essentially blank night list (nothing
-            // matches the new anchor) with no affordance until the fetch resolves. The
-            // skeleton is the honest state for that window.
-            ScrollView { DarkroomLoadingSkeleton(frameWidth: photoFrameWidth).padding(.top, 8) }
-                .scrollDisabled(true)
-        } else if let error = vm.error, vm.photos.isEmpty {
-            ErrorState(message: error) { await reload() }
-        } else if vm.photos.isEmpty {
-            // Nothing loaded anywhere. `emptyState`'s "Your darkroom's empty" copy is written
-            // for the present-day case (never shot anything); anchored on an older month it
-            // reads as a lie the moment the person zooms back to the present and finds photos
-            // after all. See `scopedEmptyMonthState`'s own doc.
-            if anchor != DarkroomYearMonth(date: .now) {
-                scopedEmptyMonthState
-            } else {
-                emptyState
-            }
-        } else if let first = firstFrame {
+        let decision = monthBody
+        if decision != .skeleton, decision != .error, let first = firstFrame {
             // A brand-new account's one and only frame, at print size, with the two things you
             // can do with it and the roll introduced as the next shot. Replaces the three
             // onboarding cards' second and third card with the thing itself; see
             // `NewAccountIntro`. Gone when a second frame exists; a post only changes its line.
             firstFrameState(first)
-        } else if monthScopedUnits.isEmpty, anchoredJumpTarget == nil, pendingMonthLanding == nil {
-            // Spillover: photos ARE loaded (an older or newer month's rows, most often left
-            // behind by a previous anchored fetch's page boundary), just none of them belong to
-            // THIS anchor, e.g. every shot in the month was just deleted. `emptyState` would be
-            // actively wrong here, it claims the whole darkroom is empty. Gated on no jump being
-            // in flight so this never flashes mid-fetch, ahead of the loading skeleton above.
-            scopedEmptyMonthState
         } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Color.clear.frame(height: 0).id("top")
-                    // One sentence, once, for a brand-new account: see NewAccountIntro.
-                    FirstVisitLine(surface: .darkroom)
-                    nightList
+            switch decision {
+            case .skeleton, .startFetch:
+                // A fetch that can still bring this month's rows is running, or is about to:
+                // `vm.photos` may still hold another month's rows (or none), and a night list
+                // with nothing in it, or the empty state, would both be a guess.
+                ScrollView { DarkroomLoadingSkeleton(frameWidth: photoFrameWidth).padding(.top, 8) }
+                    .scrollDisabled(true)
+                    .modifier(MonthLandingHost(pending: pendingMonthLanding) { landOnAnchorMonth($0, proxy: nil) })
+                    // The safety net's one automatic fetch, keyed on anchor and generation so it
+                    // runs once for each; `startAutomaticAnchorFetch` re-checks everything itself.
+                    .task(id: decision == .startFetch ? currentAnchorFetchKey : nil) {
+                        if decision == .startFetch { startAutomaticAnchorFetch() }
+                    }
+            case .error:
+                ErrorState(message: vm.error ?? UserFacingError.genericMessage) { await reload() }
+                    .modifier(MonthLandingHost(pending: pendingMonthLanding) { landOnAnchorMonth($0, proxy: nil) })
+            case .scopedEmpty:
+                Group {
+                    if vm.photos.isEmpty, anchor == DarkroomYearMonth(date: .now), libraryKnownEmpty {
+                        // The first-run case: never shot anything. Anywhere else, or once
+                        // anything says the library has shots, that line would be a lie.
+                        emptyState
+                    } else {
+                        scopedEmptyMonthState
+                    }
                 }
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
-                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
-                    scrollOffsetY = y
-                }
-                // The pagination backstop, alongside (not instead of) `loadMoreSentinel`'s own
-                // mount/`.task(id:)` re-arm — see that view's own doc for why a second, geometry-
-                // driven trigger earns its keep here. Fires on every scroll frame's geometry
-                // update, so unlike the sentinel it cannot be starved by how much (or how little)
-                // of the `LazyVStack` SwiftUI has chosen to realize: within 600pt of the bottom
-                // of the currently measured content, ask for the next page. `loadMore`'s own
-                // `hasMore`/`isLoading` guards make this safe to call redundantly every frame
-                // that stays within the threshold.
-                //
-                // Gated on `monthPagingActive` (PR 5 of the zoom redesign, revision 2), the SAME
-                // property `loadMoreSentinel` and the closing row read: once the oldest loaded
-                // photo has crossed the anchor month's own edge, this must stop firing right
-                // alongside the sentinel, or it would keep paging PAST the month the closing row
-                // is already offering as the next step, forever, every frame near the bottom.
-                .onScrollGeometryChange(for: Bool.self) { geo in
-                    geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 600
-                } action: { _, isNearBottom in
-                    if isNearBottom, monthPagingActive { Task { await loadMoreIfNeeded() } }
-                }
-                .refreshableToCompletion { await reload() }
-                .onAppear { scrollProxy = proxy }
-                // Consumes `pendingMonthLanding` using THIS `proxy`, the one that actually belongs
-                // to the now-mounted `.month` rung — see `pendingMonthLanding`'s own doc for the
-                // race this fixes. Keyed on the value itself, not a bare `Void` id, so a fresh
-                // request landing while this same rung is already mounted (year -> month twice in
-                // a row without leaving `.month` in between isn't currently reachable, but this
-                // stays correct if that ever changes) reruns too, not just the initial mount.
-                .task(id: pendingMonthLanding) {
-                    guard let target = pendingMonthLanding else { return }
-                    landOnAnchorMonth(target, proxy: proxy)
-                }
+                .modifier(MonthLandingHost(pending: pendingMonthLanding) { landOnAnchorMonth($0, proxy: nil) })
+            case .content:
+                monthScroll
+            }
+        }
+    }
+
+    /// The `.month` rung's night list, once the anchor has rows to show.
+    private var monthScroll: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                Color.clear.frame(height: 0).id("top")
+                // One sentence, once, for a brand-new account: see NewAccountIntro.
+                FirstVisitLine(surface: .darkroom)
+                nightList
+            }
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                scrollOffsetY = y
+            }
+            // The pagination backstop, alongside (not instead of) `loadMoreSentinel`'s own
+            // mount/`.task(id:)` re-arm, see that view's own doc for why a second, geometry-
+            // driven trigger earns its keep here. Fires on every scroll frame's geometry
+            // update, so unlike the sentinel it cannot be starved by how much (or how little)
+            // of the `LazyVStack` SwiftUI has chosen to realize: within 600pt of the bottom
+            // of the currently measured content, ask for the next page. `loadMore`'s own
+            // `hasMore`/`isLoading` guards make this safe to call redundantly every frame
+            // that stays within the threshold.
+            //
+            // Gated on `monthPagingActive` (PR 5 of the zoom redesign, revision 2), the SAME
+            // property `loadMoreSentinel` and the closing row read: once the oldest loaded
+            // photo has crossed the anchor month's own edge, this must stop firing right
+            // alongside the sentinel, or it would keep paging PAST the month the closing row
+            // is already offering as the next step, forever, every frame near the bottom.
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 600
+            } action: { _, isNearBottom in
+                if isNearBottom, monthPagingActive { Task { await loadMoreIfNeeded() } }
+            }
+            .refreshableToCompletion { await reload() }
+            .onAppear { scrollProxy = proxy }
+            // Consumes `pendingMonthLanding` using THIS `proxy`, the one that actually belongs
+            // to the now-mounted `.month` rung, see `pendingMonthLanding`'s own doc for the
+            // race this fixes. Keyed on the value itself, not a bare `Void` id, so a fresh
+            // request landing while this same rung is already mounted (year -> month twice in
+            // a row without leaving `.month` in between isn't currently reachable, but this
+            // stays correct if that ever changes) reruns too, not just the initial mount.
+            .task(id: pendingMonthLanding) {
+                guard let target = pendingMonthLanding else { return }
+                landOnAnchorMonth(target, proxy: proxy)
             }
         }
     }
@@ -1400,25 +1455,24 @@ Text("Darkroom")
     /// recoverable dead end, not the app's very first empty moment.
     ///
     /// Copy reported for owner veto (consolidated fix pass, item 4).
+    ///
+    /// Only ever reached through `DarkroomMonthBodyRule` saying `.scopedEmpty`, which is to say
+    /// with the server's word that the month has nothing in it (see that rule's own doc).
     private var scopedEmptyMonthState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "camera.aperture")
-                .font(.system(size: 28, weight: .ultraLight))
-                .foregroundStyle(accent.opacity(0.5))
-            Text("Nothing left in \(scopedEmptyMonthName).")
-                .flimFont(14, weight: .light)
-                .foregroundStyle(FlimTheme.textTertiary)
-            // The same closing row `nightList` shows once pagination for a non-empty month
-            // genuinely stops: here it's the only way out of an anchor that has nothing at all.
-            if !isSelecting, let info = closingRowInfo {
-                DarkroomMonthClosingRow(month: info.month, shotCount: info.shotCount) {
-                    Haptics.tap()
-                    selectMonth(info.month)
-                }
-                .padding(.top, 8)
+        // The same closing row `nightList` shows once pagination for a non-empty month genuinely
+        // stops: here it's the only way out of an anchor that has nothing at all. Not gated on
+        // `monthPagingActive` the way the list's is: that gate keeps the row from flashing under
+        // a night still to arrive, and this month has been established as having none, so with
+        // nothing loaded at all the gate would only hide the one way forward.
+        DarkroomEmptyMonthView(
+            monthName: scopedEmptyMonthName,
+            next: isSelecting ? nil : DarkroomMonthPaging.nextOlderMonth(anchor: anchor, summaries: monthSummaries,
+                                                                         spilloverMonths: spilloverMonths),
+            onSelectNext: { month in
+                Haptics.tap()
+                selectMonth(month)
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        )
     }
 
     /// The anchor month's full name ("August"), for `scopedEmptyMonthState`'s copy only — the
@@ -1586,20 +1640,30 @@ Text("Darkroom")
     /// leaving `.month`, and from `.onDisappear` if the whole screen goes away mid-fetch.
     ///
     /// A fetch that fails or is superseded (`applied == false`, or the request throws) still
-    /// clears `pendingMonthLanding` and returns rather than spinning or retrying on its own: the
-    /// `.month` rung lands on whatever IS loaded, its crumb still reads the real anchor, and pull-
-    /// to-refresh (which re-runs the same anchored fetch, see `reload()`'s own doc) is the
-    /// retry path, the same as every other failed fetch on this screen.
-    private func landOnAnchorMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy) {
+    /// clears `pendingMonthLanding` and returns rather than spinning or retrying on its own. Its
+    /// outcome is recorded against `ym` first (`anchorFetchOutcomes`), and that is what decides
+    /// the body: a month whose fetch never landed is never called empty (see
+    /// `DarkroomMonthBodyRule`). It used to be: the rung "landed on whatever IS loaded", which
+    /// for a jump that failed or was cancelled meant another month's rows under this month's
+    /// crumb, and "Nothing left in" a month the header counted shots in.
+    ///
+    /// `proxy` is `nil` when the request comes from a state with no night list mounted (the
+    /// skeleton, the error and empty states): there is nothing to scroll, and the list mounts at
+    /// its own top, which is the month's newest night.
+    private func landOnAnchorMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy?) {
         if let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
             // This landing is authoritative now: bump the token so any anchored fetch still
             // running for an earlier target (cancelled below, but possibly already past its own
             // last `await`) discards its result instead of assigning into `vm.photos` behind it.
-            jumpToken += 1
-            anchoredJumpTask?.cancel()
-            anchoredJumpTask = nil
-            anchoredJumpTarget = nil
-            withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) }
+            // Not for a fetch already running for THIS month: its rows are the ones that just
+            // arrived, and cancelling it would only cut its URL prefetch short.
+            if anchoredJumpTarget != ym {
+                jumpToken += 1
+                anchoredJumpTask?.cancel()
+                anchoredJumpTask = nil
+                anchoredJumpTarget = nil
+            }
+            if let proxy { withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) } }
             if pendingMonthLanding == ym { pendingMonthLanding = nil }
             return
         }
@@ -1615,21 +1679,44 @@ Text("Darkroom")
         if anchoredJumpTarget == ym, anchoredJumpTask != nil { return }
         jumpToken += 1
         let myToken = jumpToken
+        let key = AnchorFetchKey(anchor: ym, generation: loadGeneration)
         anchoredJumpTask?.cancel()
         anchoredJumpTarget = ym
         anchoredJumpTask = Task {
             defer { if anchoredJumpTarget == ym { anchoredJumpTarget = nil } }
-            await vm.loadAnchored(photoService: photoService, userId: uid, upperEdge: ym.upperEdge(),
-                                   shouldApply: { jumpTokenIsCurrent(myToken, latest: jumpToken) })
+            let outcome = await vm.loadAnchored(photoService: photoService, userId: uid, upperEdge: ym.upperEdge(),
+                                                 shouldApply: { jumpTokenIsCurrent(myToken, latest: jumpToken) })
+            // Straight from `vm.photos`, not the `dayUnits` cache: that one is rebuilt by
+            // `.onChange(of: vm.photos)`, which need not have run yet at this point.
+            let landedUnits = DarkroomDayUnit.units(from: vm.photos, anchor: ym)
+            // Recorded before the `defer` clears `anchoredJumpTarget`, in the same main-actor
+            // turn, so the body never sees "nothing in flight" without this outcome.
+            recordAnchorFetch(key, DarkroomMonthBodyRule.outcome(for: outcome, anchorHasRows: !landedUnits.isEmpty))
             guard !Task.isCancelled, jumpTokenIsCurrent(myToken, latest: jumpToken),
-                  let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym })
+                  let firstUnit = landedUnits.first
             else {
                 if pendingMonthLanding == ym { pendingMonthLanding = nil }
                 return
             }
-            withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) }
+            if let proxy { withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) } }
             if pendingMonthLanding == ym { pendingMonthLanding = nil }
         }
+    }
+
+    /// The safety net's one automatic fetch for the current anchor (see `DarkroomMonthBodyRule`):
+    /// the same anchored fetch a month jump makes, at most once per anchor per load generation.
+    /// Re-checks the state it was decided on, since the `.task` that calls it runs a moment later.
+    private func startAutomaticAnchorFetch() {
+        let key = currentAnchorFetchKey
+        guard zoom == .month, monthScopedUnits.isEmpty, anchoredJumpTarget == nil,
+              pendingMonthLanding == nil, !automaticFetchKeys.contains(key) else { return }
+        automaticFetchKeys.insert(key)
+        landOnAnchorMonth(anchor, proxy: nil)
+    }
+
+    /// Records how a fetch for `key`'s month ended. See `DarkroomMonthBodyRule.merged`.
+    private func recordAnchorFetch(_ key: AnchorFetchKey, _ outcome: DarkroomAnchorFetchOutcome) {
+        anchorFetchOutcomes[key] = DarkroomMonthBodyRule.merged(existing: anchorFetchOutcomes[key], new: outcome)
     }
 
     /// Resolves the entry rung and anchor once, from `.onAppear`. Cold launch (the `-1` sentinel)
@@ -1732,10 +1819,23 @@ Text("Darkroom")
         // nothing here needs a second, separately-ordered request.
         async let summaries = photoService.darkroomMonthSummaryV2(timezone: TimeZone.current.identifier, covers: 8)
         let anchoredBranch = zoom == .month && anchor != DarkroomYearMonth(date: .now)
+        // A new generation: every month gets a fresh look, and its own automatic fetch back.
+        // The page fetch below is itself the fetch FOR the anchor whenever the month rung is
+        // up (anchored on an older month, or unanchored on the current one, whose newest page
+        // is that month), so its outcome is recorded against that anchor.
+        loadGeneration += 1
+        anchorFetchOutcomes = [:]
+        automaticFetchKeys = []
+        let fetchKey: AnchorFetchKey? = zoom == .month ? AnchorFetchKey(anchor: anchor, generation: loadGeneration) : nil
+        let loadOutcome: DarkroomViewModel.LoadOutcome
         if anchoredBranch {
-            await vm.loadAnchored(photoService: photoService, userId: userId, upperEdge: anchor.upperEdge())
+            loadOutcome = await vm.loadAnchored(photoService: photoService, userId: userId, upperEdge: anchor.upperEdge())
         } else {
-            await vm.load(photoService: photoService, userId: userId)
+            loadOutcome = await vm.load(photoService: photoService, userId: userId)
+        }
+        if let fetchKey, AccountEpoch.isCurrent(epoch) {
+            let anchorHasRows = !DarkroomDayUnit.units(from: vm.photos, anchor: fetchKey.anchor).isEmpty
+            recordAnchorFetch(fetchKey, DarkroomMonthBodyRule.outcome(for: loadOutcome, anchorHasRows: anchorHasRows))
         }
         if let resolvedSummaries = await summaries, AccountEpoch.isCurrent(epoch) {
             monthSummaries = resolvedSummaries
@@ -1891,5 +1991,20 @@ Text("Darkroom")
     private func dismissReveal() {
         withAnimation(.easeOut(duration: 0.25)) { revealAnim = false }
         withAnimation(.easeInOut(duration: 0.3)) { showReveal = false }
+    }
+}
+
+/// Consumes `pendingMonthLanding` on the `.month` rung's states that have no night list (the
+/// skeleton, the error and the empty states). The list's own `ScrollViewReader` consumes it when
+/// the list is up; these states used to have nothing listening, so a month picked while one of
+/// them was showing set the crumb and never fetched.
+private struct MonthLandingHost: ViewModifier {
+    let pending: DarkroomYearMonth?
+    let land: (DarkroomYearMonth) -> Void
+
+    func body(content: Content) -> some View {
+        content.task(id: pending) {
+            if let pending { land(pending) }
+        }
     }
 }

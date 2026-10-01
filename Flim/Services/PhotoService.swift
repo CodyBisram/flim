@@ -167,6 +167,7 @@ final class PhotoService {
     /// signing back in returns your unsent captures instead of finding them deleted.
     func resetForAccountChange() {
         loadedPhotos = []
+        loadedPhotosSession &+= 1
         hasMore = true
         photoCursor = nil
         failedUploads = []
@@ -1914,7 +1915,7 @@ final class PhotoService {
             _ = try? await supabase.storage.from("photos").remove(paths: paths)
             if objects.count < 1000 { break }
         }
-        await MainActor.run { loadedPhotos = []; failedUploads = [] }
+        await MainActor.run { loadedPhotos = []; loadedPhotosSession &+= 1; failedUploads = [] }
     }
 
     /// Files a content report against a photo (UGC safety). Write-only from the client.
@@ -2171,6 +2172,17 @@ final class PhotoService {
     /// down from accounts to queries.
     private var fetchGeneration = 0
 
+    /// Bumped every time `loadedPhotos` is emptied or replaced wholesale for a new list: every
+    /// `reset` in `fetchPage`, an account reset, the data wipe. A screen that copies
+    /// `loadedPhotos` into its own list records this alongside the copy; when the two no longer
+    /// match, `loadedPhotos` (and `hasMore`, and the cursor behind it) belong to some other list
+    /// and must not be read as that screen's. See `DarkroomViewModel.ownsSharedList`.
+    ///
+    /// Not `fetchGeneration`, on purpose: an account reset clears the list without bumping that
+    /// one, so a fetch already in flight for the same account still lands. This counter only
+    /// answers "is the list I copied still the list in here", never "may this response apply".
+    private(set) var loadedPhotosSession = 0
+
     /// A boundary in `photos`' own `<column> DESC, id DESC` order: "everything strictly after
     /// this row", see `keysetFilter(after:)`. Compare `FeedService.FeedCursor`'s own doc, where a
     /// `created_at` tie is a rare same-transaction collision: a tie here is the ORDINARY case on
@@ -2225,6 +2237,36 @@ final class PhotoService {
         try await fetchPage(reset: true, orderBy: .takenAt, seedCursor: PhotoService.anchoredSeedCursor(before: upperEdge)) {
             $0.eq("user_id", value: userId.uuidString).eq("is_sorted", value: true)
         }
+    }
+
+    /// Starts a fresh personal pagination session that CONTINUES an existing list: `loadedPhotos`
+    /// is reset to `keeping` and the next page is fetched from just past `keeping`'s oldest row.
+    /// For a screen whose own list is intact but whose session in here was taken over by a reset
+    /// that never landed for it (an anchored jump cancelled mid-flight, a jump superseded by a
+    /// newer one): paging on with `fetchPersonalPhotos(userId:reset: false)` would continue the
+    /// OTHER session's cursor and replace the screen's rows with that session's month.
+    ///
+    /// Same `applied`-Bool contract as every other fetch here. One awaited call, no loop.
+    @discardableResult
+    func resumePersonalPhotos(userId: UUID, keeping: [Photo]) async throws -> Bool {
+        let seed = PhotoService.resumeCursor(after: keeping)
+        return try await fetchPage(reset: true, orderBy: .takenAt, seedCursor: seed, seedPhotos: keeping) {
+            $0.eq("user_id", value: userId.uuidString).eq("is_sorted", value: true)
+        }
+    }
+
+    /// The cursor `resumePersonalPhotos` starts from: the row that sorts LAST in the personal
+    /// fetch's own `taken_at DESC, id DESC` order, so the next page is everything strictly after
+    /// it. Found by comparison rather than read off `photos.last`, because a list restored by an
+    /// Undo is re-sorted by `taken_at` alone and its tail can be a tie in either order. `nil` for
+    /// an empty list, which resumes from the top. Uppercase `uuidString` order is byte order, the
+    /// order Postgres compares `uuid` in.
+    nonisolated static func resumeCursor(after photos: [Photo]) -> PhotoCursor? {
+        let last = photos.min { lhs, rhs in
+            if lhs.takenAt != rhs.takenAt { return lhs.takenAt < rhs.takenAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        return last.map { PhotoCursor(column: .takenAt, sortDate: $0.takenAt, id: $0.id) }
     }
 
     /// The seeded cursor `fetchPersonalPhotos(userId:anchoredBefore:)` starts an anchored fetch
@@ -2567,15 +2609,19 @@ final class PhotoService {
         /// parameter existed. Ignored entirely when `reset` is `false`, since a continuing fetch
         /// resumes from whatever `photoCursor` pagination already advanced to.
         seedCursor: PhotoCursor? = nil,
+        /// What a RESET fetch starts `loadedPhotos` from instead of nothing: only
+        /// `resumePersonalPhotos` passes any, the rows its seeded cursor continues after.
+        seedPhotos: [Photo] = [],
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
     ) async throws -> Bool {
         let epoch = AccountEpoch.current
         let limit = pageSize ?? self.pageSize
         if reset {
             fetchGeneration &+= 1
+            loadedPhotosSession &+= 1
             photoCursor = seedCursor
             hasMore = true
-            loadedPhotos = []
+            loadedPhotos = seedPhotos
         }
         // Captured after the reset above, checked after every await below: a response belonging
         // to a superseded pagination session is discarded, exactly the way the AccountEpoch
@@ -2592,8 +2638,8 @@ final class PhotoService {
         // Ids already on screen, so a keyset page that re-returns a row exactly at the cursor
         // boundary (see `PhotoCursor`'s tiebreaker) is caught client-side too, not just by the
         // query's own `id <` comparison. Snapshotted once, not re-read per loop iteration: a
-        // `reset` page just cleared `loadedPhotos` above, so there is nothing yet to dedup
-        // against, and a fresh load showing the same top photos again would be correct anyway.
+        // `reset` page just set `loadedPhotos` above (to nothing, or to a resume's kept rows,
+        // which are exactly what its first page must not repeat).
         let existingIds: Set<UUID> = Set(loadedPhotos.map(\.id))
 
         // Keep pulling pages until we have visible items, so a page that's entirely blocked

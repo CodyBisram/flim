@@ -56,3 +56,67 @@ struct DarkroomMonthClosingRow: View {
         .accessibilityAddTraits(.isButton)
     }
 }
+
+/// The `.month` rung for an anchor month with nothing in it: "Nothing left in October." and, when
+/// an older month is known, the closing row into it.
+///
+/// The two have separate places. The closing row used to sit 8pt under the sentence, inside the
+/// same centered stack, so the next month read as a caption of the empty message (owner report,
+/// build 424). The sentence now owns the open space; the closing row is the way into the next
+/// section, so it is laid out as a heading of one.
+struct DarkroomEmptyMonthView: View {
+    @Environment(\.flimAccent) private var accent
+    /// The anchor month's full name, as prose ("October").
+    let monthName: String
+    /// The next-older month and its count, `nil` when none is known.
+    let next: (month: DarkroomYearMonth, shotCount: Int?)?
+    let onSelectNext: (DarkroomYearMonth) -> Void
+
+    var body: some View {
+        // Scrolls only when it has to (the largest accessibility sizes), and otherwise fills the
+        // rung exactly, so the spacers below can place things against the real height.
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 24)
+                    message
+                    if let next {
+                        // A clear gap, then the next month as a heading of the same kind as
+                        // the month crumb above: its name, its count, the same hairline under
+                        // it. Pinning it above the tab bar instead was tried (2026-10-01): on
+                        // iOS 26 it crowds the floating tab bar and reads as part of it.
+                        Color.clear.frame(height: 56)
+                        closingRow(next)
+                    }
+                    Spacer(minLength: 24)
+                }
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+
+    private var message: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "camera.aperture")
+                .font(.system(size: 28, weight: .ultraLight))
+                .foregroundStyle(accent.opacity(0.5))
+                .accessibilityHidden(true)
+            Text("Nothing left in \(monthName).")
+                .flimFont(14, weight: .light)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    @ViewBuilder
+    private func closingRow(_ next: (month: DarkroomYearMonth, shotCount: Int?)) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DarkroomMonthClosingRow(month: next.month, shotCount: next.shotCount) {
+                onSelectNext(next.month)
+            }
+            DarkroomHeaderRule()
+        }
+    }
+}

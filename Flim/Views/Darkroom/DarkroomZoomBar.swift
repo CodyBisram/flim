@@ -38,15 +38,7 @@ struct DarkroomZoomBar: View {
             .padding(.top, 14)
             .padding(.bottom, 8)
 
-            LinearGradient(
-                stops: [
-                    .init(color: FlimTheme.stroke, location: 0),
-                    .init(color: .clear, location: 0.6),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .leading, endPoint: .trailing)
-                .frame(height: 1)
-                .padding(.horizontal, 16)
+            DarkroomHeaderRule()
         }
     }
 
@@ -91,5 +83,23 @@ private struct DarkroomZoomHalfButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(configuration.isPressed ? accent.opacity(0.12) : Color.clear)
+    }
+}
+
+/// The hairline under a Darkroom month heading: the stroke at the leading margin, faded out by
+/// 60% of the width. The zoom bar draws it under the month crumb, and the empty month's closing
+/// row draws it too, so the next month reads as a heading of the same kind.
+struct DarkroomHeaderRule: View {
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: FlimTheme.stroke, location: 0),
+                .init(color: .clear, location: 0.6),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .leading, endPoint: .trailing)
+            .frame(height: 1)
+            .padding(.horizontal, 16)
+            .accessibilityHidden(true)
     }
 }

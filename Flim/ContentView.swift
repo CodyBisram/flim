@@ -52,6 +52,10 @@ struct ContentView: View {
             } else if ProcessInfo.processInfo.arguments.contains("-chapterStatsPickerDemo") {
                 // Same idea, for the chapter-stats visibility picker. See ChapterStatsPickerDemoHost.
                 ChapterStatsPickerDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-darkroomEmptyMonthDemo") {
+                // The Darkroom's month rung on an empty month with an older month to step into.
+                // See DarkroomEmptyMonthDemoHost.
+                DarkroomEmptyMonthDemoHost()
             } else {
                 authGate
             }

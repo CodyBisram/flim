@@ -23,6 +23,13 @@ func photosNeedingSignedURL(_ photos: [Photo], cached: Set<UUID>) -> [Photo] {
     photos.filter { $0.isReady && !cached.contains($0.id) }
 }
 
+/// Whether a list copied from `PhotoService.loadedPhotos` under session `owned` may still read
+/// that shared list as its own, given the service's `current` session. Free function so the rule
+/// is testable without a live service: `nil` (never copied) never owns anything.
+func sharedListIsOwned(owned: Int?, current: Int) -> Bool {
+    owned == current
+}
+
 /// Main-actor isolated, like every service in the app.
 ///
 /// This was the one `@Observable` type in the codebase with no isolation at all. Most mutations
@@ -70,6 +77,30 @@ final class DarkroomViewModel {
     /// the real delete resolves (success or failure) or the person taps Undo.
     var pendingHiddenIds: Set<UUID> = []
 
+    /// How a page fetch ended, for a caller that has to tell "it landed" from "it did not":
+    /// `DarkroomView`'s month rung, which may only call a month empty after a fetch for it landed.
+    enum LoadOutcome: Equatable {
+        /// The response was assigned to `photos`.
+        case applied
+        /// A newer fetch reset the shared session first, or the caller's `shouldApply` refused
+        /// it. `photos` is untouched.
+        case superseded
+        /// Cancelled before it resolved. `photos` is untouched and `error` stays nil.
+        case cancelled
+        /// The request failed. `photos` is untouched and `error` says why.
+        case failed
+    }
+
+    /// The `PhotoService.loadedPhotosSession` that `photos` was last copied from, `nil` before
+    /// any copy. `PhotoService.loadedPhotos` is ONE shared list: every reset (an anchored jump, a
+    /// roll's fetch, an account reset) empties it before its request goes out, and a reset that
+    /// is then cancelled, superseded or refused never puts this screen's rows back. The develop
+    /// poll used to copy that list into `photos` whenever the ids differed, so a month jump
+    /// cancelled mid-flight emptied the Darkroom on the next poll, up to sixty seconds later,
+    /// and left "Nothing left in September." over a 121 shot month. Every read of the shared
+    /// list now checks this first; see `ownsSharedList`.
+    private var ownedSession: Int?
+
     /// Split by `isReady` (time-based), cached and recomputed only when `photos` is assigned, 
     /// not on every access. `DarkroomView.body` reads these ~8 times per evaluation and
     /// re-evaluates on scroll and on the 60s poll; as computed properties they filtered the whole
@@ -90,8 +121,22 @@ final class DarkroomViewModel {
     /// first place: only the obvious caller was ever checked, and a photo still developing (whose
     /// removal doesn't change the ready-id set `markReadyPhotos` compares) came back through that
     /// one indefinitely.
-    private func assign(_ newPhotos: [Photo]) {
+    private func assign(_ newPhotos: [Photo], session: Int) {
         photos = filterHiddenPhotos(newPhotos, hiding: pendingHiddenIds)
+        ownedSession = session
+    }
+
+    /// Whether `photoService.loadedPhotos` is still the list `photos` was copied from. See
+    /// `ownedSession`.
+    func ownsSharedList(_ photoService: PhotoService) -> Bool {
+        sharedListIsOwned(owned: ownedSession, current: photoService.loadedPhotosSession)
+    }
+
+    /// Whether this list may have another page. `PhotoService.hasMore` describes the shared
+    /// session, so it only answers for `photos` while that session is still this list's; once
+    /// another reset has taken it over the answer is "maybe", and `loadMore` resumes to find out.
+    func hasMore(_ photoService: PhotoService) -> Bool {
+        ownsSharedList(photoService) ? photoService.hasMore : true
     }
 
     private func recomputeSplits() {
@@ -118,11 +163,13 @@ final class DarkroomViewModel {
 
     // MARK: - Load
 
-    func load(photoService: PhotoService, userId: UUID) async {
+    @discardableResult
+    func load(photoService: PhotoService, userId: UUID) async -> LoadOutcome {
         await MainActor.run { isLoading = true; error = nil }
         // Fired alongside the page fetch, not after, a headless count query, so it costs
         // nothing extra to run concurrently and resolves before pagination would ever matter.
         async let count = photoService.personalPhotoCount(userId: userId)
+        var outcome = LoadOutcome.superseded
         do {
             // `applied == false` means a newer fetch (another screen's reset) superseded this
             // one while it was in flight: `loadedPhotos` is then the OTHER surface's list, and
@@ -131,14 +178,18 @@ final class DarkroomViewModel {
             let applied = try await photoService.fetchPersonalPhotos(userId: userId)
             if applied {
                 let fetched = photoService.loadedPhotos
-                await MainActor.run { assign(fetched) }
+                let session = photoService.loadedPhotosSession
+                await MainActor.run { assign(fetched, session: session) }
+                outcome = .applied
                 await markReadyPhotos(photoService: photoService)
                 await prefetchURLs(photoService: photoService)
             }
         } catch {
             // `ErrorState` shows this as is: never the raw description, and nothing at all for a
             // fetch that was cancelled rather than failed.
-            await MainActor.run { self.error = UserFacingError.messageIfNotCancelled(for: error) }
+            let message = UserFacingError.messageIfNotCancelled(for: error)
+            outcome = message == nil ? .cancelled : .failed
+            await MainActor.run { self.error = message }
         }
         let total = await count
         // A nil count is a failed round trip, not an empty library: keep the last known
@@ -148,6 +199,7 @@ final class DarkroomViewModel {
             isLoading = false
         }
         startRefreshLoop(photoService: photoService)
+        return outcome
     }
 
     /// Anchored variant of `load()`, PR 5 of the zoom redesign, revision 2: resets the personal
@@ -176,23 +228,30 @@ final class DarkroomViewModel {
     /// complete and assign its month's rows regardless (found 2026-08-25, second audit,
     /// `DarkroomView.landOnAnchorMonth`'s own doc names the exact race). Defaults to always
     /// applying, so every other caller (`DarkroomView.reload()`'s anchored branch) is unaffected.
+    @discardableResult
     func loadAnchored(photoService: PhotoService, userId: UUID, upperEdge: Date,
-                       shouldApply: () -> Bool = { true }) async {
+                       shouldApply: () -> Bool = { true }) async -> LoadOutcome {
         await MainActor.run { isLoading = true; error = nil }
+        var outcome = LoadOutcome.superseded
         do {
             // Same applied-or-superseded contract as `load()` above.
             let applied = try await photoService.fetchPersonalPhotos(userId: userId, anchoredBefore: upperEdge)
             if applied, shouldApply() {
                 let fetched = photoService.loadedPhotos
-                await MainActor.run { assign(fetched) }
+                let session = photoService.loadedPhotosSession
+                await MainActor.run { assign(fetched, session: session) }
+                outcome = .applied
                 await markReadyPhotos(photoService: photoService)
                 await prefetchURLs(photoService: photoService)
             }
         } catch {
-            await MainActor.run { self.error = UserFacingError.messageIfNotCancelled(for: error) }
+            let message = UserFacingError.messageIfNotCancelled(for: error)
+            outcome = message == nil ? .cancelled : .failed
+            await MainActor.run { self.error = message }
         }
         await MainActor.run { isLoading = false }
         if refreshTask == nil { startRefreshLoop(photoService: photoService) }
+        return outcome
     }
 
     func loadRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
@@ -202,7 +261,8 @@ final class DarkroomViewModel {
             let applied = try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
             if applied {
                 let fetched = photoService.loadedPhotos
-                await MainActor.run { assign(fetched) }
+                let session = photoService.loadedPhotosSession
+                await MainActor.run { assign(fetched, session: session) }
                 await markReadyPhotos(photoService: photoService)
                 await prefetchURLs(photoService: photoService)
             }
@@ -215,12 +275,24 @@ final class DarkroomViewModel {
     // MARK: - Pagination (load next page when the last cell appears)
 
     func loadMore(photoService: PhotoService, userId: UUID) async {
-        guard photoService.hasMore, !photoService.isLoading else { return }
+        guard !photoService.isLoading else { return }
+        // The shared session is still this list's: continue its cursor, as always. Once another
+        // reset has taken it over (see `ownedSession`), continuing would page the OTHER session's
+        // cursor and hand back its rows as this list, so resume from this list's own oldest row
+        // instead, which also makes the session this list's again.
+        let applied: Bool?
+        if ownsSharedList(photoService) {
+            guard photoService.hasMore else { return }
+            applied = try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)
+        } else {
+            applied = try? await photoService.resumePersonalPhotos(userId: userId, keeping: photos)
+        }
         // `== true` and not `!= false`: a thrown fetch (`try?` nil) and a superseded fetch both
         // mean `loadedPhotos` is not this call's result; see `load()`.
-        guard (try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)) == true else { return }
+        guard applied == true else { return }
         let fetched = photoService.loadedPhotos
-        await MainActor.run { assign(fetched) }
+        let session = photoService.loadedPhotosSession
+        await MainActor.run { assign(fetched, session: session) }
         await markReadyPhotos(photoService: photoService)
         // One batched call for the whole new page, same as `load()`. Without this, every cell in
         // pages 2+ minted its own signed URL on `onFrameAppear` one round trip at a time, so
@@ -234,7 +306,8 @@ final class DarkroomViewModel {
         guard photoService.hasMore, !photoService.isLoading else { return }
         guard (try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)) == true else { return }
         let fetched = photoService.loadedPhotos
-        await MainActor.run { assign(fetched) }
+        let session = photoService.loadedPhotosSession
+        await MainActor.run { assign(fetched, session: session) }
         await markReadyPhotos(photoService: photoService)
     }
 
@@ -290,8 +363,21 @@ final class DarkroomViewModel {
 
     private func markReadyPhotos(photoService: PhotoService, notify: Bool = false) async {
         let before = developedPhotos.count
+        // The shared list is someone else's now (see `ownedSession`): never copy it in. Readiness
+        // is time-based, so a shot crossing its develop time still moves buckets from this list
+        // alone; the server's `is_developed` flag catches up on the next fetch this list owns.
+        guard ownsSharedList(photoService) else {
+            markReadyLocally(notify: notify, before: before)
+            return
+        }
         await photoService.markDevelopedIfReady()
+        // Re-checked past the await: a reset can land while the flag write is in flight.
+        guard ownsSharedList(photoService) else {
+            markReadyLocally(notify: notify, before: before)
+            return
+        }
         let fetched = photoService.loadedPhotos
+        let session = photoService.loadedPhotosSession
         // Only reassign when something actually changed. The 60s poll otherwise replaced the
         // entire `photos` array every minute even when nothing had developed, and because the
         // array backs the grid's ForEach, that re-diffed the whole grid (and, now, recomputed the
@@ -308,11 +394,25 @@ final class DarkroomViewModel {
         let fetchedIds = Set(fetched.map(\.id))
         let currentIds = Set(photos.map(\.id))
         guard fetchedReadyIds != currentReadyIds || fetchedIds != currentIds else { return }
-        await MainActor.run { assign(fetched) }
+        await MainActor.run { assign(fetched, session: session) }
         // Celebrate photos that develop while you're watching (not on initial load).
         if notify, developedPhotos.count > before {
             await MainActor.run { Haptics.reveal() }
         }
+    }
+
+    /// `markReadyPhotos` for a list that no longer owns the shared one: flags the shots whose
+    /// develop time has passed as developed on this list itself, and only when the ready set
+    /// actually changed, the same "reassign only on a real change" rule as the shared path.
+    private func markReadyLocally(notify: Bool, before: Int) {
+        let readyIds = Set(photos.filter(\.isReady).map(\.id))
+        guard readyIds != Set(developedPhotos.map(\.id)) else { return }
+        photos = photos.map { photo in
+            var updated = photo
+            if updated.isReady { updated.isDeveloped = true }
+            return updated
+        }
+        if notify, developedPhotos.count > before { Haptics.reveal() }
     }
 
     // Polls every 60s to reveal newly developed photos.
