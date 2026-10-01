@@ -38,7 +38,8 @@ struct FeedView: View {
     @State private var prefetchedThrough = 0
     @State private var showDiscover = false
     @State private var showActivity = false
-    @State private var myAvatarURL: URL?
+    /// The header avatar's signed URL, paired with the path it was signed for. See `SignedPath`.
+    @State private var myAvatar: SignedPath?
     @State private var hasNewPosts = false
     /// The part of `hasNewPosts` the tab dot may use: a newer post by someone else, not
     /// already loaded and not already seen. Your own post also brings up "New posts" (page one
@@ -364,7 +365,7 @@ struct FeedView: View {
             // offers the invite. Cheap enough to ride the existing appear rather than earn a
             // task of its own.
             inviteQuota = await auth.ownInviteQuota()
-            if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
+            if let path = auth.currentUser?.avatarPath { myAvatar = await SignedPath.sign(path) { await feed.signedURL(for: $0) } }
             // The account's seen-marks must be here before the first snapshot; see
             // `FeedSeenStore.awaitPull`.
             if !ledgerSnapshotted { await seenStore.awaitPull() }
@@ -522,24 +523,34 @@ struct FeedView: View {
                 }
             }
 
-            // Your avatar → your own page; also where an unseen badge gets flagged.
+            // Your avatar → your own page; also where an unseen badge gets flagged. The same 44pt
+            // circle as the bell and Find friends beside it (2026-10-01, owner): three equal
+            // circles read as one row, and 34 was under the 44pt touch minimum. A photo with an
+            // accent ring rather than glass, so it still reads as you, not as a control.
             if let uid = auth.currentUser?.id {
                 NavigationLink {
                     UserPageView(userId: uid)
                 } label: {
                     Circle()
                         .fill(accent.opacity(0.18))
-                        .frame(width: 34, height: 34)
+                        .frame(width: GlassIconSize.regular.diameter, height: GlassIconSize.regular.diameter)
                         .overlay {
-                            if let myAvatarURL {
-                                CachedImage(url: myAvatarURL, maxPixel: 100, cacheKey: auth.currentUser?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                            if let myAvatar {
+                                CachedImage(url: myAvatar.url, maxPixel: 100, cacheKey: myAvatar.path) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                             } else {
                                 Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                    .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
+                                    .flimFont(18, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
                             }
                         }
                         .clipShape(Circle())
                         .overlay(Circle().stroke(accent.opacity(0.4), lineWidth: 1))
+                        // A launch from the cached profile can hold an old path until the resync
+                        // lands; re-sign for the new one rather than keep showing the old picture.
+                        .onChange(of: auth.currentUser?.avatarPath) { _, path in
+                            Task {
+                                myAvatar = if let path { await SignedPath.sign(path) { await feed.signedURL(for: $0) } } else { nil }
+                            }
+                        }
                         .overlay(alignment: .topTrailing) {
                             if feed.unseenBadgeCount > 0 {
                                 // Accent, like the bell's dot beside it: one kind of dot.
@@ -935,7 +946,7 @@ struct FeedView: View {
         async let badgeTask: Void = feed.refreshUnseenBadgeCount()
         // The own-post menu's Spotlight state: refetched on every reload.
         async let spotlightOwnTask: Void = feed.refreshOwnSpotlight(userId: uid)
-        if let resolved = await avatarTask { myAvatarURL = resolved }
+        if let resolved = await avatarTask { myAvatar = resolved }
         let unreadCount = await unreadTask
         // The same watermark check `refreshUnreadActivity` makes: Activity opened during the
         // round trip zeroed the count and moved the mark, and this answer, counted from the old
@@ -951,12 +962,12 @@ struct FeedView: View {
 
     /// `nil` when there's no avatar path to resolve at all (skip the assignment in `reload()`
     /// entirely, keep-last-known); `.some(possiblyNil)` when a path existed and a fetch was
-    /// attempted, matching `reload()`'s original `if let path { myAvatarURL = await ... }` shape
-    /// exactly: a path that resolves to no URL still overwrites `myAvatarURL`, only a MISSING path
+    /// attempted, matching `reload()`'s original `if let path { myAvatar = await ... }` shape
+    /// exactly: a path that resolves to no URL still overwrites `myAvatar`, only a MISSING path
     /// leaves it alone.
-    private func resolveAvatarURL() async -> URL?? {
+    private func resolveAvatarURL() async -> SignedPath?? {
         guard let path = auth.currentUser?.avatarPath else { return nil }
-        return await feed.signedURL(for: path)
+        return .some(await SignedPath.sign(path) { await feed.signedURL(for: $0) })
     }
 
     /// The load-time snapshot: runs the backlog seed, rebuilds the units, and places the
@@ -1226,5 +1237,20 @@ struct FeedUnitSkeleton: View {
             .frame(width: width, height: height)
             .opacity(breathing ? 1 : 0.5)
             .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: breathing)
+    }
+}
+
+/// A signed URL together with the storage path it was signed for. The image cache files bytes
+/// under whatever key it is handed and never checks them (see `ImageLoader`), so the key must be
+/// the path the URL actually points at. Keyed by the profile's CURRENT path instead, a URL signed
+/// for the old avatar could be fetched under the new avatar's key (a cached launch before its
+/// resync, an avatar changed on another phone) and show the old picture for good.
+struct SignedPath: Equatable {
+    let path: String
+    let url: URL
+
+    static func sign(_ path: String, _ signer: (String) async -> URL?) async -> SignedPath? {
+        guard let url = await signer(path) else { return nil }
+        return SignedPath(path: path, url: url)
     }
 }

@@ -129,7 +129,10 @@ struct FeedUnitCard: View {
     /// The card came on screen while marking was held shut (a reload between its start and its
     /// snapshot). Without this, a card scrolled past in that window was never marked: by the
     /// time the gate reopened it was off screen, and `maybeMarkReached` asks for both.
-    @State private var sawWhileGated = false
+    /// The shots this card held when it was on screen with marking shut: only these are marked
+    /// when the gate reopens. A reload landing in between can add shots to the unit, and those
+    /// were never on screen.
+    @State private var seenWhileGated: Set<UUID> = []
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
          markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
@@ -226,7 +229,7 @@ struct FeedUnitCard: View {
                 // Set from a visibility event only, never from the gate closing on a card
                 // already up: the gate also closes while another tab is in front, and a card
                 // pushed off screen there was never looked at.
-                if !markingEnabled { sawWhileGated = true }
+                if !markingEnabled { seenWhileGated.formUnion(unit.items.map(\.post.id)) }
             } else {
                 newThisLook = []; arrivedThisLook = []; lookStartedAt = nil
             }
@@ -240,8 +243,8 @@ struct FeedUnitCard: View {
         // lands under a seam already placed from what was unseen at load.
         .onChange(of: markingEnabled) {
             guard markingEnabled else { return }
-            if sawWhileGated, !isVisible { seenStore.markSeen(unit.items.map(\.post.id)) }
-            sawWhileGated = false
+            if !seenWhileGated.isEmpty, !isVisible { seenStore.markSeen(Array(seenWhileGated)) }
+            seenWhileGated = []
             maybeMarkReached()
         }
         // A look ends when the app leaves the foreground, not only when the card scrolls away:

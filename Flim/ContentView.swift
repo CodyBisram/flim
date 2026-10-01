@@ -131,10 +131,10 @@ struct ContentView: View {
         // Runs once per distinct account, including the one already present at first render (a
         // launch from the cached profile, C-6, sets `currentUser` before this view draws). Without
         // that a warm relaunch activated nothing per account: the seen store stayed signed out
-        // (every card "N new", nothing marked), usage went unlogged, rolls were not restored,
-        // pending captures never came back, the device token was not reclaimed. The activated
-        // account is held for the process, so a rebuilt scene never re-runs this for the same
-        // account. See `AccountScopeHook`.
+        // (every card "N new", nothing marked), first-time events stayed queued, rolls were not
+        // restored, pending captures never came back, the device token was not reclaimed. The
+        // activated account is held for the process, so a rebuilt scene never re-runs this for
+        // the same account. See `AccountScopeHook`.
         .modifier(AccountScopeHook(accountId: auth.currentUser?.id) { previousId, newId in
             // Before any cache reset below: a pending undoable action belongs to the departing
             // account and its commit closure captures that account's ids, so it commits now,
@@ -191,10 +191,10 @@ struct ContentView: View {
             }
         })
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
-            // Sign-out posts this. currentUser goes to nil, which the hook above also catches,
-            // but the notification covers the case where sign-out fails partway and leaves the
-            // profile untouched. Always an actual departure, so always clear the departing
-            // account's reminders and Live Activities, not just the caches.
+            // Sign-out posts this. currentUser goes to nil (signOut's `defer` always clears it),
+            // which the hook above also catches; the notification is the explicit departure, so
+            // always clear the departing account's reminders and Live Activities, not just the
+            // caches.
             AccountScopeHook.activatedAccountId = nil
             photos.resetForAccountChange()
             feed.resetForAccountChange()

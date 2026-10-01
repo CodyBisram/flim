@@ -379,7 +379,9 @@ struct EditProfileView: View {
     @Environment(PhotoService.self) private var photos
     @Environment(\.dismiss) private var dismiss
 
-    @State private var avatarURL: URL?
+    /// The avatar's signed URL with the path it was signed for, so the cache key always names the
+    /// file the URL points at. See `SignedPath`.
+    @State private var avatar: SignedPath?
     /// Surfaced when an avatar or cover change fails. Those calls return Bool precisely so this
     /// can be reported, and for a while nothing read the result.
     @State private var photoError: String?
@@ -532,8 +534,8 @@ struct EditProfileView: View {
                 .fill(accent.opacity(0.18))
                 .frame(width: 96, height: 96)
                 .overlay {
-                    if let avatarURL {
-                        CachedImage(url: avatarURL, maxPixel: 220, cacheKey: auth.currentUser?.avatarPath) { image in
+                    if let avatar {
+                        CachedImage(url: avatar.url, maxPixel: 220, cacheKey: avatar.path) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
                             Color.clear
@@ -580,9 +582,9 @@ struct EditProfileView: View {
 
     private func refreshAvatar() async {
         if let path = auth.currentUser?.avatarPath {
-            avatarURL = try? await photos.signedURL(for: path)
+            avatar = await SignedPath.sign(path) { try? await photos.signedURL(for: $0) }
         } else {
-            avatarURL = nil
+            avatar = nil
         }
     }
 }

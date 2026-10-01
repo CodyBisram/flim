@@ -144,13 +144,15 @@ does not talk about ratings).
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    Three new badges. Recruiter, for when three people you invited are still shooting a month later. Feedback, when something you told us changed FLIM. Bug Catcher, when you found a bug and it got fixed. The last two are given by Cody.
+    Three new badges. Recruiter, for when three people you invited are still shooting a month later. Feedback, when something you told us changed FLIM. Bug Catcher, when you found a bug and it got fixed. The team at FLIM gives you the last two.
 
     FLIM works without a connection. Open it in the subway or on a plane and you land in your own account with the camera ready; your shots queue and go up on their own when you're back online, and the feed, Darkroom and rolls fill in without a relaunch.
 
-    A cleaner look on iOS 26. Sheets, buttons, toasts and the tab bar use the system's glass; the tab bar tucks away while you scroll; every floating button is the same size and shape. On iOS 18 everything stays as it was.
+    Posts you have read stay read. The feed no longer marks a day as new after you have looked at it, and a post you open from a notification or Activity counts as seen.
 
-    Fixes. Every notice in the app is one consistent capsule with its own sound. A member number is no longer shown on an account that has none. Flip camera has a clearer icon. Invite links opened while you're already signed in say so instead of doing nothing.
+    A cleaner look. On iOS 26, sheets, buttons, toasts and the tab bar use the system's glass. On every phone, the buttons at the top of the screen are the same size and shape, and the Feed tab has a new icon.
+
+    Fixes. Every notice in the app is one consistent capsule with its own feel. Flip camera has a clearer icon. Invite links opened while you're already signed in say so instead of doing nothing.
 
 ### Ship notes (internal, do NOT paste)
 
@@ -752,6 +754,13 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 - One-way social graph (follows) is optional; blocking is bidirectional and RLS-enforced.
 
 **Not collected:** Location, contacts, browsing history, purchases, health data, search history, financial information, precise location.
+
+**Time zone (1.6.2, owner decision 2026-10-01):** the phone's IANA time zone setting is stored on
+`client_versions.timezone` (linked to the account, overwritten each launch) to answer "roughly
+where are people". Treated as a device setting, not Location: it is not read through location
+services and is not derived from the IP address, so the App Privacy label stays "Location: not
+collected". Disclosed on the privacy page (web/privacy.html, "Your app version and your phone's
+time zone setting"). Revisit if Apple's review or guidance says otherwise.
 
 **Privacy controls in-app:** Users can block others (bidirectional), report photos/posts/users for moderation review, delete their own photos, and delete their account (cascades to all their content).
 
