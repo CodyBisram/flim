@@ -100,18 +100,19 @@ struct SilverTrioBadgeTests {
     func copy() {
         let app = AppInfo.appName
         #expect(ProfileBadgeKind.recruiter.explanation == "Three people you invited still shoot a month later.")
-        #expect(ProfileBadgeKind.feedback.explanation == "What you told us changed \(app). Given by Cody.")
-        #expect(ProfileBadgeKind.bugCatcher.explanation == "You found a bug, and it got fixed. Given by Cody.")
+        #expect(ProfileBadgeKind.feedback.explanation == "Your feedback changed \(app).")
+        #expect(ProfileBadgeKind.bugCatcher.explanation == "You found a bug, and it got fixed.")
         #expect(ProfileBadgeKind.recruiter.howToEarn == "Invite people who stay: three still shooting a month after they join.")
         #expect(ProfileBadgeKind.feedback.howToEarn == "Use Send feedback in Settings. When it changes \(app), the team gives you this.")
         #expect(ProfileBadgeKind.bugCatcher.howToEarn == "Report a bug with Send feedback in Settings. When it is fixed, the team gives you this.")
     }
 
-    @Test("\"Given by Cody\" is on the two hand-given badges and nowhere else")
-    func givenByCody() {
+    @Test("the hand-given badges say who gives them in how-to-earn, and no badge names a person")
+    func handGivenCredit() {
         for kind in ProfileBadgeKind.allCases {
-            let hasLine = kind.explanation.contains("Given by Cody.")
-            #expect(hasLine == (kind == .feedback || kind == .bugCatcher), "\(kind)")
+            let credited = kind.howToEarn.contains("the team gives you this.")
+            #expect(credited == (kind == .feedback || kind == .bugCatcher), "\(kind)")
+            #expect(!kind.explanation.contains("Cody") && !kind.howToEarn.contains("Cody"), "\(kind)")
         }
     }
 

@@ -352,18 +352,18 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Ten people follow you."
         case .spotlight:
             return "One of your frames was in Spotlight."
-        // Recruiter and Feedback are each a few words shorter than the 1.6.2 plan's table ("Three
-        // people you invited are still shooting a month later.", "Something you told us changed
-        // FLIM. Given by Cody."): as written they measured 361pt and 344pt against the 337pt the
+        // Recruiter is a few words shorter than the 1.6.2 plan's table ("Three people you invited
+        // are still shooting a month later."): as written it measured 361pt against the 337pt the
         // swap-in line has, see `BadgeSwapLineTests.explanationsFitOneLine`.
         case .recruiter:
             return "Three people you invited still shoot a month later."
-        // "Given by Cody" names the owner rather than `AppInfo.appName` on purpose: it is his
-        // thank-you. Only the two hand-given badges carry it.
+        // The two hand-given badges say what happened and stop (owner, 2026-10-01). Who gives them
+        // is in `howToEarn` ("the team gives you this"); "Given by Cody." was dropped here, and
+        // "Given by the team at FLIM." did not fit the one line this has.
         case .feedback:
-            return "What you told us changed \(AppInfo.appName). Given by Cody."
+            return "Your feedback changed \(AppInfo.appName)."
         case .bugCatcher:
-            return "You found a bug, and it got fixed. Given by Cody."
+            return "You found a bug, and it got fixed."
         }
     }
 

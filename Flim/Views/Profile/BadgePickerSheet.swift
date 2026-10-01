@@ -781,8 +781,8 @@ private struct BadgePickerContent: View {
 
 #Preview("Locked catalog: earned above, the rest locked below") {
     // `badgePickerPreviewBadges` holds 12 of the catalog cases, so the rest that are still
-    // earnable (including the 1.6.2 silver trio, Feedback and Bug Catcher with their "Cody gives
-    // you this" rows) render locked underneath: a real mix of selectable and not, exactly what
+    // earnable (including the 1.6.2 silver trio, Feedback and Bug Catcher with their "the team
+    // gives you this" rows) render locked underneath: a real mix of selectable and not, exactly what
     // this screen looks like for most accounts.
     BadgePickerContentPreview(badges: badgePickerPreviewBadges, initialSelection: nil)
 }
