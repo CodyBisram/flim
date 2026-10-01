@@ -154,9 +154,13 @@ does not talk about ratings).
 
     Fixes. Every notice in the app is one consistent capsule with its own feel. Flip camera has a clearer icon. Invite links opened while you're already signed in say so instead of doing nothing.
 
+**Promotional text for the 1.6.2 window** (165 / 170; editable any time without review):
+
+    Three new badges, a camera that works without a connection, and a feed that remembers what you've seen. Plus Spotlight: put up one frame a week for the team at FLIM.
+
 ### Ship notes (internal, do NOT paste)
 
-Submit the build that includes the 2026-09-30 audit fixes. After submitting, start the review
+Submit build 424 (0fbfc14). After submitting, start the review
 watch: `gh workflow run asc-watch.yml -f version=1.6.2`. When it is live:
 `update app_release_gate set latest_version = '1.6.2';`. Hold hand-given badge awards for people
 still on 1.6.0 or 1.6.1 until they update (an unknown badge lit "New badge to see" on those builds).
