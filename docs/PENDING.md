@@ -2240,6 +2240,10 @@ On device:
     the camera's timer and roll picker; an invite link opened while signed in shows "You're
     already on FLIM. Invite links are for someone new."; offline, a failed reaction still buzzes;
     a VoiceOver notice is read once; after a reveal abandoned at frame 2, no rating card.
+14. Build 426: a developed roll's screen has one left edge, and "Start another" sits on the
+    DEVELOPED row (tap it: the follow-up sheet opens). The Darkroom with an empty current month
+    opens on the newest month with shots, the same way every time (switch tabs a few times);
+    zoom to an empty month: one quiet line under the header and the next month as a heading row.
 13. Darkroom (build 425): today (October, empty) reads "Nothing left in October." with
     September as its own heading row well below it. Tap it: September's nights load. On Year,
     tap an older month and zoom out mid-load, go back to a loaded month, wait 70 seconds: the
