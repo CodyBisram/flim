@@ -488,20 +488,22 @@ struct FeedView: View {
                         // signal for next time instead of silently consuming it.
                         showActivity = true
                     } label: {
-                        // One signal, the app's own: a plain bell and an accent dot, the same dot as
-                        // the avatar beside it. It used to be `bell.badge` AND a red "9+" capsule, two
-                        // badges on one control, in a color nothing else here uses (audit D-22, 1.6.1).
-                        // The count still reads out to VoiceOver, as the value below.
+                        // One signal: the accent bell and a red dot (owner, 2026-10-02). The dot was the
+                        // accent, the same as the avatar's, but an accent dot on an accent bell
+                        // disappeared into it, and red is the dot everyone already reads as "new".
+                        // Still ONE badge, no count capsule beside it (audit D-22, 1.6.1, retired
+                        // `bell.badge` plus a red "9+" capsule). The count reads out to VoiceOver,
+                        // as the value below.
                         Image(systemName: "bell")
                             .foregroundStyle(accent)
                             .flimSymbolBounce(value: unreadActivity)
                             .overlay(alignment: .topTrailing) {
                                 if unreadActivity > 0 {
                                     Circle()
-                                        .fill(accent)
-                                        .frame(width: 7, height: 7)
-                                        .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
-                                        .offset(x: 2, y: -1)
+                                        .fill(Color.red)
+                                        .frame(width: 9, height: 9)
+                                        .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
+                                        .offset(x: 3, y: -2)
                                         .transition(.scale.combined(with: .opacity))
                                 }
                             }
@@ -553,9 +555,10 @@ struct FeedView: View {
                         }
                         .overlay(alignment: .topTrailing) {
                             if feed.unseenBadgeCount > 0 {
-                                // Accent, like the bell's dot beside it: one kind of dot.
+                                // Red, like the bell's dot beside it and the tab bar's: one kind of
+                                // dot for "something new" across the app (owner, 2026-10-02).
                                 Circle()
-                                    .fill(accent)
+                                    .fill(Color.red)
                                     .frame(width: 11, height: 11)
                                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
                             }
