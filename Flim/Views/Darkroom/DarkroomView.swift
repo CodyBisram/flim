@@ -1719,15 +1719,21 @@ Text("Darkroom")
         anchorFetchOutcomes[key] = DarkroomMonthBodyRule.merged(existing: anchorFetchOutcomes[key], new: outcome)
     }
 
-    /// Resolves the entry rung and anchor once, from `.onAppear`. Cold launch (the `-1` sentinel)
-    /// starts the anchor at the current month; the quiet-month fallback (stepping back to the
-    /// newest month that actually has photos) needs data that isn't loaded yet, and is applied
-    /// once `reload()`'s fetches land, see `applyColdLaunchAnchorIfNeeded`. A warm return decodes
-    /// the stored anchor directly, garbage falling back to the current month.
+    /// Resolves the entry rung and anchor from `.onAppear`, through the same rule the reload
+    /// applies when it lands (`DarkroomAnchorResolution.entryAnchor`), from whatever summaries
+    /// and rows are already in hand: a return visit opens straight on the right month instead of
+    /// on the current month and then moving. On the very first appear nothing is known yet, the
+    /// anchor starts at the current month under the loading state, and
+    /// `applyColdLaunchAnchorIfNeeded` settles it once the summaries land.
     private func resolveInitialZoomAndAnchor() {
         zoom = DarkroomZoom.resolveEntry(storedRung: storedRung)
-        let currentMonth = DarkroomYearMonth(date: .now)
-        anchor = storedRung == -1 ? currentMonth : DarkroomAnchorCoding.decode(storedAnchor, fallback: currentMonth)
+        anchor = DarkroomAnchorResolution.entryAnchor(
+            storedRung: storedRung,
+            storedAnchor: storedAnchor,
+            currentMonth: DarkroomYearMonth(date: .now),
+            summaries: monthSummaries,
+            loadedMonths: dayUnits.map { DarkroomYearMonth(date: $0.dayKey) }
+        )
     }
 
     /// The other half of `resolveInitialZoomAndAnchor`: only meaningful on a genuine cold launch

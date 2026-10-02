@@ -48,6 +48,32 @@ enum DarkroomAnchorCoding {
 /// Cold-launch anchor resolution: the current month, or, when it's positively known to hold no
 /// kept photos, the newest month that does.
 enum DarkroomAnchorResolution {
+    /// The anchor the `.month` rung opens on, every time the Darkroom appears. A scene that has
+    /// never changed rungs (the `-1` sentinel) opens on the newest month with shots (owner,
+    /// 2026-10-02), decided by `coldLaunchAnchor` from whatever is already known: the summaries
+    /// once they have answered, otherwise the loaded months, otherwise the current month while
+    /// the first load is still out (the month body shows its loading state until the summaries
+    /// land, see `DarkroomMonthBodyRule`). A scene that has changed rungs reopens on its stored
+    /// anchor, garbage falling back to the current month.
+    ///
+    /// The same function `applyColdLaunchAnchorIfNeeded` runs once a reload lands, so an appear
+    /// and the reload after it can only disagree if the data itself changed. Before this, every
+    /// appear reset the anchor to the current month and the reload moved it back to the newest
+    /// month with shots, so an account whose current month was empty showed one or the other
+    /// depending on timing (build 425: October only after switching tabs).
+    static func entryAnchor(
+        storedRung: Int,
+        storedAnchor: String,
+        currentMonth: DarkroomYearMonth,
+        summaries: [DarkroomMonthSummaryV2]?,
+        loadedMonths: [DarkroomYearMonth],
+        calendar: Calendar = .current
+    ) -> DarkroomYearMonth {
+        guard storedRung == -1 else { return DarkroomAnchorCoding.decode(storedAnchor, fallback: currentMonth) }
+        return coldLaunchAnchor(currentMonth: currentMonth, summaries: summaries,
+                                loadedMonths: loadedMonths, calendar: calendar)
+    }
+
     /// `summaries` is the server truth once it has answered; `loadedMonths` (whatever's already
     /// in the loaded page) is the only fallback before it has, or if it never does. A `nil`
     /// summaries array (RPC not reachable yet) never counts as "the current month is empty" —

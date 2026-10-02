@@ -107,6 +107,48 @@ final class DarkroomZoomTests: XCTestCase {
         XCTAssertEqual(resolved, DarkroomYearMonth(year: 2026, month: 7))
     }
 
+    // MARK: - Entry anchor (every appear)
+
+    /// The owner's account shape on 2026-10-02: nothing in October, two shots in September. A
+    /// fresh scene must open on September on EVERY appear once anything is known, not on October
+    /// first and September after the reload (build 425 flipped between the two).
+    func testEntryAnchorOpensOnNewestMonthWithShotsWhenCurrentIsEmpty() {
+        let october = DarkroomYearMonth(year: 2026, month: 10)
+        let summaries = [summary(2026, 9, shots: 2, nights: 1), summary(2026, 8, shots: 7, nights: 3)]
+        let first = DarkroomAnchorResolution.entryAnchor(storedRung: -1, storedAnchor: "", currentMonth: october,
+                                                         summaries: summaries, loadedMonths: [], calendar: calendar)
+        XCTAssertEqual(first, DarkroomYearMonth(year: 2026, month: 9))
+        // The reload that follows resolves the same way from the same data: no flip.
+        XCTAssertEqual(DarkroomAnchorResolution.coldLaunchAnchor(currentMonth: october, summaries: summaries,
+                                                                 loadedMonths: [], calendar: calendar), first)
+    }
+
+    /// Before anything has loaded, the current month is the placeholder (the body shows its
+    /// loading state, never "Nothing left", while the summaries are out).
+    func testEntryAnchorStartsOnCurrentMonthWhenNothingIsKnownYet() {
+        let october = DarkroomYearMonth(year: 2026, month: 10)
+        XCTAssertEqual(DarkroomAnchorResolution.entryAnchor(storedRung: -1, storedAnchor: "", currentMonth: october,
+                                                            summaries: nil, loadedMonths: [], calendar: calendar), october)
+    }
+
+    /// A current month with shots opens on itself.
+    func testEntryAnchorStaysOnCurrentMonthWithShots() {
+        let october = DarkroomYearMonth(year: 2026, month: 10)
+        let summaries = [summary(2026, 10, shots: 3, nights: 1), summary(2026, 9, shots: 121, nights: 18)]
+        XCTAssertEqual(DarkroomAnchorResolution.entryAnchor(storedRung: -1, storedAnchor: "", currentMonth: october,
+                                                            summaries: summaries, loadedMonths: [], calendar: calendar), october)
+    }
+
+    /// Someone who changed rungs reopens where they were, whatever the summaries say.
+    func testEntryAnchorRestoresStoredAnchorAfterARungChange() {
+        let october = DarkroomYearMonth(year: 2026, month: 10)
+        let summaries = [summary(2026, 9, shots: 2, nights: 1)]
+        XCTAssertEqual(DarkroomAnchorResolution.entryAnchor(storedRung: DarkroomZoom.year.rawValue, storedAnchor: "2026-07",
+                                                            currentMonth: october, summaries: summaries, loadedMonths: [],
+                                                            calendar: calendar),
+                       DarkroomYearMonth(year: 2026, month: 7))
+    }
+
     /// Nothing known at all (no summaries, nothing loaded): the current month is still the only
     /// honest answer to land on.
     func testColdLaunchAnchorFallsBackToCurrentMonthWhenNothingIsKnown() {
