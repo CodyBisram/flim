@@ -119,6 +119,8 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "founding-seats": foundingSeatsCohort,
   "founding-seats-inviters-preview": foundingSeatsInvitersPreviewCohort,
   "founding-seats-inviters": foundingSeatsInvitersCohort,
+  "spotlight-weekend": spotlightWeekendCohort,
+  "spotlight-weekend-update": spotlightWeekendUpdateCohort,
 };
 
 /// Founding 100 is running out (2026-09-25: 24 seats, about four a week). The badge is the one
@@ -658,6 +660,69 @@ async function update16Cohort(): Promise<Recipient[]> {
     .filter((u) => u.username !== "cody" && u.username !== "applereview")
     .filter((u) => versionBelow(versionOf.get(u.id), "1.6.0"))
     .map((u) => ({ userId: u.id, title: UPDATE_16_TITLE, body: UPDATE_16_BODY, route: { t: "feed" } }));
+}
+
+// ------------------------------------------------------------
+// spotlight-weekend (2026-10-02, a Friday evening, the owner's copy): to everyone reachable on
+// 1.6 or later who has not put a frame up for the current Spotlight week. The tap opens the
+// camera, which is what "Take FLIM with you" asks for. spotlight-weekend-update: the same title
+// to everyone reachable still below 1.6, where Spotlight does not exist; the tap opens the app,
+// where the update prompt (`app_release_gate.latest_version`, 1.6.1) takes them to the App Store,
+// the same path update-1.6 used.
+
+const SPOTLIGHT_WEEKEND_TITLE = "Weekend plans?";
+const SPOTLIGHT_WEEKEND_BODY = `Take ${APP_NAME} with you. One frame from tonight could go up for Spotlight.`;
+const SPOTLIGHT_WEEKEND_UPDATE_BODY = `Update ${APP_NAME} to put a frame up for Spotlight.`;
+
+/// The current Spotlight week's key, the same rule as `public.spotlight_week_key`: weeks start
+/// Monday 04:00 America/New_York, keyed by that Monday's date ("2026-09-28").
+function currentSpotlightWeekKey(now = new Date()): string {
+  const shifted = new Date(now.getTime() - 4 * 3600 * 1000);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", weekday: "short",
+  }).formatToParts(shifted);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const dow = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(get("weekday"));
+  const monday = new Date(Date.UTC(+get("year"), +get("month") - 1, +get("day") - dow));
+  return monday.toISOString().slice(0, 10);
+}
+
+async function versionsByUser(): Promise<Map<string, string>> {
+  const { data, error } = await supabase.from("client_versions").select("user_id, version");
+  // A failed read must not read as "nobody has updated" and push the wrong copy to everyone.
+  if (error) throw new Error(`client_versions read failed: ${error.message}`);
+  return new Map(((data ?? []) as { user_id: string; version: string }[]).map((r) => [r.user_id, r.version]));
+}
+
+async function reachableNamedUsers(): Promise<{ id: string; username: string }[]> {
+  const reachable = await reachableUsers();
+  const { data, error } = await supabase.from("users").select("id, username").in("id", reachable);
+  if (error) throw new Error(`users read failed: ${error.message}`);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => u.username !== "cody" && u.username !== "applereview");
+}
+
+async function spotlightWeekendCohort(): Promise<Recipient[]> {
+  const week = currentSpotlightWeekKey();
+  const versionOf = await versionsByUser();
+  const { data: entries, error } = await supabase
+    .from("spotlight_entries").select("user_id").eq("week_key", week).is("removed_at", null);
+  // A failed read must not read as "nobody has put one up" and nag the people who have.
+  if (error) throw new Error(`spotlight_entries read failed: ${error.message}`);
+  const entered = new Set(((entries ?? []) as { user_id: string }[]).map((e) => e.user_id));
+  return (await reachableNamedUsers())
+    .filter((u) => !versionBelow(versionOf.get(u.id), "1.6.0"))
+    .filter((u) => !entered.has(u.id))
+    .map((u) => ({ userId: u.id, title: SPOTLIGHT_WEEKEND_TITLE, body: SPOTLIGHT_WEEKEND_BODY,
+                   route: { t: "camera" } }));
+}
+
+async function spotlightWeekendUpdateCohort(): Promise<Recipient[]> {
+  const versionOf = await versionsByUser();
+  return (await reachableNamedUsers())
+    .filter((u) => versionBelow(versionOf.get(u.id), "1.6.0"))
+    .map((u) => ({ userId: u.id, title: SPOTLIGHT_WEEKEND_TITLE, body: SPOTLIGHT_WEEKEND_UPDATE_BODY,
+                   route: { t: "feed" } }));
 }
 
 // ------------------------------------------------------------
