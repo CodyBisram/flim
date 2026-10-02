@@ -56,6 +56,9 @@ struct ContentView: View {
                 // The Darkroom's month rung on an empty month with an older month to step into.
                 // See DarkroomEmptyMonthDemoHost.
                 DarkroomEmptyMonthDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-rollDetailDemo") {
+                // A developed roll's detail screen on fixture frames. See RollDetailDemoHost.
+                RollDetailDemoHost()
             } else {
                 authGate
             }

@@ -194,6 +194,11 @@ struct RollDetailView: View {
     /// consumes an entry whose `rollId` matches its own `roll.id`, and nils it the instant it does,
     /// so a later push for some OTHER roll finds it still there for that roll's own instance.
     var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
+    #if DEBUG
+    /// `-rollDetailDemo` only: fixture frames shown in place of the network load, so the screen
+    /// can be looked at without an account. See `RollDetailDemoHost`.
+    var demoFixture: RollDetailDemoFixture? = nil
+    #endif
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rollService
     @Environment(TabSignals.self) private var signals
@@ -324,7 +329,7 @@ struct RollDetailView: View {
                         .imageScale(.small)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, Self.edge)
                         .padding(.bottom, 8)
                 }
 
@@ -363,7 +368,7 @@ struct RollDetailView: View {
                             .padding(.vertical, 13)
                             .background(accent, in: Capsule())
                     }
-                    .padding(.horizontal, 16).padding(.bottom, 6)
+                    .padding(.horizontal, Self.edge).padding(.bottom, 6)
                 }
 
                 Group {
@@ -399,26 +404,30 @@ struct RollDetailView: View {
                                     photoGrid(vm.developingPhotos, triggersLoadMore: false)
                                 }
                                 if !vm.developedPhotos.isEmpty {
-                                    sectionHeader("DEVELOPED")
                                     // Visible, not only in the overflow menu and the reveal's
                                     // closing card: a member who missed the ceremony can still
                                     // restart the group. Everyone is invited, nobody is added
                                     // (engineering audit, 2026-09-19; no follow-up roll had ever
-                                    // been started).
-                                    Button {
-                                        Haptics.tap()
-                                        showFollowUp = true
-                                    } label: {
-                                        Label("Start another with this group", systemImage: "plus.square.on.square")
-                                            .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                                            .foregroundStyle(accent)
-                                            .padding(.horizontal, 16)
-                                            .frame(minHeight: 44)
-                                            .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                                    // been started). It sits on the label's own row, at the
+                                    // trailing edge, as the section's action: as a half-width
+                                    // capsule under the label it floated off every edge on the
+                                    // screen (owner report, build 425), and as a second
+                                    // full-width button under Play reveal it competed with the
+                                    // one control this screen is for.
+                                    sectionHeader("DEVELOPED") {
+                                        Button {
+                                            Haptics.tap()
+                                            showFollowUp = true
+                                        } label: {
+                                            Label("Start another", systemImage: "plus.square.on.square")
+                                                .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                                                .foregroundStyle(accent)
+                                                .frame(minHeight: 44)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Start another with this group")
                                     }
-                                    .buttonStyle(.plain)
-                                    .padding(.horizontal, 16)
-                                    .padding(.bottom, 6)
                                     // Oldest to newest: a roll reads like a strip of film, not the
                                     // server's `id DESC` append order (every shot in a roll shares
                                     // one `develops_at`, so that order is random ids). The load-more
@@ -569,6 +578,14 @@ struct RollDetailView: View {
         // itself also checks `Task.isCancelled` on top of that, so a mid-drain cancellation stops
         // between iterations rather than waiting for one more full page.
         .task {
+            #if DEBUG
+            if let demoFixture {
+                vm.signedURLCache = demoFixture.urls
+                vm.photos = demoFixture.photos
+                rollFullyPaged = true
+                return
+            }
+            #endif
             if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
             guard !Task.isCancelled else { return }
             await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
@@ -1203,14 +1220,45 @@ struct RollDetailView: View {
         }
     }
 
+    /// The screen's one leading edge: the title's (`FlimNavTitle`), and so the member line's,
+    /// the reveal controls', and the section labels'. Only the film strip runs wider.
+    private static let edge: CGFloat = 20
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
+            .foregroundStyle(Color(white: 0.4))
+    }
+
     private func sectionHeader(_ title: String) -> some View {
-        HStack {
-            Text(title)
-                .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
-                .foregroundStyle(Color(white: 0.4))
-            Spacer()
+        sectionLabel(title)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Self.edge).padding(.top, 18).padding(.bottom, 8)
+    }
+
+    /// A section label with one action at the trailing edge, on the label's baseline. The
+    /// action's own 44pt hit area takes the place of the label's top and bottom padding, so the
+    /// label sits where an action-less one would. When the two no longer fit on one line (the
+    /// accessibility text sizes), the action drops under the label at the same leading edge
+    /// rather than wrapping beside it.
+    private func sectionHeader<Trailing: View>(_ title: String,
+                                               @ViewBuilder trailing: () -> Trailing) -> some View {
+        let action = trailing()
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                sectionLabel(title)
+                Spacer(minLength: 0)
+                action
+            }
+            .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 0) {
+                sectionLabel(title)
+                    .padding(.top, 18)
+                action
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 6).padding(.top, 18).padding(.bottom, 8)
+        .padding(.horizontal, Self.edge)
     }
 
     private func photoGrid(_ list: [Photo], triggersLoadMore: Bool, loadMoreAnchorId: UUID? = nil) -> some View {
@@ -1355,7 +1403,7 @@ struct RollDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16).padding(.bottom, 4)
+        .padding(.horizontal, Self.edge).padding(.bottom, 4)
     }
 
     private static func countdown(_ seconds: Int) -> String {

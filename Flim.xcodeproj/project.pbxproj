@@ -55,6 +55,7 @@
 		1A2C027DF2B00A5C28458F48 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83B56B27D38D1F33442EDBD /* WidgetSnapshot.swift */; };
 		1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EABF568B1F50179364FE91 /* SupabaseClient.swift */; };
 		1B95A6133C27944647107AC7 /* KeyboardDismiss.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B5A93AEC9F3404C135FBFB4 /* KeyboardDismiss.swift */; };
+		1E299CD15DB0DF1256C1C04B /* RollDetailDemoHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4814024C4A3A6941353B8213 /* RollDetailDemoHost.swift */; };
 		1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */; };
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
 		2276CD913E4D77FF2A13F256 /* ChapterPreviewDemoHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA57412BE95150F69BC6A903 /* ChapterPreviewDemoHost.swift */; };
@@ -502,6 +503,7 @@
 		4533452338409BD1B9FE46AD /* TabSymbolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSymbolTests.swift; sourceTree = "<group>"; };
 		46744648380F2F94FFA7161E /* FrameCreditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameCreditTests.swift; sourceTree = "<group>"; };
 		4727E0F91D5CBF486124674F /* ClockWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockWindowTests.swift; sourceTree = "<group>"; };
+		4814024C4A3A6941353B8213 /* RollDetailDemoHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailDemoHost.swift; sourceTree = "<group>"; };
 		48E604C6FB5140A9788F87E4 /* BurstGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstGrouping.swift; sourceTree = "<group>"; };
 		498109790A8BAE9899A4F515 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
 		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -1259,6 +1261,7 @@
 				35A42EF6E37ED2ED362069BA /* JoinRollView.swift */,
 				8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */,
 				5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */,
+				4814024C4A3A6941353B8213 /* RollDetailDemoHost.swift */,
 				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
 				B4F999D7EC066CFB6B9D2D7F /* RollDevelopAskSheet.swift */,
 				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
@@ -1722,6 +1725,7 @@
 				797F45D1845741442F34B435 /* ReviewerSignInSheet.swift in Sources */,
 				D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */,
 				A09941FBF687F7F4F17CC981 /* RollCarouselView.swift in Sources */,
+				1E299CD15DB0DF1256C1C04B /* RollDetailDemoHost.swift in Sources */,
 				05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */,
 				3A185DD5541644068ABB02B4 /* RollDevelopAskSheet.swift in Sources */,
 				60FDFAABB24CAAA6528E95EB /* RollImminence.swift in Sources */,

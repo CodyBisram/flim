@@ -17,8 +17,13 @@ struct DarkroomMonthClosingRow: View {
     /// rather than guessed, see `DarkroomMonthPaging.nextOlderMonth`'s own doc.
     let shotCount: Int?
     let onTap: () -> Void
+    /// "SEPTEMBER 2026" rather than "SEPTEMBER": the empty month's row stands as a heading
+    /// directly under the zoom bar's own "OCTOBER 2026", so it is written the same way. The row
+    /// at the end of a month's nights keeps the bare name.
+    var includesYear = false
 
     private var monthName: String {
+        if includesYear { return DarkroomZoomChrome.crumb(zoom: .month, anchor: month) }
         let calendar = Calendar.current
         guard let date = calendar.date(from: DateComponents(year: month.year, month: month.month, day: 1)) else { return "" }
         let formatter = DateFormatter()
@@ -29,17 +34,37 @@ struct DarkroomMonthClosingRow: View {
         return formatter.string(from: date).uppercased()
     }
 
+    private var nameText: some View {
+        Text(monthName)
+            .flimFont(12, weight: .semibold)
+            .tracking(1.1)
+            .foregroundStyle(FlimTheme.textSecondary)
+    }
+
+    /// The count, led by the separator dot only when it sits beside the name.
+    @ViewBuilder
+    private func countText(inline: Bool) -> some View {
+        if let shotCount {
+            Text((inline ? "· " : "") + "\(shotCount) shot\(shotCount == 1 ? "" : "s")")
+                .flimFont(11.5)
+                .foregroundStyle(FlimTheme.textTertiary)
+        }
+    }
+
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 6) {
-                Text(monthName)
-                    .flimFont(12, weight: .semibold)
-                    .tracking(1.1)
-                    .foregroundStyle(FlimTheme.textSecondary)
-                if let shotCount {
-                    Text("· \(shotCount) shot\(shotCount == 1 ? "" : "s")")
-                        .flimFont(11.5)
-                        .foregroundStyle(FlimTheme.textTertiary)
+            HStack(spacing: 0) {
+                // On one line like the zoom bar's crumb, and the count under the name when the
+                // two no longer fit (the accessibility sizes), rather than the name breaking.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        nameText
+                        countText(inline: true)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        nameText
+                        countText(inline: false)
+                    }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
@@ -60,10 +85,14 @@ struct DarkroomMonthClosingRow: View {
 /// The `.month` rung for an anchor month with nothing in it: "Nothing left in October." and, when
 /// an older month is known, the closing row into it.
 ///
-/// The two have separate places. The closing row used to sit 8pt under the sentence, inside the
-/// same centered stack, so the next month read as a caption of the empty message (owner report,
-/// build 424). The sentence now owns the open space; the closing row is the way into the next
-/// section, so it is laid out as a heading of one.
+/// Laid out as the top of a list, not a centered message: the sentence is the month's one line,
+/// directly under the zoom bar at its leading edge, and the next month follows as the next
+/// section, a heading written and ruled exactly like the zoom bar's own. Whatever height is left
+/// is simply the end of the page. Two earlier layouts were rejected on device: the closing row
+/// 8pt under a centered sentence read as its caption (build 424), and the sentence centered in
+/// the whole rung with the row 56pt below it floated mid-screen (build 425). Pinning the row
+/// above the tab bar was tried too (2026-10-01): on iOS 26 it crowds the floating tab bar and
+/// reads as part of it.
 struct DarkroomEmptyMonthView: View {
     @Environment(\.flimAccent) private var accent
     /// The anchor month's full name, as prose ("October").
@@ -71,51 +100,52 @@ struct DarkroomEmptyMonthView: View {
     /// The next-older month and its count, `nil` when none is known.
     let next: (month: DarkroomYearMonth, shotCount: Int?)?
     let onSelectNext: (DarkroomYearMonth) -> Void
+    @ScaledMetric(relativeTo: .body) private var sectionGap: CGFloat = 8
 
     var body: some View {
-        // Scrolls only when it has to (the largest accessibility sizes), and otherwise fills the
-        // rung exactly, so the spacers below can place things against the real height.
-        GeometryReader { geo in
-            ScrollView {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 24)
-                    message
-                    if let next {
-                        // A clear gap, then the next month as a heading of the same kind as
-                        // the month crumb above: its name, its count, the same hairline under
-                        // it. Pinning it above the tab bar instead was tried (2026-10-01): on
-                        // iOS 26 it crowds the floating tab bar and reads as part of it.
-                        Color.clear.frame(height: 56)
-                        closingRow(next)
-                    }
-                    Spacer(minLength: 24)
+        // Scrolls only when it has to (the largest accessibility sizes); the content always
+        // starts at the top, whatever height the rung is given.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                message
+                    .padding(.top, 16)
+                if let next {
+                    // The row's own 44pt hit area centers its text, so this gap plus that
+                    // inset puts about 28pt between the sentence and the next heading. Scaled,
+                    // because at the accessibility sizes the text outgrows the 44pt and the
+                    // inset is gone.
+                    Color.clear.frame(height: sectionGap)
+                    closingRow(next)
                 }
-                .frame(maxWidth: .infinity, minHeight: geo.size.height)
             }
-            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 24)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var message: some View {
-        VStack(spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // Scales with the sentence it leads, so the pair keeps its proportions at every
+            // text size.
             Image(systemName: "camera.aperture")
-                .font(.system(size: 28, weight: .ultraLight))
-                .foregroundStyle(accent.opacity(0.5))
+                .flimFont(13, weight: .light)
+                .foregroundStyle(accent.opacity(0.6))
                 .accessibilityHidden(true)
             Text("Nothing left in \(monthName).")
                 .flimFont(14, weight: .light)
                 .foregroundStyle(FlimTheme.textTertiary)
-                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder
     private func closingRow(_ next: (month: DarkroomYearMonth, shotCount: Int?)) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            DarkroomMonthClosingRow(month: next.month, shotCount: next.shotCount) {
-                onSelectNext(next.month)
-            }
+            DarkroomMonthClosingRow(month: next.month, shotCount: next.shotCount,
+                                    onTap: { onSelectNext(next.month) }, includesYear: true)
             DarkroomHeaderRule()
         }
     }
