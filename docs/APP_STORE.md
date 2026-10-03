@@ -152,7 +152,7 @@ does not talk about ratings).
 
     A cleaner look. On iOS 26, sheets, buttons, toasts and the tab bar use the system's glass. On every phone, the buttons at the top of the screen are the same size and shape, and the Feed tab has a new icon.
 
-    Fixes. Every notice in the app is one consistent capsule with its own feel. Flip camera has a clearer icon. Invite links opened while you're already signed in say so instead of doing nothing.
+    Fixes. The Darkroom opens on your latest shots and never calls a month empty when it isn't. New notifications show as a red dot. Every notice in the app is one consistent capsule with its own feel. Flip camera has a clearer icon. Invite links opened while you're already signed in say so instead of doing nothing.
 
 **Promotional text for the 1.6.2 window** (165 / 170; editable any time without review):
 
@@ -160,7 +160,7 @@ does not talk about ratings).
 
 ### Ship notes (internal, do NOT paste)
 
-Submit build 424 (0fbfc14). After submitting, start the review
+Submit build 428 (503fa86). After submitting, start the review
 watch: `gh workflow run asc-watch.yml -f version=1.6.2`. When it is live:
 `update app_release_gate set latest_version = '1.6.2';`. Hold hand-given badge awards for people
 still on 1.6.0 or 1.6.1 until they update (an unknown badge lit "New badge to see" on those builds).
