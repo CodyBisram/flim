@@ -149,6 +149,15 @@ final class DarkroomZoomTests: XCTestCase {
                        DarkroomYearMonth(year: 2026, month: 7))
     }
 
+    /// A reload re-picks the opening month only for a scene that never changed rungs, and never
+    /// over a month picked during this visit (a pull to refresh on August stays on August).
+    func testReloadMayRepickOnlyWithoutAPickThisVisit() {
+        XCTAssertTrue(DarkroomAnchorResolution.reloadMayRepick(storedRung: -1, anchorPickedThisVisit: false))
+        XCTAssertFalse(DarkroomAnchorResolution.reloadMayRepick(storedRung: -1, anchorPickedThisVisit: true))
+        XCTAssertFalse(DarkroomAnchorResolution.reloadMayRepick(storedRung: DarkroomZoom.month.rawValue, anchorPickedThisVisit: false))
+        XCTAssertFalse(DarkroomAnchorResolution.reloadMayRepick(storedRung: DarkroomZoom.year.rawValue, anchorPickedThisVisit: true))
+    }
+
     /// Nothing known at all (no summaries, nothing loaded): the current month is still the only
     /// honest answer to land on.
     func testColdLaunchAnchorFallsBackToCurrentMonthWhenNothingIsKnown() {

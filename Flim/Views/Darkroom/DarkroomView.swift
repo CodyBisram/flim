@@ -164,6 +164,11 @@ struct DarkroomView: View {
     @State private var anchorFetchOutcomes: [AnchorFetchKey: DarkroomAnchorFetchOutcome] = [:]
     /// Anchors that already had their one automatic fetch this generation: the loop guard.
     @State private var automaticFetchKeys: Set<AnchorFetchKey> = []
+    /// The person moved the anchor themselves during this visit (a month picked from a row, a
+    /// zoom, the tab retap). While set, a reload never re-picks the opening month over their
+    /// choice (`applyColdLaunchAnchorIfNeeded`); a pull to refresh on August used to jump back to
+    /// the newest month with shots. Cleared on every appear, so the next visit opens on the rule.
+    @State private var anchorPickedThisVisit = false
 
     private var currentAnchorFetchKey: AnchorFetchKey {
         AnchorFetchKey(anchor: anchor, generation: loadGeneration)
@@ -503,13 +508,18 @@ Text("Darkroom")
         // `!isSelecting`: a retap during selection keeps its scroll-to-top-only meaning and
         // never switches rungs out from under an in-progress selection.
         .onChange(of: scrollToTop) {
-            let currentMonth = DarkroomYearMonth(date: .now)
-            let atHome = zoom == .month && anchor == currentMonth
+            // Home is the month the Darkroom opens on (owner, 2026-10-02): the newest month with
+            // shots when the current one is empty, so the retap and the open agree.
+            let home = DarkroomAnchorResolution.coldLaunchAnchor(
+                currentMonth: DarkroomYearMonth(date: .now),
+                summaries: monthSummaries,
+                loadedMonths: dayUnits.map { DarkroomYearMonth(date: $0.dayKey) })
+            let atHome = zoom == .month && anchor == home
             if !isSelecting, scrollOffsetY <= 2, !atHome {
                 // Through the same landing machinery a Year-row tap uses: an anchored view's
                 // reset cleared the present's rows, so going home must RELOAD them, not just
                 // flip the anchor and render an empty scope.
-                selectMonth(currentMonth)
+                selectMonth(home)
             } else {
                 withAnimation(.snappy) { scrollProxy?.scrollTo("top", anchor: .top) }
             }
@@ -541,6 +551,7 @@ Text("Darkroom")
             }
         }
         .onAppear {
+            anchorPickedThisVisit = false
             resolveInitialZoomAndAnchor()
             // Builds the very first cache against the REAL anchor `resolveInitialZoomAndAnchor`
             // just resolved, not the placeholder default `anchor` starts at: `vm.photos` is still
@@ -1172,6 +1183,7 @@ Text("Darkroom")
         model.pendingHiddenIds.formUnion(ids)
         selectedIDs = []
         isSelecting = false
+        forgetAnchorFetchIfEmptied()
 
         let count = toDelete.count
         UndoCenter.shared.stage(
@@ -1225,6 +1237,7 @@ Text("Darkroom")
             pagerDeleteEpochs.byPhoto[photo.id] = AccountEpoch.current
             model.photos.removeAll { $0.id == photo.id }
             model.pendingHiddenIds.insert(photo.id)
+            forgetAnchorFetchIfEmptied()
         case .reverted:
             model.pendingHiddenIds.remove(photo.id)
             let epoch = pagerDeleteEpochs.byPhoto.removeValue(forKey: photo.id)
@@ -1471,7 +1484,8 @@ Text("Darkroom")
             onSelectNext: { month in
                 Haptics.tap()
                 selectMonth(month)
-            }
+            },
+            onRefresh: { await reload() }
         )
     }
 
@@ -1574,6 +1588,7 @@ Text("Darkroom")
     /// right after this returns) is what starts a landing, this only ever tears one down.
     private func setZoom(_ newZoom: DarkroomZoom) {
         guard newZoom != zoom else { return }
+        anchorPickedThisVisit = true
         Haptics.tap()
         zoom = newZoom
         storedRung = newZoom.rawValue
@@ -1606,6 +1621,7 @@ Text("Darkroom")
     /// call stack, the way an early version did). `landOnAnchorMonth` is what actually performs
     /// the anchored fetch and the scroll, once `.month`'s own `ScrollViewReader` exists.
     private func selectMonth(_ ym: DarkroomYearMonth) {
+        anchorPickedThisVisit = true
         anchor = ym
         storedAnchor = DarkroomAnchorCoding.encode(ym)
         setZoom(.month)
@@ -1708,10 +1724,24 @@ Text("Darkroom")
     /// Re-checks the state it was decided on, since the `.task` that calls it runs a moment later.
     private func startAutomaticAnchorFetch() {
         let key = currentAnchorFetchKey
+        // Not while a reload is fetching or the summaries are out: the reload lands this anchor's
+        // rows itself, and a second fetch would replace it and spend this anchor's one automatic
+        // attempt for nothing.
         guard zoom == .month, monthScopedUnits.isEmpty, anchoredJumpTarget == nil,
-              pendingMonthLanding == nil, !automaticFetchKeys.contains(key) else { return }
+              pendingMonthLanding == nil, !vm.isLoading, !isLoadingSummaries, !Task.isCancelled,
+              !automaticFetchKeys.contains(key) else { return }
         automaticFetchKeys.insert(key)
         landOnAnchorMonth(anchor, proxy: nil)
+    }
+
+    /// A delete that leaves the anchor month with no rows: forget how this generation's fetch for
+    /// it went, so the month body gets its one automatic fetch (which lands empty and reads
+    /// "Nothing left") instead of an earlier "landed with rows" turning into a connection error
+    /// over a month the person just emptied themselves.
+    private func forgetAnchorFetchIfEmptied() {
+        guard DarkroomDayUnit.units(from: vm.photos, anchor: anchor).isEmpty else { return }
+        anchorFetchOutcomes[currentAnchorFetchKey] = nil
+        automaticFetchKeys.remove(currentAnchorFetchKey)
     }
 
     /// Records how a fetch for `key`'s month ended. See `DarkroomMonthBodyRule.merged`.
@@ -1741,7 +1771,8 @@ Text("Darkroom")
     /// install), and safe to call every `reload()` regardless, since it's a no-op once that's no
     /// longer true.
     private func applyColdLaunchAnchorIfNeeded() {
-        guard storedRung == -1 else { return }
+        guard DarkroomAnchorResolution.reloadMayRepick(storedRung: storedRung,
+                                                       anchorPickedThisVisit: anchorPickedThisVisit) else { return }
         let currentMonth = DarkroomYearMonth(date: .now)
         let resolved = DarkroomAnchorResolution.coldLaunchAnchor(
             currentMonth: currentMonth,

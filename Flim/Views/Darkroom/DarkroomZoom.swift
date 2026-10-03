@@ -61,6 +61,14 @@ enum DarkroomAnchorResolution {
     /// appear reset the anchor to the current month and the reload moved it back to the newest
     /// month with shots, so an account whose current month was empty showed one or the other
     /// depending on timing (build 425: October only after switching tabs).
+    /// Whether a reload may re-pick the opening month (`applyColdLaunchAnchorIfNeeded`): only
+    /// for a scene that has never changed rungs, and never over a month the person picked during
+    /// this visit. Without the second half, a pull to refresh after tapping "AUGUST" jumped back
+    /// to the newest month with shots (pre-submission review, 2026-10-02).
+    static func reloadMayRepick(storedRung: Int, anchorPickedThisVisit: Bool) -> Bool {
+        storedRung == -1 && !anchorPickedThisVisit
+    }
+
     static func entryAnchor(
         storedRung: Int,
         storedAnchor: String,

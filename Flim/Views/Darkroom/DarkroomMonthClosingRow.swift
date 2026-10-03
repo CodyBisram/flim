@@ -77,7 +77,7 @@ struct DarkroomMonthClosingRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(shotCount.map { "\(monthName), \($0) shots" } ?? monthName)
+        .accessibilityLabel(shotCount.map { "\(monthName), \($0) shot\($0 == 1 ? "" : "s")" } ?? monthName)
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -100,6 +100,9 @@ struct DarkroomEmptyMonthView: View {
     /// The next-older month and its count, `nil` when none is known.
     let next: (month: DarkroomYearMonth, shotCount: Int?)?
     let onSelectNext: (DarkroomYearMonth) -> Void
+    /// Pull to refresh, like every other state of the rung: after sorting on another device, the
+    /// empty month is otherwise a dead end until the tab is left and reopened.
+    var onRefresh: (() async -> Void)? = nil
     @ScaledMetric(relativeTo: .body) private var sectionGap: CGFloat = 8
 
     var body: some View {
@@ -121,7 +124,9 @@ struct DarkroomEmptyMonthView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 24)
         }
-        .scrollBounceBehavior(.basedOnSize)
+        // Always bounces when it can refresh: a pull needs the drag even when nothing overflows.
+        .scrollBounceBehavior(onRefresh == nil ? .basedOnSize : .always)
+        .refreshableToCompletion { await onRefresh?() }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
