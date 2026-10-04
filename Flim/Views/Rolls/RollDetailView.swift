@@ -945,6 +945,10 @@ struct RollDetailView: View {
     /// on a real, populated screen (the roll) rather than an error.
     private func openAwaitingPhotoIfReady() async {
         guard let photoId = awaitingPhotoId, !showReveal else { return }
+        // Captured here, with photoId, not read after the poll: a second push landing mid-poll
+        // overwrites awaitingPhotoComments for ITS OWN photo, and reading it late would attach
+        // that unrelated comments intent to this photo instead.
+        let comments = awaitingPhotoComments
         var found = photoArrived(photoId, in: pagerPhotos)
         var attempts = 0
         while !found, attempts < 25 {
@@ -953,7 +957,6 @@ struct RollDetailView: View {
             found = photoArrived(photoId, in: pagerPhotos)
             attempts += 1
         }
-        let comments = awaitingPhotoComments
         awaitingPhotoId = nil
         awaitingPhotoComments = false
         guard found, let photo = pagerPhotos.first(where: { $0.id == photoId }) else { return }
