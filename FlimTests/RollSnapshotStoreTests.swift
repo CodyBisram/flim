@@ -130,6 +130,21 @@ struct RollSnapshotStoreTests {
         #expect(restored?.rolls.first?.revealAt == createdAt.addingTimeInterval(Roll.developDelay))
     }
 
+    @Test("two saves issued back to back for the same account land in call order, not completion order")
+    func savesForSameAccountDoNotRace() {
+        let root = makeRoot(); defer { cleanUp(root) }
+        let user = UUID()
+        let first = roll(name: "First")
+        let second = roll(name: "Second")
+
+        RollSnapshotStore.save(.init(rolls: [first], coverPaths: [:]), for: user, root: root)
+        RollSnapshotStore.save(.init(rolls: [second], coverPaths: [:]), for: user, root: root)
+
+        let restored = waitForSnapshot(user: user, root: root)
+        #expect(restored?.rolls.map(\.name) == ["Second"],
+                "the later call must win regardless of which detached task finishes first")
+    }
+
     /// `save` is fire-and-forget off the main actor; poll for up to a second rather than assuming
     /// a fixed delay is long enough (or wastefully longer than it needs to be).
     private func waitForSnapshot(user: UUID, root: URL) -> RollSnapshotStore.Snapshot? {

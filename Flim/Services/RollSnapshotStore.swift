@@ -47,17 +47,27 @@ enum RollSnapshotStore {
         return try? JSONDecoder().decode(Snapshot.self, from: data)
     }
 
+    /// Chained per account, so two calls for the same user write in call order rather than
+    /// whichever detached task's encode-and-write happens to finish first.
+    private static var pendingWrites: [UUID: Task<Void, Never>] = [:]
+    private static let pendingWritesLock = NSLock()
+
     /// Fire-and-forget write, off the main actor: called after every mutation that changes
     /// `rolls` or `coverPaths` (a fresh fetch, `setRollCover`, `forget`, `createRoll`, `joinRoll`),
     /// never awaited by the caller. `snapshot` is a value type captured at the call
     /// site, so this never reaches back into `RollService`'s `@MainActor` state from the
     /// background task.
     static func save(_ snapshot: Snapshot, for userId: UUID, root: URL = defaultRoot()) {
-        Task.detached(priority: .utility) {
+        pendingWritesLock.lock()
+        let previous = pendingWrites[userId]
+        let task = Task.detached(priority: .utility) {
+            _ = await previous?.value
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
             try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try? data.write(to: fileURL(for: userId, root: root), options: .atomic)
         }
+        pendingWrites[userId] = task
+        pendingWritesLock.unlock()
     }
 
     /// Deletes one account's snapshot outright. Not currently wired to any purge path: neither
