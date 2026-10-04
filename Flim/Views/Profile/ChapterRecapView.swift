@@ -470,6 +470,7 @@ struct ChapterRecapView: View {
                 profileRoute = ProfileRoute(id: userId)
             },
             onPlayAgain: {
+                selection = 0
                 isPlayerPresented = true
             },
             onClose: { dismiss() }
