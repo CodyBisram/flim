@@ -957,6 +957,11 @@ struct RollDetailView: View {
             found = photoArrived(photoId, in: pagerPhotos)
             attempts += 1
         }
+        // Re-checked here, not just in the entry guard: a reveal that started while this was
+        // mid-poll must still win, so a photo cover never presents on top of it. awaitingPhotoId
+        // is left set so onChange(of: showReveal) opens it right after the reveal finishes,
+        // rather than never.
+        guard !showReveal else { return }
         awaitingPhotoId = nil
         awaitingPhotoComments = false
         guard found, let photo = pagerPhotos.first(where: { $0.id == photoId }) else { return }
