@@ -111,6 +111,9 @@ struct RollRevealView: View {
             }
         }
         .statusBarHidden()
+        // This reveal is a fullScreenCover painting over MainTabView's capsule host, and the
+        // reportPhoto undo above is staged without leaving the reveal, so it hosts its own copy.
+        .undoCapsuleHost(bottomPadding: 44)
         .onChange(of: currentPhoto?.id) { _, _ in
             // Per-photo: a zoom left over from the previous frame would be applied to a shot
             // nobody pinched.
