@@ -763,13 +763,13 @@ async function spotlightWeekendUpdateCohort(): Promise<Recipient[]> {
 const SPOTLIGHT_WEEKLY_COPY: { title: string; body: string }[] = [
   // A. Approved; sent as spotlight-weekend on 2026-10-02.
   { title: SPOTLIGHT_WEEKEND_TITLE, body: SPOTLIGHT_WEEKEND_BODY },
-  // B. Draft, pending the owner's approval.
+  // B. Approved by the owner, 2026-10-06.
   { title: "Spotlight goes up Monday",
     body: "Shoot something this weekend and put your favorite frame up for it." },
-  // C. Draft, pending the owner's approval.
+  // C. Approved by the owner, 2026-10-06.
   { title: "Out tonight?",
     body: `Bring ${APP_NAME}. The best frame of your weekend could be in Monday's Spotlight.` },
-  // D. Draft, pending the owner's approval.
+  // D. Approved by the owner, 2026-10-06.
   { title: "One frame", body: "That's all Spotlight asks for this week. Make it a good one." },
 ];
 const SPOTLIGHT_WEEKLY_FIRST_WEEK = "2026-10-05";
