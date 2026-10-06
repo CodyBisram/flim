@@ -1027,11 +1027,18 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS signup_ordinal INT;
 -- at the end of this file) the App Review login holds NULL on purpose, so on a re-run it is the one
 -- row this WHERE would find; it must stay NULL. (The lock trigger would also pin it on a re-run,
 -- but the backfill should not depend on that.)
+-- 2026-10-06 (2026-10-06_review_account_by_identity.sql): the review login is also skipped by
+-- identity, its auth email, so a rename cannot make this number it on a rerun. The old name test
+-- stays beside it: both only ever make this pass do less.
 WITH ranked AS (
     SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS rn
     FROM public.users
     WHERE signup_ordinal IS NULL
       AND lower(COALESCE(username, '')) !~ '^applereview[0-9]*$'
+      AND NOT EXISTS (
+          SELECT 1 FROM auth.users a
+          WHERE a.id = public.users.id AND lower(a.email) = 'review@flim-app.com'
+      )
 )
 UPDATE public.users u
 SET signup_ordinal = ranked.rn
@@ -4283,6 +4290,9 @@ GRANT EXECUTE ON FUNCTION public.request_invite(TEXT, TEXT) TO anon, authenticat
 -- shape of approve_invite_request; it superseded the ungated version originally
 -- shipped in supabase/migrations/2026-08-07_approve_invite_request.sql).
 -- ============================================================
+-- Dropped first: 2026-10-06_waitlist.sql (folded at the end of this file) widened its return
+-- type, and CREATE OR REPLACE cannot change a return type, so a rerun would stop here.
+DROP FUNCTION IF EXISTS public.list_invite_requests();
 CREATE OR REPLACE FUNCTION public.list_invite_requests()
 RETURNS TABLE (
     email      TEXT,
@@ -8572,8 +8582,10 @@ GRANT EXECUTE ON FUNCTION public.feed_unseen_count() TO authenticated;
 -- code that fills is the honest scarcity the Founding 100 badge already carries.
 -- SELECT from users rather than VALUES, so a fresh bootstrap (no owner row) inserts nothing
 -- instead of failing the foreign key.
+-- valid_from is the fixed start, not NOW(): once the code ended, NOW() fell after valid_until and
+-- the CHECK failed before ON CONFLICT could skip the row, stopping a schema.sql rerun here.
 INSERT INTO public.invite_campaigns (code, inviter_id, valid_from, valid_until, max_uses, note)
-SELECT 'BALI26', u.id, NOW(), timestamptz '2026-09-25 00:00 America/New_York', 24,
+SELECT 'BALI26', u.id, timestamptz '2026-09-17 00:00 America/New_York', timestamptz '2026-09-25 00:00 America/New_York', 24,
        'Bali promo cohort, 2026-09-17 through 2026-09-24, 24 seats, attributed to the owner'
 FROM public.users u WHERE u.id = 'f43287d4-f239-415b-af45-650bbee62e83'
 ON CONFLICT (code) DO NOTHING;
@@ -11685,6 +11697,9 @@ REVOKE ALL ON FUNCTION public._spotlight_lock_week(DATE) FROM PUBLIC, anon, auth
 -- The queue. With no argument: every entry in every closed, unpublished week, newest week first
 -- (the admin panel calls every queue with no arguments). With a week: that week, in any state.
 -- Flags are for the owner's judgement; only hidden, covered and tagged are refused by choose.
+-- Dropped first: 2026-10-06_spotlight_develop_week.sql (below) widens the return shape, and on a
+-- rerun of this file CREATE OR REPLACE cannot change an existing function's return type.
+DROP FUNCTION IF EXISTS public.list_spotlight_queue(DATE);
 CREATE OR REPLACE FUNCTION public.list_spotlight_queue(p_week_key DATE DEFAULT NULL)
 RETURNS TABLE (
     week_key              DATE,
@@ -12963,6 +12978,9 @@ GRANT EXECUTE ON FUNCTION public.own_spotlight_entry() TO authenticated;
 
 -- The queue. With no argument: every entry in every pending week (closed, unpublished, unskipped,
 -- not stale), newest week first. With a week: that week, in any state. Same shape as before.
+-- Dropped first: 2026-10-06_spotlight_develop_week.sql (below) widens the return shape, and on a
+-- rerun of this file CREATE OR REPLACE cannot change an existing function's return type.
+DROP FUNCTION IF EXISTS public.list_spotlight_queue(DATE);
 CREATE OR REPLACE FUNCTION public.list_spotlight_queue(p_week_key DATE DEFAULT NULL)
 RETURNS TABLE (
     week_key              DATE,
@@ -14711,6 +14729,12 @@ ALTER TABLE public.usage_events ADD CONSTRAINT usage_events_event_check CHECK (e
 --
 --   1. signup_ordinal becomes nullable. NULL means "not a member number", and only a review
 --      account holds it. The unique index stays; Postgres lets any number of NULLs share it.
+--   SUPERSEDED IN PART 2026-10-06 (2026-10-06_review_account_by_identity.sql): steps 2 and 4
+--   below matched the review login by username, so a real member named like it lost a number
+--   at signup or could re-fire the shift. Step 2 is replaced there by an identity test (auth
+--   email review@flim-app.com); step 4 is rewritten in place below to the same identity and
+--   can no longer run again. Do not restore the name tests.
+--
 --   2. assign_signup_ordinal gives a review-named account (applereview, or applereview followed by
 --      digits, lower-cased) NULL at signup, and everyone else MAX + 1 as before. MAX ignores
 --      NULLs, so after the shift below the next real signup is 80: no gap, no reuse. Username is
@@ -15300,33 +15324,40 @@ REVOKE ALL ON FUNCTION public._ratchet_badges(UUID) FROM PUBLIC, anon, authentic
 -- ---------------------------------------------------------------------------
 -- 4. The shift, once
 -- ---------------------------------------------------------------------------
+-- Ran in production on 2026-09-29. Rewritten 2026-10-06 (2026-10-06_review_account_by_identity.sql)
+-- so that it can never run again: it was guarded by the username pattern, and a real member who
+-- renamed to "applereview3" would have fired it on the next rerun of this file, taking their
+-- number and moving everyone above them down one. It now acts only on the review login by
+-- identity (auth email review@flim-app.com, written by Auth, never by the app), only if that
+-- account signed up before this shift existed, and only while no account holds NULL yet. All
+-- three held exactly once, in production before 2026-09-29. Afterwards the review login holds
+-- NULL, any later review login is given NULL at signup (assign_signup_ordinal), and the lock
+-- trigger pins every number, so a rerun finds nothing to do. A fresh database has no users here.
 DO $do$
 DECLARE
-    r RECORD;
+    v_id  UUID;
+    v_ord INT;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM public.users
-        WHERE signup_ordinal IS NOT NULL
-          AND lower(COALESCE(username, '')) ~ '^applereview[0-9]*$'
-    ) THEN
-        RETURN;  -- already done: nothing moves on a second run
+    SELECT u.id, u.signup_ordinal INTO v_id, v_ord
+    FROM public.users u
+    JOIN auth.users a ON a.id = u.id
+    WHERE lower(a.email) = 'review@flim-app.com'
+      AND a.created_at < TIMESTAMPTZ '2026-09-30 00:00:00+00'
+    ORDER BY u.signup_ordinal NULLS FIRST
+    LIMIT 1;
+    IF v_ord IS NULL
+       OR EXISTS (SELECT 1 FROM public.users WHERE signup_ordinal IS NULL) THEN
+        RETURN;  -- already done, or nothing to do: nothing moves on a second run
     END IF;
 
     LOCK TABLE public.users IN SHARE ROW EXCLUSIVE MODE;
     ALTER TABLE public.users DISABLE TRIGGER lock_signup_ordinal_trigger;
 
-    FOR r IN
-        SELECT id, signup_ordinal FROM public.users
-        WHERE signup_ordinal IS NOT NULL
-          AND lower(COALESCE(username, '')) ~ '^applereview[0-9]*$'
-        ORDER BY signup_ordinal DESC
-    LOOP
-        UPDATE public.users SET signup_ordinal = NULL WHERE id = r.id;
-        UPDATE public.users SET signup_ordinal = -(signup_ordinal - 1)
-        WHERE signup_ordinal > r.signup_ordinal;
-        UPDATE public.users SET signup_ordinal = -signup_ordinal
-        WHERE signup_ordinal < 0;
-    END LOOP;
+    UPDATE public.users SET signup_ordinal = NULL WHERE id = v_id;
+    UPDATE public.users SET signup_ordinal = -(signup_ordinal - 1)
+    WHERE signup_ordinal > v_ord;
+    UPDATE public.users SET signup_ordinal = -signup_ordinal
+    WHERE signup_ordinal < 0;
 
     ALTER TABLE public.users ENABLE TRIGGER lock_signup_ordinal_trigger;
 END
@@ -16684,3 +16715,570 @@ BEGIN
     ON CONFLICT (user_id, badge_id) DO NOTHING;
 END;
 $function$;
+
+-- Folded in from supabase/migrations/2026-10-06_spotlight_develop_week.sql (NOT YET APPLIED to production).
+-- Spotlight: a frame can also go up in the week it developed (2026-10-06, nightly review
+-- findings in docs/reviews/OPEN.md, both raised 2026-09-27). NOT YET APPLIED to production.
+--
+-- 1. The rule. put_up_for_spotlight (2026-09-26_spotlight_shot_this_week.sql) needs the post
+--    made this week AND the photo shot this week. A roll frame shot Sunday night whose roll
+--    develops after Monday 04:00 New York could not go up in the week it was shot (it was not
+--    developed yet, so it could not be posted) and was refused in the next (shot last week), so
+--    it could never go up at all. The same for a personal frame shot just before the boundary.
+--    A frame now fits a week when it was SHOT that week, or DEVELOPED that week no more than
+--    eight days after it was shot:
+--
+--        taken_at IS NOT NULL AND (
+--            spotlight_week_key(taken_at) = week
+--         OR (develops_at IS NOT NULL
+--             AND spotlight_week_key(develops_at) = week
+--             AND develops_at <= taken_at + 8 days))
+--
+--    Why that does not open the door to old frames: photos.develops_at is not client-writable
+--    after insert (UPDATE on photos is column-scoped and leaves it out); a roll frame's is pinned
+--    to rolls.reveal_at at insert by pin_roll_photo_develops_at and moved only by
+--    set_roll_reveal_at, which bounds a reveal to seven days after the roll was made and refuses
+--    once it has developed; a personal frame's is its capture plus the phone's short delay. Every
+--    honest frame develops within seven days of being shot, so the eight-day bound (a day of
+--    slack for a phone clock) admits all of them and nothing dug out of an older week: a frame
+--    can be up in at most two consecutive weeks' windows, the one it was shot in and the one it
+--    developed in. The rule lives in one helper, _spotlight_frame_fits_week, which the put-up
+--    and the owner's queue both read, so the two cannot drift. The refusal is still
+--    'not_this_week'. The app mirrors it (Flim/Models/Spotlight.swift); until the app does, the
+--    app keeps hiding the item for such frames, which is the old behaviour, never a wrong offer.
+--
+-- 2. The queue. An entry put up before the 2026-09-26 rule existed, for a frame shot outside its
+--    week, was choosable with nothing to tell it apart. list_spotlight_queue now returns the
+--    frame's taken_at and develops_at and `outside_week`, TRUE when the frame does not fit its
+--    entry's week by the rule above. A flag for the owner's judgement, like hidden_from_discovery;
+--    choose_spotlight_entry does not refuse it. The return shape changes, so the old function is
+--    dropped first. Owner-gated inside its body as before; EXECUTE stays revoked from anon.
+--
+-- Rerunnable as a whole. No table, column, policy or table grant changes.
+
+-- ---------------------------------------------------------------------------------------------
+-- 1. The rule, in one place.
+-- ---------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._spotlight_frame_fits_week(
+    p_taken_at    TIMESTAMPTZ,
+    p_develops_at TIMESTAMPTZ,
+    p_week        DATE
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT p_taken_at IS NOT NULL AND p_week IS NOT NULL AND (
+        public.spotlight_week_key(p_taken_at) = p_week
+        OR (p_develops_at IS NOT NULL
+            AND public.spotlight_week_key(p_develops_at) = p_week
+            AND p_develops_at <= p_taken_at + INTERVAL '8 days')
+    );
+$$;
+REVOKE ALL ON FUNCTION public._spotlight_frame_fits_week(TIMESTAMPTZ, TIMESTAMPTZ, DATE) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- 2. put_up_for_spotlight: the shot-this-week check reads the helper. Everything else is the
+--    2026-09-26 definition unchanged. Same signature and return shape.
+-- ---------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.put_up_for_spotlight(p_post_id UUID)
+RETURNS TABLE (
+    week_key                 DATE,
+    week_starts_at           TIMESTAMPTZ,
+    week_closes_at           TIMESTAMPTZ,
+    post_id                  UUID,
+    put_up_at                TIMESTAMPTZ,
+    replaced_post_id         UUID,
+    replaced_post_created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+#variable_conflict use_column
+DECLARE
+    v_uid        UUID := auth.uid();
+    v_week       DATE := public.spotlight_week_key(now());
+    v_post       RECORD;
+    v_old_post   UUID;
+    v_old_at     TIMESTAMPTZ;
+    v_put        TIMESTAMPTZ;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'not_signed_in' USING ERRCODE = 'P0001';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('spotlight:' || v_uid::text, 0));
+
+    SELECT po.id, po.photo_id, po.hidden, po.created_at INTO v_post
+    FROM public.posts po
+    WHERE po.id = p_post_id AND po.user_id = v_uid
+    FOR NO KEY UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_found' USING ERRCODE = 'P0001';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.photos ph WHERE ph.id = v_post.photo_id AND ph.user_id = v_uid) THEN
+        RAISE EXCEPTION 'not_photographer' USING ERRCODE = 'P0001';
+    END IF;
+    IF v_post.hidden OR EXISTS (SELECT 1 FROM public.photos ph WHERE ph.id = v_post.photo_id AND ph.hidden) THEN
+        RAISE EXCEPTION 'hidden' USING ERRCODE = 'P0001';
+    END IF;
+    IF v_post.created_at IS NULL OR public.spotlight_week_key(v_post.created_at) <> v_week THEN
+        RAISE EXCEPTION 'week_closed' USING ERRCODE = 'P0001';
+    END IF;
+    -- This week's frame: shot this week, or developed this week (a roll that revealed after
+    -- Monday 04:00), never an older frame dug out of the Darkroom. See _spotlight_frame_fits_week.
+    IF NOT EXISTS (SELECT 1 FROM public.photos ph
+                   WHERE ph.id = v_post.photo_id
+                     AND public._spotlight_frame_fits_week(ph.taken_at, ph.develops_at, v_week)) THEN
+        RAISE EXCEPTION 'not_this_week' USING ERRCODE = 'P0001';
+    END IF;
+    IF public.post_is_covered(v_uid, v_post.created_at) THEN
+        RAISE EXCEPTION 'covered' USING ERRCODE = 'P0001';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.post_tags t WHERE t.post_id = p_post_id) THEN
+        RAISE EXCEPTION 'tagged' USING ERRCODE = 'P0001';
+    END IF;
+
+    SELECT e.post_id, po.created_at INTO v_old_post, v_old_at
+    FROM public.spotlight_entries e
+    LEFT JOIN public.posts po ON po.id = e.post_id
+    WHERE e.user_id = v_uid AND e.week_key = v_week;
+
+    INSERT INTO public.spotlight_entries AS e (post_id, user_id, week_key, put_up_at)
+    VALUES (p_post_id, v_uid, v_week, now())
+    ON CONFLICT (user_id, week_key) DO UPDATE
+        SET post_id   = EXCLUDED.post_id,
+            put_up_at = CASE WHEN e.post_id = EXCLUDED.post_id THEN e.put_up_at ELSE EXCLUDED.put_up_at END
+        WHERE e.chosen_at IS NULL AND e.removed_at IS NULL
+    RETURNING e.put_up_at INTO v_put;
+    IF v_put IS NULL THEN
+        -- The row exists and is chosen or removed: only possible for a week that has closed.
+        RAISE EXCEPTION 'week_closed' USING ERRCODE = 'P0001';
+    END IF;
+
+    RETURN QUERY SELECT
+        v_week,
+        public._spotlight_week_start(v_week),
+        public._spotlight_week_start(v_week + 7),
+        p_post_id,
+        v_put,
+        CASE WHEN v_old_post IS DISTINCT FROM p_post_id THEN v_old_post END,
+        CASE WHEN v_old_post IS DISTINCT FROM p_post_id THEN v_old_at END;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.put_up_for_spotlight(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.put_up_for_spotlight(UUID) TO authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- 3. The queue says when each frame was shot and developed, and flags one outside its week.
+--    The 2026-09-25_spotlight_hardening.sql definition plus three trailing columns.
+-- ---------------------------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.list_spotlight_queue(DATE);
+CREATE FUNCTION public.list_spotlight_queue(p_week_key DATE DEFAULT NULL)
+RETURNS TABLE (
+    week_key              DATE,
+    published_at          TIMESTAMPTZ,
+    week_starts_at        TIMESTAMPTZ,
+    post_id               UUID,
+    user_id               UUID,
+    username              TEXT,
+    caption               TEXT,
+    thumb_path            TEXT,
+    feed_path             TEXT,
+    storage_path          TEXT,
+    post_created_at       TIMESTAMPTZ,
+    put_up_at             TIMESTAMPTZ,
+    chosen_at             TIMESTAMPTZ,
+    removed_at            TIMESTAMPTZ,
+    hidden                BOOLEAN,
+    covered               BOOLEAN,
+    tagged                BOOLEAN,
+    hidden_from_discovery BOOLEAN,
+    blocked_with_owner    BOOLEAN,
+    taken_at              TIMESTAMPTZ,
+    develops_at           TIMESTAMPTZ,
+    outside_week          BOOLEAN
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+#variable_conflict use_column
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+    RETURN QUERY
+    SELECT e.week_key,
+           w.published_at,
+           public._spotlight_week_start(e.week_key),
+           e.post_id,
+           e.user_id,
+           u.username,
+           po.caption,
+           po.thumb_path,
+           po.feed_path,
+           po.storage_path,
+           po.created_at,
+           e.put_up_at,
+           e.chosen_at,
+           e.removed_at,
+           (po.hidden OR COALESCE(ph.hidden, FALSE)),
+           public.post_is_covered(po.user_id, po.created_at),
+           EXISTS (SELECT 1 FROM public.post_tags t WHERE t.post_id = e.post_id),
+           u.hidden_from_discovery,
+           public.is_blocked_either_way(auth.uid(), e.user_id),
+           ph.taken_at,
+           ph.develops_at,
+           NOT public._spotlight_frame_fits_week(ph.taken_at, ph.develops_at, e.week_key)
+    FROM public.spotlight_entries e
+    JOIN public.posts po ON po.id = e.post_id
+    JOIN public.users u ON u.id = e.user_id
+    LEFT JOIN public.photos ph ON ph.id = po.photo_id
+    LEFT JOIN public.spotlight_weeks w ON w.week_key = e.week_key
+    WHERE CASE
+            WHEN p_week_key IS NULL THEN public._spotlight_week_pending(e.week_key)
+            ELSE e.week_key = p_week_key
+          END
+    ORDER BY e.week_key DESC, e.put_up_at ASC, e.post_id ASC;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.list_spotlight_queue(DATE) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_spotlight_queue(DATE) TO authenticated;
+
+
+-- Folded in from supabase/migrations/2026-10-06_review_account_by_identity.sql (NOT YET APPLIED to production).
+-- The review login is recognised by who it is, not by what it is called (2026-10-06). NOT YET
+-- APPLIED. The owner applies it. Idempotent: safe to re-run. Changes no existing row.
+--
+-- 2026-09-29_review_account_takes_no_seat.sql kept the App Review login out of the member numbers
+-- by matching its username, lower(username) ~ '^applereview[0-9]*$'. Two problems, both from the
+-- nightly review (docs/reviews/OPEN.md, 2026-09-30):
+--
+--   1. assign_signup_ordinal gave NULL to ANY new account with a matching username, so a real
+--      person who picked "applereview2" lost their member number for good (the number is fixed at
+--      signup and lock_signup_ordinal_trigger pins it on every UPDATE).
+--   2. The one-time renumbering shift in that migration (folded into schema.sql) was guarded by
+--      the same pattern, so a real member who later renamed to "applereview3" would have fired it
+--      again on the next schema.sql reapply: their number set to NULL and everyone above them
+--      moved down one, out of step with founding_100 badges already granted.
+--
+-- The review login has one fixed identity: its sign-in address, review@flim-app.com, the only
+-- address gate_new_auth_user lets through without an invite and the only one AuthService offers
+-- the password sign-in. auth.users.email is written by Auth, not by the app (public.users.email
+-- is client-written at signup and is NOT used here), and a change of auth email has to be
+-- confirmed from the new inbox, which is the owner's. So:
+--
+--   a. is_review_account(uuid): true only for the account whose auth email is that address.
+--      Internal: EXECUTE revoked from PUBLIC, anon and authenticated.
+--   b. assign_signup_ordinal: the review login (by identity) gets NULL at signup; everyone else
+--      gets MAX + 1 as before, whatever their username. Takes effect for new signups only.
+--   c. The shift (schema.sql's fold and the 2026-09-29 file itself) now fires only for the review
+--      login by identity, only if it signed up before the shift existed (auth created_at before
+--      2026-09-30), and only while no account holds NULL yet, which was true exactly once: in
+--      production before 2026-09-29. Edited in place there, since that block is what reruns; this
+--      file carries no shift of its own.
+--   d. schema.sql's original backfill (the ROW_NUMBER pass beside the signup_ordinal column) also
+--      skips the review login by identity on a rerun, as well as by the old name test.
+--
+-- Production outcome: none on existing rows. Every number stays where it is; the review login
+-- keeps NULL; real members keep theirs. Only who gets NULL at future signups changes.
+--
+-- Before applying, confirm production's review login really is that address (expect 1 | t):
+--   SELECT count(*), bool_and(u.signup_ordinal IS NULL)
+--   FROM public.users u JOIN auth.users a ON a.id = u.id
+--   WHERE lower(a.email) = 'review@flim-app.com';
+-- After applying (expect 1 NULL row, the review login, and no gaps; same numbers as before):
+--   SELECT count(*) FILTER (WHERE signup_ordinal IS NULL), count(signup_ordinal),
+--          min(signup_ordinal), max(signup_ordinal), count(DISTINCT signup_ordinal)
+--   FROM public.users;
+
+-- ---------------------------------------------------------------------------
+-- a. Who the review login is
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.is_review_account(p_user UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM auth.users a
+        WHERE a.id = p_user
+          AND lower(a.email) = 'review@flim-app.com'
+    );
+$$;
+REVOKE ALL ON FUNCTION public.is_review_account(UUID) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- b. Assignment: the review login gets no number, nobody else is affected by their name
+-- ---------------------------------------------------------------------------
+-- Same signature, trigger and lock as the 2026-09-29 definition. NEW.id is the caller's own
+-- auth.uid() ("users: own row" pins it), and the auth row exists before the profile row does, so
+-- the identity is known at INSERT time.
+CREATE OR REPLACE FUNCTION public.assign_signup_ordinal()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_next INT;
+BEGIN
+    -- The App Review login is not a member: no number, no seat. Set explicitly so a crafted
+    -- INSERT can never choose one either.
+    IF public.is_review_account(NEW.id) THEN
+        NEW.signup_ordinal := NULL;
+        RETURN NEW;
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtext('public.users.signup_ordinal'));
+    -- MAX skips NULLs, so the review login never moves the count.
+    SELECT COALESCE(MAX(signup_ordinal), 0) + 1 INTO v_next FROM public.users;
+    NEW.signup_ordinal := v_next;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.assign_signup_ordinal() FROM PUBLIC, anon, authenticated;
+
+-- Folded in from supabase/migrations/2026-10-06_waitlist.sql (NOT YET APPLIED to production).
+-- The app's waitlist joins the website's invite requests (2026-10-06). NOT YET APPLIED. The owner
+-- applies it. Idempotent: safe to re-run. Additive: two columns, one stamp, one new function, and
+-- three existing functions replaced. No existing row is deleted; existing rows gain source 'web'
+-- (true of all of them) and, where an approval can be read back, approved_at (see 2 below).
+--
+-- Signing up is invite only. Someone who downloads FLIM without a code meets the "you need an
+-- invite" wall on the sign-in screen and leaves. The app gains a "Join the waitlist" form (name and
+-- email). The website already has the same ask (request_invite into public.invite_requests, read
+-- on the dashboard's Invites panel and in the daily invite digest), so the app writes into that
+-- same table: one list, one place the owner lets people in.
+--
+--   1. invite_requests gains name (the app sends one, the website does not) and source ('web' or
+--      'app', default 'web', so request_invite is untouched and still writes 'web').
+--   2. invite_requests gains approved_at. handled meant "approved or declined", which cannot say
+--      who still needs an email from the owner. approve_invite_request now stamps it (once).
+--      Backfill: a handled request whose email holds the 'invite request' allowlist note, the note
+--      only approve_invite_request writes, was approved; it gets that row's added_at.
+--   3. join_waitlist(p_name, p_email) -> 'joined' | 'invalid' | 'rate_limited'. Anon-callable
+--      (the caller has no session), SECURITY DEFINER. The answer never says whether an address
+--      already asked, is already allowlisted or already has an account: all are 'joined', and
+--      only a new address writes a row (source 'app'). An existing request is kept as it is,
+--      name and note included. Rate limited per client on the invite rate table
+--      ('waitlist:ip:<address>', 5 an hour, the client key invite_preview uses) under a shared
+--      ceiling ('waitlist:global', 300 an hour) that only bounds how fast the table can grow.
+--      Checked after the input, so a typo does not spend an attempt; a refused call spends
+--      nothing (the bumps roll back with it).
+--   4. list_invite_requests() also returns name, source, approved_at and has_account (an auth
+--      account with that address exists now), and lists approved requests as well as waiting
+--      ones, so the dashboard can show who was let in but has not signed up. Declined requests
+--      (handled, never approved) stay out, as before. The return type changes, so it is dropped
+--      first. Old dashboard copies keep working: email, note and created_at are still there.
+--   5. The owner gate in list, approve and decline_invite_request. `IF NOT is_owner()` let a
+--      caller with no JWT subject through (NOT NULL is NULL, and IF NULL skips the RAISE). list
+--      and decline now refuse unless `auth.uid() IS NOT NULL AND is_owner()`.
+--      approve_invite_request refuses the same way for every call that comes through the API
+--      (PostgREST connects as `authenticator`), but still accepts a direct database session:
+--      the daily invite digest (send-invite-digest) tells the owner to paste
+--      `SELECT public.approve_invite_request('...')` into the SQL editor, which has no JWT at
+--      all, and such a session already has full access to every table this touches.
+--
+-- request_invite is not changed. The digest reads invite_requests directly (handled = false), so
+-- app requests appear in it too, with no redeploy.
+--
+-- Verify after applying (expect: every row 'web' before the app ships; then a count of approved):
+--   SELECT source, count(*) FROM public.invite_requests GROUP BY 1;
+--   SELECT count(*) FILTER (WHERE approved_at IS NOT NULL) AS approved,
+--          count(*) FILTER (WHERE handled AND approved_at IS NULL) AS declined,
+--          count(*) FILTER (WHERE NOT handled) AS waiting
+--   FROM public.invite_requests;
+
+-- ---------------------------------------------------------------------------------------------
+-- 1 and 2. Columns
+-- ---------------------------------------------------------------------------------------------
+ALTER TABLE public.invite_requests
+    ADD COLUMN IF NOT EXISTS name TEXT CHECK (name IS NULL OR char_length(name) BETWEEN 1 AND 60);
+ALTER TABLE public.invite_requests
+    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'app'));
+ALTER TABLE public.invite_requests
+    ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
+
+-- Still no client access to the table at all; the functions below are the only way in.
+ALTER TABLE public.invite_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.invite_requests FROM PUBLIC, anon, authenticated;
+
+-- Approvals made before the stamp existed. Only rows still unstamped, so a rerun changes nothing.
+UPDATE public.invite_requests ir
+SET approved_at = ae.added_at
+FROM public.allowed_emails ae
+WHERE ae.email = ir.email
+  AND ae.note = 'invite request'
+  AND ir.handled
+  AND ir.approved_at IS NULL;
+
+-- ---------------------------------------------------------------------------------------------
+-- 3. Joining from the app
+-- ---------------------------------------------------------------------------------------------
+-- Name: runs of whitespace or control characters become one space, then trimmed; 1 to 60
+-- characters. Email: trimmed and lower-cased, at most 254 characters, local@domain.tld with a
+-- top-level part of two or more letters, digits or hyphens, and none of , ; < > ( ) " or a
+-- control character (so the dashboard's "Copy emails" list can only ever paste as one address
+-- per entry).
+CREATE OR REPLACE FUNCTION public.join_waitlist(p_name TEXT, p_email TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_name   TEXT := btrim(regexp_replace(COALESCE(p_name, ''), '[[:space:][:cntrl:]]+', ' ', 'g'));
+    v_email  TEXT := lower(btrim(COALESCE(p_email, '')));
+    v_client TEXT;
+BEGIN
+    IF char_length(v_name) NOT BETWEEN 1 AND 60
+       OR char_length(v_email) > 254
+       OR v_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[a-z0-9-]{2,}$'
+       OR v_email ~ '[[:cntrl:],;<>()"]' THEN
+        RETURN 'invalid';
+    END IF;
+
+    -- Per client first, then the shared ceiling. A refusal from either is caught here, which
+    -- rolls back every counter this block bumped, so a refused call spends nothing.
+    v_client := public.invite_rate_client();
+    BEGIN
+        IF v_client IS NOT NULL THEN
+            PERFORM public.bump_invite_rate('waitlist:ip:' || v_client, 5);
+        END IF;
+        PERFORM public.bump_invite_rate('waitlist:global', 300);
+    EXCEPTION WHEN SQLSTATE 'P0003' THEN
+        RETURN 'rate_limited';
+    END;
+
+    -- Already allowed in, or already an account: nothing to wait for, and nothing written.
+    IF EXISTS (SELECT 1 FROM public.allowed_emails WHERE email = v_email)
+       OR EXISTS (SELECT 1 FROM auth.users WHERE lower(email) = v_email) THEN
+        RETURN 'joined';
+    END IF;
+
+    -- Already asked, from the app or the website: the first request stands as it is, so a
+    -- stranger who knows the address cannot rename someone else's place in line.
+    INSERT INTO public.invite_requests (email, name, source)
+    VALUES (v_email, v_name, 'app')
+    ON CONFLICT (email) DO NOTHING;
+
+    RETURN 'joined';
+END;
+$$;
+REVOKE ALL ON FUNCTION public.join_waitlist(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.join_waitlist(TEXT, TEXT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- 4 and 5. The owner's list, approve and decline
+-- ---------------------------------------------------------------------------------------------
+-- Waiting requests and approved ones; declined ones stay out. Oldest first, as before.
+DROP FUNCTION IF EXISTS public.list_invite_requests();
+CREATE OR REPLACE FUNCTION public.list_invite_requests()
+RETURNS TABLE (
+    email       TEXT,
+    note        TEXT,
+    created_at  TIMESTAMPTZ,
+    name        TEXT,
+    source      TEXT,
+    approved_at TIMESTAMPTZ,
+    has_account BOOLEAN
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF auth.uid() IS NULL OR public.is_owner() IS NOT TRUE THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT ir.email,
+           ir.note,
+           ir.created_at,
+           ir.name,
+           ir.source,
+           ir.approved_at,
+           EXISTS (SELECT 1 FROM auth.users a WHERE lower(a.email) = ir.email)
+    FROM public.invite_requests ir
+    WHERE NOT ir.handled OR ir.approved_at IS NOT NULL
+    ORDER BY ir.created_at ASC;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.list_invite_requests() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_invite_requests() TO authenticated;
+
+-- Same signature and return as before. Lets the email in (allowlist note 'invite request', kept
+-- if the email was already allowlisted), marks the request handled, stamps approved_at once.
+-- Returns FALSE for an empty email, as before. A request that does not exist still allowlists
+-- the email, as before: the digest's SQL and the dashboard both pass an address it listed.
+CREATE OR REPLACE FUNCTION public.approve_invite_request(p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_email TEXT;
+BEGIN
+    -- Through the API, only the signed-in owner. A direct database session (the SQL editor,
+    -- where the invite digest's SQL is pasted) carries no JWT and already has table access.
+    IF session_user = 'authenticator'
+       AND (auth.uid() IS NULL OR public.is_owner() IS NOT TRUE) THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    v_email := lower(trim(COALESCE(p_email, '')));
+    IF v_email = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    INSERT INTO public.allowed_emails (email, note)
+    VALUES (v_email, 'invite request')
+    ON CONFLICT (email) DO NOTHING;
+
+    UPDATE public.invite_requests
+    SET handled = TRUE,
+        approved_at = COALESCE(approved_at, NOW())
+    WHERE email = v_email;
+
+    RETURN TRUE;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.approve_invite_request(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.approve_invite_request(TEXT) TO authenticated;
+
+-- Same signature, return and effect as before; only the gate changes.
+CREATE OR REPLACE FUNCTION public.decline_invite_request(p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_email TEXT;
+BEGIN
+    IF auth.uid() IS NULL OR public.is_owner() IS NOT TRUE THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    v_email := lower(trim(COALESCE(p_email, '')));
+    IF v_email = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    UPDATE public.invite_requests SET handled = TRUE WHERE email = v_email;
+
+    RETURN TRUE;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.decline_invite_request(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.decline_invite_request(TEXT) TO authenticated;

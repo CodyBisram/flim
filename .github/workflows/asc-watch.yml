@@ -2,8 +2,16 @@
 # a FLIM push on every change (supabase/functions/notify-owner). Start it when a build goes up for
 # review: `gh workflow run asc-watch.yml` (newest version) or `-f version=1.6.1`. A run lives under
 # the 6h job limit and dispatches the next one itself; `deadline` and `last_state` carry the watch
-# across runs and are not meant to be set by hand. Cancel the running run to stop it early.
+# across runs and are not meant to be set by hand. Cancel the running run to stop it early: a
+# cancelled run is never resumed.
+#
+# Every run's inputs are written into its run name, and every run switches on
+# asc-watch-backstop.yml, which checks hourly and starts the next run from the newest run's own
+# inputs when that run failed (a runner that never picked it up, an App Store Connect outage, a
+# final push that could not be sent) before the deadline. The backstop switches itself off once
+# no watch is active.
 name: App Store watch
+run-name: "App Store watch version=${{ inputs.version }} deadline=${{ inputs.deadline }} hours=${{ inputs.hours }} last=${{ inputs.last_state }} stop=${{ inputs.stop }}"
 
 on:
   workflow_dispatch:
@@ -24,6 +32,14 @@ on:
         description: "Internal: the state the previous run last saw"
         required: false
         default: ""
+      stop:
+        description: "Internal: set by the backstop when it gives up; tells the owner and ends the watch"
+        required: false
+        default: ""
+      stop_reason:
+        description: "Internal: what the backstop's last push says"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -38,6 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
+      - name: Switch the backstop on
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable asc-watch-backstop.yml --repo "$GITHUB_REPOSITORY" || echo "could not enable the backstop; the watch carries on"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -56,4 +76,6 @@ jobs:
           WATCH_HOURS:         ${{ inputs.hours }}
           WATCH_DEADLINE:      ${{ inputs.deadline }}
           WATCH_LAST_STATE:    ${{ inputs.last_state }}
+          WATCH_STOP:          ${{ inputs.stop }}
+          WATCH_STOP_REASON:   ${{ inputs.stop_reason }}
         run: python3 asc_watch.py

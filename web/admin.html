@@ -730,34 +730,25 @@
       host.textContent = "";
       if (ANALYTICS.indexOf(panel) !== -1) { renderStats(host); return; }
       if (panel === "spotlight") { renderSpotlight(host); return; }
+      if (panel === "invites") { renderInvites(host, data.invites); return; }
       var rows = data[panel];
       /* Only rows that carry a path: a row without one can never be signed, and
          asking again after every draw would loop. */
       if (panel === "photos") signVisible(rows.filter(framePath));
       if (panel === "users") signVisible(openPosts().filter(framePath));
       $("page-sub").textContent = rows.length
-        ? plural(rows.length, panel === "invites" ? "person waiting"
-                            : panel === "feedback" ? "unread" : "open")
+        ? plural(rows.length, panel === "feedback" ? "unread" : "open")
         : "";
 
       if (!rows.length) {
         host.appendChild(el("div", "empty",
-          panel === "invites" ? "Nobody is waiting."
-          : panel === "feedback" ? "No feedback yet." : "Nothing to review."));
+          panel === "feedback" ? "No feedback yet." : "Nothing to review."));
         return;
       }
 
       rows.forEach(function (r) {
         var c;
-        if (panel === "invites") {
-          var t = el("div", "card__title", r.email);
-          var approve = el("button", "btn btn--go", "Approve");
-          var decline = el("button", "btn", "Decline");
-          approve.addEventListener("click", function () { act(c, "approve_invite_request", { p_email: r.email }); });
-          decline.addEventListener("click", function () { act(c, "decline_invite_request", { p_email: r.email }); });
-          c = card(t, ago(r.created_at), r.note, [approve, decline]);
-
-        } else if (panel === "photos") {
+        if (panel === "photos") {
           var pt = el("div", "card__title", "@" + (r.reported_username || "unknown"));
           if (r.hidden) pt.appendChild(el("span", "pill", "hidden"));
           if (r.report_count > 1) pt.appendChild(el("span", "pill pill--bad", r.report_count + " reports"));
@@ -874,6 +865,104 @@
         }
         host.appendChild(c);
       });
+    }
+
+    // ---- Invites -------------------------------------------------------------
+
+    /* One list for both ways in: the website's "request an invite" form and the
+       app's "Join the waitlist" form. Approving puts the email on the allowlist;
+       nobody is told, so the owner emails them. An older list_invite_requests
+       sends only waiting rows with no source, approved_at or has_account, and
+       every row then reads as waiting, which is what it is. */
+
+    /* A date in New York, whatever zone this browser is in, so the list reads
+       the same wherever the owner opens it. */
+    function nyDate(iso) {
+      return new Date(iso).toLocaleDateString("en-US",
+        { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric" });
+    }
+    function inviteWaiting(r) { return !r.approved_at && !r.has_account; }
+    /* Approved but not signed up yet: the people the owner still has to email. */
+    function inviteToEmail(rows) {
+      return rows.filter(function (r) { return r.approved_at && !r.has_account; });
+    }
+    function inviteStatus(r) {
+      if (r.has_account) return "signed up";
+      return r.approved_at ? "let in" : "waiting";
+    }
+    /* Waiting first, oldest first (the queue); then the people still to email,
+       then those who signed up, each most recently approved first. */
+    function inviteOrder(a, b) {
+      function group(r) { return !r.approved_at ? 0 : (r.has_account ? 2 : 1); }
+      var ga = group(a), gb = group(b);
+      if (ga !== gb) return ga - gb;
+      if (ga === 0) return new Date(a.created_at) - new Date(b.created_at);
+      return new Date(b.approved_at) - new Date(a.approved_at);
+    }
+
+    function renderInvites(host, rows) {
+      var waiting = rows.filter(inviteWaiting).length;
+      var letIn = rows.filter(function (r) { return !!r.approved_at; }).length;
+      var toEmail = inviteToEmail(rows);
+      $("page-sub").textContent = rows.length ? waiting + " waiting · " + letIn + " let in" : "";
+
+      host.appendChild(statRow([
+        statCard(waiting, "waiting", null, waiting > 0),
+        statCard(letIn, "let in", toEmail.length ? toEmail.length + " not signed up yet" : null)
+      ]));
+
+      var copy = el("button", "btn btn--go", "Copy emails (" + toEmail.length + ")");
+      copy.type = "button";
+      copy.disabled = !toEmail.length;
+      copy.addEventListener("click", function () { copyEmails(toEmail); });
+      var bar = el("div", "card__actions");
+      bar.style.margin = "16px 0 10px";
+      bar.appendChild(copy);
+      host.appendChild(bar);
+      var help = el("div", "card__note",
+        "Approving someone means their email can sign in to FLIM without a code. FLIM does not tell"
+        + " them, so email them yourself. Copy emails copies everyone approved who has not signed up yet.");
+      help.style.marginBottom = "16px";
+      host.appendChild(help);
+
+      if (!rows.length) {
+        host.appendChild(el("div", "empty", "Nobody is waiting."));
+        return;
+      }
+
+      rows.slice().sort(inviteOrder).forEach(function (r) {
+        var c;
+        var t = el("div", "card__title", r.name || r.email);
+        if (r.source) t.appendChild(el("span", "pill", r.source === "app" ? "App" : "Website"));
+        t.appendChild(el("span", "pill", inviteStatus(r)));
+        var meta = [r.name ? r.email : null,
+                    "asked " + nyDate(r.created_at) + " (" + ago(r.created_at) + ")",
+                    r.approved_at ? "approved " + nyDate(r.approved_at) : null]
+          .filter(Boolean).join(" · ");
+        var buttons = [];
+        if (!r.approved_at) {
+          var approve = el("button", "btn btn--go", "Approve");
+          var decline = el("button", "btn", "Decline");
+          approve.addEventListener("click", function () { act(c, "approve_invite_request", { p_email: r.email }); });
+          decline.addEventListener("click", function () { act(c, "decline_invite_request", { p_email: r.email }); });
+          buttons = [approve, decline];
+        }
+        c = card(t, meta, r.note, buttons);
+        host.appendChild(c);
+      });
+    }
+
+    /* Comma separated, which pastes straight into a To or Bcc field. If the
+       browser refuses the clipboard, the list is shown to copy by hand. */
+    async function copyEmails(rows) {
+      var text = rows.map(function (r) { return r.email; }).join(", ");
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        say($("panel-status"), "Copied " + plural(rows.length, "email") + ".");
+      } catch (err) {
+        window.prompt("Copy these emails:", text);
+      }
     }
 
     // ---- Spotlight ----------------------------------------------------------
@@ -1207,9 +1296,12 @@
       if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
       if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from suggestions"));
       if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
+      /* Shot outside its week (and not developed in it): an entry from before the
+         shot-this-week rule. A flag for judgement; choose does not refuse it. */
+      if (r.outside_week === true) t.appendChild(el("span", "pill pill--bad", "shot outside its week"));
       main.appendChild(t);
-      main.appendChild(el("div", "card__meta", "Put up " + dayLabel(r.put_up_at)
-        + ", posted " + dayLabel(r.post_created_at)));
+      main.appendChild(el("div", "card__meta", (r.taken_at ? "Shot " + dayLabel(r.taken_at) + ", put up " : "Put up ")
+        + dayLabel(r.put_up_at) + ", posted " + dayLabel(r.post_created_at)));
       /* The caption goes public with the frame, so it is part of the choice. */
       if (r.caption) main.appendChild(el("div", "card__note", r.caption));
       c.appendChild(main);
@@ -1952,8 +2044,11 @@
        ["users", "c-users"], ["feedback", "c-feedback"], ["spotlight", "c-spotlight"]].forEach(function (p) {
         /* Spotlight counts frames still in play, not rows: a removed frame stays
            listed so the week reads true, but it is not waiting on anyone. */
+        /* Invites count the people still waiting, not the approved rows listed
+           below them for the Copy emails button. */
         var n = p[0] === "spotlight"
           ? data.spotlight.filter(function (r) { return !r.removed_at; }).length
+          : p[0] === "invites" ? data.invites.filter(inviteWaiting).length
           : data[p[0]].length;
         var node = $(p[1]);
         node.textContent = n;

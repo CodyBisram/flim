@@ -3,6 +3,12 @@
 # empty while any seat is left, so nothing goes out until the hundredth person joins; then it
 # sends once (the claim ledger never repeats a person), tells the owner through FLIM, and disables
 # this workflow. Re-enable from the Actions tab only for a new campaign.
+#
+# The function claims each person BEFORE pushing them, so a run whose pushes fail leaves those
+# people claimed and unreachable by any rerun. scripts/one_shot_push_run.py reads the reply's
+# claimed/sent/failed: whenever anyone was claimed and not reached, or the reply is too broken to
+# tell, the owner gets a FLIM push and this job fails. The workflow still disables itself once
+# anyone was claimed, because a rerun cannot reach a claimed person anyway.
 name: Founding 100 full
 
 on:
@@ -21,23 +27,24 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
       - name: Send if the first hundred is full
+        id: send
         env:
           ONE_SHOT_PUSH_SECRET: ${{ secrets.ONE_SHOT_PUSH_SECRET }}
           OWNER_NOTIFY_SECRET:  ${{ secrets.OWNER_NOTIFY_SECRET }}
-          GH_TOKEN:             ${{ github.token }}
+          FUNCTIONS_URL:        https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1
         run: |
-          set -euo pipefail
-          base="https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1"
-          reply=$(curl -sS --fail-with-body -H "x-one-shot-secret: $ONE_SHOT_PUSH_SECRET" \
-            "$base/send-one-shot-push?campaign=founding-full&send=true")
-          echo "$reply"
-          sent=$(echo "$reply" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sent", 0))')
-          if [ "$sent" -gt 0 ]; then
-            curl -sS -X POST "$base/notify-owner" -H "content-type: application/json" \
-              -H "x-owner-notify-secret: $OWNER_NOTIFY_SECRET" \
-              -d "{\"title\":\"The first hundred is full\",\"body\":\"The Founding 100 push went to $sent people.\"}"
-            gh workflow disable founding-full.yml --repo "$GITHUB_REPOSITORY"
-          fi
+          python3 scripts/one_shot_push_run.py --campaign founding-full --label "Founding 100 push" \
+            --success-title "The first hundred is full" \
+            --success-body "The Founding 100 push went to {people}." \
+            --after-failure "The founding-full workflow is now off."
+      - name: Turn this workflow off once the push has gone
+        if: always() && steps.send.outputs.claimed != '' && steps.send.outputs.claimed != '0' && steps.send.outputs.claimed != 'unknown'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow disable founding-full.yml --repo "$GITHUB_REPOSITORY"

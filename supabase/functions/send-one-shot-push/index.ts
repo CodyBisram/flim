@@ -3,7 +3,10 @@
 //
 // A single, manually invoked nudge to one cohort. NOT scheduled, and deliberately not wired to
 // pg_cron: every other push here is reactive (something happened to you, you are told), and this
-// one initiates contact for a product reason, so a human decides when it goes.
+// one initiates contact for a product reason, so a human decides when it goes. Two campaigns have
+// a scheduled caller the owner switches on and off in GitHub: founding-full
+// (.github/workflows/founding-full.yml) and spotlight-weekly (.github/workflows/spotlight-weekly.yml,
+// paused with the repo variable SPOTLIGHT_WEEKLY_PAUSED=true).
 //
 // Two guards, because a push cannot be unsent:
 //
@@ -87,7 +90,12 @@ type Recipient = { userId: string; title: string; body: string; route: unknown }
 /// sendable, so a typo in the query string cannot invent one and bypass the claim ledger.
 const APP_NAME = "FLIM";
 
-const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
+/// Every resolver is handed the request's one clock reading, so a campaign keyed by the week
+/// (spotlight-weekly) resolves its cohort and its copy for the same week its claims are filed
+/// under, even on a run that straddles Monday 04:00. Most ignore it.
+type Resolver = (now: Date) => Promise<Recipient[]>;
+
+const CAMPAIGNS: Record<string, Resolver> = {
   "first-shot": firstShotCohort,
   "still-no-shot": stillNoShotCohort,
   "checked-again": checkedAgainCohort,
@@ -121,6 +129,18 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "founding-seats-inviters": foundingSeatsInvitersCohort,
   "spotlight-weekend": spotlightWeekendCohort,
   "spotlight-weekend-update": spotlightWeekendUpdateCohort,
+  "spotlight-weekly": spotlightWeeklyCohort,
+  "spotlight-weekly-preview": spotlightWeeklyPreview,
+};
+
+/// The claim ledger's key for a campaign, when it is not the campaign's own name. A recurring
+/// campaign claims under one key PER OCCURRENCE: `spotlight-weekly:2026-10-05` is that Spotlight
+/// week's send, so a person hears from it at most once a week and a rerun inside the week claims
+/// nothing, while next week's key starts empty. Anything not listed claims under its name, once
+/// for good, as before.
+const LEDGER_KEYS: Record<string, (now: Date) => string> = {
+  "spotlight-weekly": (now) => `spotlight-weekly:${currentSpotlightWeekKey(now)}`,
+  "spotlight-weekly-preview": (now) => `spotlight-weekly-preview:${currentSpotlightWeekKey(now)}`,
 };
 
 /// Founding 100 is running out (2026-09-25: 24 seats, about four a week). The badge is the one
@@ -726,6 +746,80 @@ async function spotlightWeekendUpdateCohort(): Promise<Recipient[]> {
 }
 
 // ------------------------------------------------------------
+// spotlight-weekly (2026-10-06): spotlight-weekend, every weekend. The 2026-10-02 send beat every
+// weekend before it (26 people shot on the Saturday against 15 to 18, 396 photos against 136 to
+// 175), so .github/workflows/spotlight-weekly.yml sends it every Friday at 22:30 UTC. Same
+// cohort as spotlight-weekend: reachable, on 1.6.0 or later, nothing put up for the current
+// Spotlight week, the owner and the review account left out. The below-1.6 "update" variant is
+// NOT repeated: those people had theirs on 2026-10-02. Claimed under `spotlight-weekly:<week>`
+// (LEDGER_KEYS), so once per person per Spotlight week. The tap opens the camera.
+//
+// The copy rotates, one variant per Spotlight week in this order, counted from the week of
+// 2026-10-05 (variant A), so two weeks in a row never read the same. A is the owner's approved
+// spotlight-weekend copy. B, C and D are DRAFTS PENDING THE OWNER'S APPROVAL (2026-10-06): the
+// first of them, B, goes out Friday 2026-10-16 unless it is approved, changed or removed first,
+// or the workflow is paused. Reordering or removing a variant reshuffles every later week.
+
+const SPOTLIGHT_WEEKLY_COPY: { title: string; body: string }[] = [
+  // A. Approved; sent as spotlight-weekend on 2026-10-02.
+  { title: SPOTLIGHT_WEEKEND_TITLE, body: SPOTLIGHT_WEEKEND_BODY },
+  // B. Draft, pending the owner's approval.
+  { title: "Spotlight goes up Monday",
+    body: "Shoot something this weekend and put your favorite frame up for it." },
+  // C. Draft, pending the owner's approval.
+  { title: "Out tonight?",
+    body: `Bring ${APP_NAME}. The best frame of your weekend could be in Monday's Spotlight.` },
+  // D. Draft, pending the owner's approval.
+  { title: "One frame", body: "That's all Spotlight asks for this week. Make it a good one." },
+];
+const SPOTLIGHT_WEEKLY_FIRST_WEEK = "2026-10-05";
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+
+/// This Spotlight week's variant: weeks since SPOTLIGHT_WEEKLY_FIRST_WEEK, modulo the number of
+/// variants (a week before the first reads backwards round the list, never a negative index).
+function spotlightWeeklyCopy(weekKey: string): { variant: string; title: string; body: string } {
+  const weeks = Math.round(
+    (Date.parse(`${weekKey}T00:00:00Z`) - Date.parse(`${SPOTLIGHT_WEEKLY_FIRST_WEEK}T00:00:00Z`)) / WEEK_MS,
+  );
+  const n = SPOTLIGHT_WEEKLY_COPY.length;
+  const i = ((weeks % n) + n) % n;
+  return { variant: String.fromCharCode(65 + i), ...SPOTLIGHT_WEEKLY_COPY[i] };
+}
+
+/// This week's copy and the next three, for the reply, so the rotation can be read before any of
+/// it goes out.
+function spotlightWeeklySchedule(now: Date): { week: string; variant: string; title: string; body: string }[] {
+  const first = Date.parse(`${currentSpotlightWeekKey(now)}T00:00:00Z`);
+  return [0, 1, 2, 3].map((k) => {
+    const week = new Date(first + k * WEEK_MS).toISOString().slice(0, 10);
+    return { week, ...spotlightWeeklyCopy(week) };
+  });
+}
+
+async function spotlightWeeklyCohort(now: Date): Promise<Recipient[]> {
+  const week = currentSpotlightWeekKey(now);
+  const { title, body } = spotlightWeeklyCopy(week);
+  const versionOf = await versionsByUser();
+  const { data: entries, error } = await supabase
+    .from("spotlight_entries").select("user_id").eq("week_key", week).is("removed_at", null);
+  // A failed read must not read as "nobody has put one up" and nag the people who have.
+  if (error) throw new Error(`spotlight_entries read failed: ${error.message}`);
+  const entered = new Set(((entries ?? []) as { user_id: string }[]).map((e) => e.user_id));
+  return (await reachableNamedUsers())
+    .filter((u) => !versionBelow(versionOf.get(u.id), "1.6.0"))
+    .filter((u) => !entered.has(u.id))
+    .map((u) => ({ userId: u.id, title, body, route: { t: "camera" } }));
+}
+
+/// This week's spotlight-weekly push to the owner alone, the camera tap included. Claimed per
+/// week (LEDGER_KEYS), so each week's copy can be previewed once; the dry run shows it without
+/// sending anything.
+async function spotlightWeeklyPreview(now: Date): Promise<Recipient[]> {
+  const { title, body } = spotlightWeeklyCopy(currentSpotlightWeekKey(now));
+  return (await ownerOnly(title, body)).map((r) => ({ ...r, route: { t: "camera" } }));
+}
+
+// ------------------------------------------------------------
 // founding-full: the Founding 100 is full (written 2026-09-29, at 79 of 100). EMPTY until the
 // last seat is taken: `foundingSeatsLeft()` must read 0, so the scheduled caller
 // (.github/workflows/founding-full.yml) can invoke it with send=true every half hour and nothing
@@ -985,6 +1079,7 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
+  const now = new Date();
   const name = url.searchParams.get("campaign") ?? "";
   const send = url.searchParams.get("send") === "true";
   const resolve = CAMPAIGNS[name];
@@ -999,45 +1094,82 @@ Deno.serve(async (req) => {
   // campaign still defines the copy and the eligibility rule, the filter only stops everyone
   // else who qualifies from being swept up in a send meant for one account.
   const only = url.searchParams.get("user");
-  const resolved = (await resolve()).filter((r) => !only || r.userId === only);
-  const recipients = await unclaimed(name, resolved);
+  // The key every claim of this run is filed under: the campaign's name, or its occurrence's key
+  // for a recurring campaign (LEDGER_KEYS). Read once, from the same clock the cohort reads.
+  const ledger = LEDGER_KEYS[name]?.(now) ?? name;
+  // Nothing has been claimed yet, so a failure here says exactly that: `claimed: 0` tells a
+  // scheduled caller that nobody was burned and the next run can simply try again.
+  let recipients: Recipient[];
+  try {
+    const resolved = (await resolve(now)).filter((r) => !only || r.userId === only);
+    recipients = await unclaimed(ledger, resolved);
+  } catch (e) {
+    console.error(JSON.stringify({ at: "one_shot_push_cohort_failed", campaign: name, error: String(e) }));
+    return Response.json({ error: `cohort failed: ${String(e)}`, campaign: name, ledger, claimed: 0 }, { status: 500 });
+  }
+  const schedule = name === "spotlight-weekly" || name === "spotlight-weekly-preview"
+    ? { copy: spotlightWeeklySchedule(now) } : {};
   if (!send) {
     return Response.json({
-      dryRun: true, campaign: name, wouldSend: recipients.length,
+      dryRun: true, campaign: name, ledger, wouldSend: recipients.length, ...schedule,
       preview: recipients.map((r) => ({ userId: r.userId, title: r.title, body: r.body })),
       note: "Nothing was sent. Re-invoke with &send=true to actually send.",
     });
   }
 
+  // The APNs signing key, BEFORE the first claim: a key that cannot sign used to throw from the
+  // first push, after that person was claimed, losing the reply, and every rerun then claimed and
+  // lost one more person.
+  if (recipients.length > 0) {
+    try {
+      await apnsAuthToken();
+    } catch (e) {
+      console.error(JSON.stringify({ at: "one_shot_push_apns_key_failed", campaign: name, error: String(e) }));
+      return Response.json({ error: `APNs key failed: ${String(e)}`, campaign: name, ledger, claimed: 0 }, { status: 500 });
+    }
+  }
+
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   for (const person of recipients) {
     // Claim first. A duplicate key here means another run already has this person.
     const { error: claimErr } = await supabase
-      .from("one_shot_push").insert({ campaign: name, user_id: person.userId });
-    if (claimErr) continue;
+      .from("one_shot_push").insert({ campaign: ledger, user_id: person.userId });
+    if (claimErr) {
+      skipped++;
+      continue;
+    }
 
-    const { data: tokens, error: tokensErr } = await supabase
-      .from("device_tokens").select("token").eq("user_id", person.userId);
     // Counted as failed, never as sent: the claim stays (a rerun skips this person, the ledger's
-    // chosen direction) and sent_at stays empty, so the ledger shows it did not go.
-    if (tokensErr) console.warn(JSON.stringify({ at: "device_tokens_read_failed", userId: person.userId, error: tokensErr.message }));
+    // chosen direction) and sent_at stays empty, so the ledger shows it did not go. A throw is
+    // this one person's failure too, never the end of the run with the reply lost.
     let delivered = false;
-    for (const row of (tokens ?? []) as { token: string }[]) {
-      const status = await push(row.token, person.title, person.body, person.route);
-      if (status === 200) delivered = true;
-      else console.warn(JSON.stringify({ at: "push_failed", userId: person.userId, status }));
+    try {
+      const { data: tokens, error: tokensErr } = await supabase
+        .from("device_tokens").select("token").eq("user_id", person.userId);
+      if (tokensErr) console.warn(JSON.stringify({ at: "device_tokens_read_failed", userId: person.userId, error: tokensErr.message }));
+      for (const row of (tokens ?? []) as { token: string }[]) {
+        const status = await push(row.token, person.title, person.body, person.route);
+        if (status === 200) delivered = true;
+        else console.warn(JSON.stringify({ at: "push_failed", userId: person.userId, status }));
+      }
+    } catch (e) {
+      console.warn(JSON.stringify({ at: "push_threw", userId: person.userId, error: String(e) }));
     }
     if (delivered) {
       sent++;
       await supabase.from("one_shot_push")
         .update({ sent_at: new Date().toISOString() })
-        .eq("campaign", name).eq("user_id", person.userId);
+        .eq("campaign", ledger).eq("user_id", person.userId);
     } else {
       failed++;
     }
   }
 
-  console.log(JSON.stringify({ at: "one_shot_push_done", campaign: name, sent, failed }));
-  return Response.json({ dryRun: false, campaign: name, sent, failed });
+  // claimed is this run's new claims, each one either sent or failed. A scheduled caller alerts
+  // on failed > 0: those people are claimed for good and were not reached. skipped is people
+  // another run claimed first (or a claim insert that failed), neither contacted nor counted.
+  console.log(JSON.stringify({ at: "one_shot_push_done", campaign: name, ledger, sent, failed, skipped }));
+  return Response.json({ dryRun: false, campaign: name, ledger, claimed: sent + failed, sent, failed, skipped, ...schedule });
 });

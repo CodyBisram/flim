@@ -1,0 +1,70 @@
+# The Spotlight weekend push, every Friday at 22:30 UTC (18:30 New York in summer time, 17:30 in
+# winter). Calls send-one-shot-push?campaign=spotlight-weekly&send=true: everyone reachable on
+# 1.6.0 or later with nothing up for this Spotlight week, once per person per week (claimed under
+# spotlight-weekly:<week>, so a rerun inside the week sends nothing new), the copy rotating by
+# week. Then it tells the owner the count through FLIM, people claimed and not reached included.
+# The job fails, with a push to the owner, when the function errors, when its reply is too broken
+# to tell who was claimed, or when it claimed people and reached none of them; a few dead phones
+# in an otherwise delivered week are counted in the report, not an alarm, because next week's
+# claim starts fresh (scripts/one_shot_push_run.py --partial-ok).
+#
+# Pause it without touching this file: set the repository variable SPOTLIGHT_WEEKLY_PAUSED to
+# true (Settings > Secrets and variables > Actions > Variables); delete it or set it to anything
+# else to resume. A manual run takes a dry-run switch that sends and reports nothing.
+name: Spotlight weekly push
+
+on:
+  schedule:
+    - cron: "30 22 * * 5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: show who would get it and this week's copy, send nothing"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spotlight-weekly
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Paused?
+        id: gate
+        env:
+          PAUSED: ${{ vars.SPOTLIGHT_WEEKLY_PAUSED }}
+        run: |
+          if [ "$PAUSED" = "true" ]; then
+            echo "SPOTLIGHT_WEEKLY_PAUSED is true: skipping this week's Spotlight push. Nothing was sent."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts
+      - name: Send
+        if: steps.gate.outputs.run == 'true'
+        env:
+          ONE_SHOT_PUSH_SECRET: ${{ secrets.ONE_SHOT_PUSH_SECRET }}
+          OWNER_NOTIFY_SECRET:  ${{ secrets.OWNER_NOTIFY_SECRET }}
+          FUNCTIONS_URL:        https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1
+          DRY_RUN:              ${{ inputs.dry_run && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "$DRY_RUN" = "true" ]; then extra+=(--dry-run); fi
+          python3 scripts/one_shot_push_run.py --campaign spotlight-weekly --label "Spotlight weekly push" \
+            --success-title "Spotlight push sent" \
+            --success-body "This week's went to {people} (copy {variant})." \
+            --always-report --notify-on-clean-error --partial-ok \
+            --after-failure "Pause it with SPOTLIGHT_WEEKLY_PAUSED=true if this repeats." \
+            "${extra[@]+"${extra[@]}"}"

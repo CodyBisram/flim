@@ -1,0 +1,32 @@
+# Resumes an App Store review watch (asc-watch.yml) whose chain of runs broke: hourly, while a
+# watch is active, it starts the next run from the newest failed run's own inputs (see
+# scripts/asc_watch_backstop.py). Every asc-watch run switches this on; it switches itself off
+# once no watch is active, so it costs nothing between reviews. Never cancels or overlaps a live
+# watch run: it acts only when none is queued or in progress.
+name: App Store watch backstop
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: asc-watch-backstop
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - name: Resume the watch if its chain broke
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/asc_watch_backstop.py

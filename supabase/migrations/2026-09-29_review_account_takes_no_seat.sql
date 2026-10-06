@@ -9,6 +9,12 @@
 --
 --   1. signup_ordinal becomes nullable. NULL means "not a member number", and only a review
 --      account holds it. The unique index stays; Postgres lets any number of NULLs share it.
+--   SUPERSEDED IN PART 2026-10-06 (2026-10-06_review_account_by_identity.sql): steps 2 and 4
+--   below matched the review login by username, so a real member named like it lost a number
+--   at signup or could re-fire the shift. Step 2 is replaced there by an identity test (auth
+--   email review@flim-app.com); step 4 is rewritten in place below to the same identity and
+--   can no longer run again. Do not restore the name tests.
+--
 --   2. assign_signup_ordinal gives a review-named account (applereview, or applereview followed by
 --      digits, lower-cased) NULL at signup, and everyone else MAX + 1 as before. MAX ignores
 --      NULLs, so after the shift below the next real signup is 80: no gap, no reuse. Username is
@@ -599,33 +605,40 @@ REVOKE ALL ON FUNCTION public._ratchet_badges(UUID) FROM PUBLIC, anon, authentic
 -- ---------------------------------------------------------------------------
 -- 4. The shift, once
 -- ---------------------------------------------------------------------------
+-- Ran in production on 2026-09-29. Rewritten 2026-10-06 (2026-10-06_review_account_by_identity.sql)
+-- so that it can never run again: it was guarded by the username pattern, and a real member who
+-- renamed to "applereview3" would have fired it on the next rerun of this file, taking their
+-- number and moving everyone above them down one. It now acts only on the review login by
+-- identity (auth email review@flim-app.com, written by Auth, never by the app), only if that
+-- account signed up before this shift existed, and only while no account holds NULL yet. All
+-- three held exactly once, in production before 2026-09-29. Afterwards the review login holds
+-- NULL, any later review login is given NULL at signup (assign_signup_ordinal), and the lock
+-- trigger pins every number, so a rerun finds nothing to do. A fresh database has no users here.
 DO $do$
 DECLARE
-    r RECORD;
+    v_id  UUID;
+    v_ord INT;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM public.users
-        WHERE signup_ordinal IS NOT NULL
-          AND lower(COALESCE(username, '')) ~ '^applereview[0-9]*$'
-    ) THEN
-        RETURN;  -- already done: nothing moves on a second run
+    SELECT u.id, u.signup_ordinal INTO v_id, v_ord
+    FROM public.users u
+    JOIN auth.users a ON a.id = u.id
+    WHERE lower(a.email) = 'review@flim-app.com'
+      AND a.created_at < TIMESTAMPTZ '2026-09-30 00:00:00+00'
+    ORDER BY u.signup_ordinal NULLS FIRST
+    LIMIT 1;
+    IF v_ord IS NULL
+       OR EXISTS (SELECT 1 FROM public.users WHERE signup_ordinal IS NULL) THEN
+        RETURN;  -- already done, or nothing to do: nothing moves on a second run
     END IF;
 
     LOCK TABLE public.users IN SHARE ROW EXCLUSIVE MODE;
     ALTER TABLE public.users DISABLE TRIGGER lock_signup_ordinal_trigger;
 
-    FOR r IN
-        SELECT id, signup_ordinal FROM public.users
-        WHERE signup_ordinal IS NOT NULL
-          AND lower(COALESCE(username, '')) ~ '^applereview[0-9]*$'
-        ORDER BY signup_ordinal DESC
-    LOOP
-        UPDATE public.users SET signup_ordinal = NULL WHERE id = r.id;
-        UPDATE public.users SET signup_ordinal = -(signup_ordinal - 1)
-        WHERE signup_ordinal > r.signup_ordinal;
-        UPDATE public.users SET signup_ordinal = -signup_ordinal
-        WHERE signup_ordinal < 0;
-    END LOOP;
+    UPDATE public.users SET signup_ordinal = NULL WHERE id = v_id;
+    UPDATE public.users SET signup_ordinal = -(signup_ordinal - 1)
+    WHERE signup_ordinal > v_ord;
+    UPDATE public.users SET signup_ordinal = -signup_ordinal
+    WHERE signup_ordinal < 0;
 
     ALTER TABLE public.users ENABLE TRIGGER lock_signup_ordinal_trigger;
 END
