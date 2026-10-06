@@ -137,7 +137,7 @@ def main():
             title = args.success_title or f"{args.label} sent"
             body = (args.success_body or "Went to {people}.").format(sent=sent, people=people(sent), variant=variant)
             if failed > 0:
-                body += f" {failed} not reached (claimed, no sent_at under {ledger})."
+                body += f" {failed} couldn't be reached."
             if claimed == 0:
                 title, body = f"{args.label}: nobody new", "Nobody new to send to this time."
             return 0 if notify(title, body) else 1
