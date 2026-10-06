@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 IMAGE="${FLIM_PG_IMAGE:-supabase/postgres:17.6.1.121}"
-NAME=flim-schema-bootstrap
+NAME="${FLIM_PG_NAME:-flim-schema-bootstrap}"
 PORT="${FLIM_PG_PORT:-54329}"
 KEEP=0; [[ "${1:-}" == "--keep" ]] && KEEP=1
 
