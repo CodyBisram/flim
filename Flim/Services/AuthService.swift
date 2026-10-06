@@ -442,6 +442,21 @@ final class AuthService {
         return rows?.first
     }
 
+    /// Puts someone with no invite code on the waitlist. Read signed out like `previewInvite`:
+    /// `join_waitlist` is callable by anon and answers with one word, which `Waitlist.Outcome`
+    /// reads. Any thrown error (no network, the server down) is `unreachable`, never a throw, so
+    /// the sheet has exactly four cases to draw.
+    func joinWaitlist(name: String, email: String) async -> Waitlist.Outcome {
+        do {
+            let response = try await supabase
+                .rpc("join_waitlist", params: ["p_name": name, "p_email": email])
+                .execute()
+            return Waitlist.Outcome.parse(response.data)
+        } catch {
+            return .unreachable
+        }
+    }
+
     /// One row of `get_own_inviter()`: who invited the signed-in account, and how.
     struct OwnInviterRow: Decodable, Equatable {
         let inviterId: UUID

@@ -36,6 +36,8 @@ struct EmailAuthView: View {
     /// `nil` while resolving, for a short code, and for a code the server will not accept.
     @State private var inviter: AuthService.InvitePreview?
     @State private var previewTask: Task<Void, Never>?
+    /// The waitlist form, for someone who installed without a code. See `noCodeRow`.
+    @State private var showWaitlist = false
 
     var body: some View {
         ZStack {
@@ -96,6 +98,11 @@ struct EmailAuthView: View {
         .navigationBarHidden(true)
         .sheet(isPresented: $showReviewerSignIn) {
             ReviewerSignInSheet(email: email)
+        }
+        .sheet(isPresented: $showWaitlist) {
+            WaitlistSheet(prefilledEmail: email) { name, email in
+                await auth.joinWaitlist(name: name, email: email)
+            }
         }
         .navigationDestination(isPresented: $showOTP) {
             OTPView()
@@ -195,6 +202,9 @@ struct EmailAuthView: View {
                     }
                     .padding(.top, 12)
                     .transition(.opacity)
+                } else {
+                    noCodeRow
+                        .transition(.opacity)
                 }
             } else {
                 // Collapsed by default so the screen still reads as "enter your email", with the
@@ -213,6 +223,52 @@ struct EmailAuthView: View {
         .padding(.top, 16)
         .animation(.snappy(duration: 0.2), value: inviteExpanded)
         .animation(.snappy(duration: 0.2), value: needsInvite)
+    }
+
+    /// Two ways forward for someone who installed without a code, who used to find only "Invite
+    /// only" here and leave. Quiet on purpose: most people on this screen are holding a code, so
+    /// it sits under the field in the secondary style and steps aside once a code names its
+    /// inviter.
+    private var noCodeRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(Waitlist.Copy.noCode)
+                .flimFont(13, relativeTo: .subheadline)
+                .foregroundStyle(FlimTheme.textSecondary)
+            // Side by side when they fit, stacked at large type sizes rather than truncated.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) { noCodeActions }
+                VStack(alignment: .leading, spacing: 0) { noCodeActions }
+            }
+        }
+        .padding(.top, 14)
+    }
+
+    @ViewBuilder
+    private var noCodeActions: some View {
+        ShareLink(item: Waitlist.Copy.shareMessage) {
+            noCodeActionLabel(Waitlist.Copy.askFriend)
+        }
+        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+        .accessibilityLabel(Waitlist.Copy.askFriend)
+        .accessibilityHint(Waitlist.Copy.askFriendHint)
+
+        Button {
+            Haptics.tap()
+            codeFocused = false
+            showWaitlist = true
+        } label: {
+            noCodeActionLabel(Waitlist.Copy.joinWaitlist)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(Waitlist.Copy.joinWaitlistHint)
+    }
+
+    private func noCodeActionLabel(_ title: String) -> some View {
+        Text(title)
+            .flimFont(14, weight: .medium, relativeTo: .subheadline)
+            .foregroundStyle(accent)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
     }
 
     /// Fills in an invite code that arrived by link.

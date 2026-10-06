@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Whether the post about to be pushed at `pushedPostId` should land with the comment composer
 /// already focused, and what `focusCommentsPostId` becomes once that focus has been consumed.
@@ -73,6 +74,30 @@ func shouldPresentNotifPrimer(
         return timesShown < maxPresentations
     }
     return osStatusIsUndetermined && !didRetryUnaskedPrimer
+}
+
+/// Whether the camera's first-run coach is out of the notification primer's way.
+///
+/// The primer waits for the coach's "Got it" so a new person meets one ask at a time: the camera
+/// permission, then the coach, then notifications. But the coach only draws over a working
+/// camera; with access denied or restricted the camera shows its "grant access" state instead
+/// and the coach never appears, so "Got it" can never be tapped and, before this, such an account
+/// was never asked about notifications at all (nightly review, 2026-10). A refused camera counts
+/// as the coach being done. `.notDetermined` does not: on a fresh install the camera's own ask
+/// is still coming, and the primer must not land on top of it.
+func cameraCoachIsSettled(hasSeenCoach: Bool, cameraStatus: AVAuthorizationStatus) -> Bool {
+    if hasSeenCoach { return true }
+    switch cameraStatus {
+    case .denied, .restricted: return true
+    default: return false
+    }
+}
+
+extension Notification.Name {
+    /// Posted by `CameraViewModel.start()` when the camera's own permission ask is answered with
+    /// a refusal, so `MainTabView` can ask about notifications without waiting for a coach that
+    /// will never appear. Only on the answer itself, never on a later visit to a denied camera.
+    static let cameraAccessRefused = Notification.Name("cameraAccessRefused")
 }
 
 /// The four tab symbols, by base name. The tab bar draws the selected tab's symbol filled on
@@ -312,6 +337,9 @@ struct MainTabView: View {
         // A new person's first ask after the camera's own is the coach; the primer follows its
         // "Got it" rather than landing on top of it a second after the camera alert.
         .onChange(of: hasSeenCameraCoach) { _, seen in if seen { maybeShowNotifPrimer() } }
+        // ...unless the camera was refused, which means there is no coach to wait for. Later
+        // launches find the refusal in `maybeShowNotifPrimer` itself.
+        .modifier(CameraRefusalListener(action: maybeShowNotifPrimer))
         .onAppear {
             // This view only exists once there's an authenticated, fully-resolved session (see
             // ContentView), so this is "reached the main UI", not process start. Firing here
@@ -666,8 +694,12 @@ struct MainTabView: View {
         // One ask at a time on a first run: the camera permission (onboarding), then the
         // camera's coach, then this. Waiting on the coach touches neither the camera request nor
         // the onboarding flag; it only moves this soft ask to the coach's "Got it". Everyone past
-        // their first run has seen the coach, so for them nothing changes.
-        guard hasOnboarded, hasSeenCameraCoach else { return }
+        // their first run has seen the coach, so for them nothing changes. A refused camera
+        // never shows the coach, so it counts as done (`cameraCoachIsSettled`).
+        guard hasOnboarded,
+              cameraCoachIsSettled(hasSeenCoach: hasSeenCameraCoach,
+                                   cameraStatus: AVCaptureDevice.authorizationStatus(for: .video))
+        else { return }
         // Asked at start, for everyone, including brand-new accounts (owner's call, 2026-09-09:
         // the first-run canvas moved the ask to the first roll, and a day of testing showed a
         // new person can go a whole session without one). `RollDevelopAskSheet` stays as the
@@ -702,6 +734,17 @@ struct MainTabView: View {
             }
             showNotifPrimer = true
         }
+    }
+}
+
+/// Runs `action` when the camera's permission ask is answered with a refusal
+/// (`.cameraAccessRefused`). Its own modifier so `MainTabView.body` stays small enough to
+/// type-check.
+private struct CameraRefusalListener: ViewModifier {
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .cameraAccessRefused)) { _ in action() }
     }
 }
 

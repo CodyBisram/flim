@@ -59,6 +59,10 @@ struct ContentView: View {
             } else if ProcessInfo.processInfo.arguments.contains("-rollDetailDemo") {
                 // A developed roll's detail screen on fixture frames. See RollDetailDemoHost.
                 RollDetailDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-waitlistPreviewDemo") {
+                // The sign-in screen with the waitlist sheet open over it and a stubbed server.
+                // See WaitlistPreviewDemoHost.
+                WaitlistPreviewDemoHost()
             } else {
                 authGate
             }

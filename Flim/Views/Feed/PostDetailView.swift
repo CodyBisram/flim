@@ -528,7 +528,7 @@ struct PostDetailView: View {
 
     /// The write, then the toast if `reactToPost` rolled it back.
     private func react(_ emoji: String, userId: UUID) async {
-        guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId) else { return }
+        guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId, authorId: post.userId) else { return }
         withAnimation { reactionFailedToast = true }
         try? await Task.sleep(for: .seconds(2))
         withAnimation { reactionFailedToast = false }
@@ -710,7 +710,7 @@ struct PostDetailView: View {
             // The Bool-returning wrapper, same as `CommentsSheet.send()`: `addComment` alone
             // returns nil on failure with nothing here checking it, which is how a comment
             // that never reached the server still cleared the draft as if it had.
-            let ok = await feed.commentOnPost(post.id, body: body, userId: uid)
+            let ok = await feed.commentOnPost(post.id, body: body, userId: uid, authorId: post.userId)
             await reloadComments()
             sending = false
             if !ok {

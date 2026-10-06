@@ -245,4 +245,166 @@ struct NewAccountIntroTests {
         #expect(!line.contains("Monday"))
         #expect(!line.lowercased().contains("picks") && !line.lowercased().contains("picked"))
     }
+
+    // MARK: - Say hi to who brought you
+
+    /// A throwaway store per test, passed explicitly, so these never swap the shared one.
+    private func freshStore() -> (UserDefaults, String) {
+        let suite = "InviterNudgeTests.\(UUID().uuidString)"
+        return (UserDefaults(suiteName: suite) ?? .standard, suite)
+    }
+
+    private func nudge(_ me: UUID, created: Date = Date(), now: Date = Date(), hasCard: Bool = true,
+                       saidHiInFeed: Bool = false, stacks: Bool = false, store: UserDefaults) -> String? {
+        NewAccountIntro.InviterNudge.lineToShow(userId: me, createdAt: created, now: now, inviterHasCard: hasCard,
+                                                saidHiInFeed: saidHiInFeed, stacksUnderTopLine: stacks, store: store)
+    }
+
+    @Test("the say-hi line names the inviter, verbatim, with no banned punctuation")
+    func inviterNudgeWords() {
+        let line = NewAccountIntro.InviterNudge.text(name: "Maya")
+        #expect(line == "Maya invited you. Say hi with a reaction on their latest shot.")
+        #expect(!line.contains("\u{2014}") && !line.contains("!"))
+    }
+
+    @Test("a new account invited by a person sees the line while the inviter has a card")
+    func inviterNudgeShows() {
+        let (store, suite) = freshStore()
+        defer { store.removePersistentDomain(forName: suite) }
+        let me = UUID(), maya = UUID()
+        NewAccountIntro.rememberInviter(.init(id: maya, name: "Maya"), userId: me, store: store)
+        #expect(nudge(me, store: store) == "Maya invited you. Say hi with a reaction on their latest shot.")
+        // No card in the loaded feed, no line.
+        #expect(nudge(me, hasCard: false, store: store) == nil)
+        // Nobody remembered, no line; a cohort code names nobody, no line.
+        #expect(nudge(UUID(), store: store) == nil)
+        let cohort = UUID()
+        NewAccountIntro.rememberInviter(.init(id: UUID(), name: "FLIMGO", isCampaign: true), userId: cohort, store: store)
+        #expect(nudge(cohort, store: store) == nil)
+        // It never stacks under a top line that is ALREADY on screen this launch.
+        #expect(nudge(me, stacks: true, store: store) == nil)
+    }
+
+    @Test("a reaction or comment on the inviter's post ends the line for good, on that account only")
+    func inviterNudgeHidesOnHello() {
+        let (store, suite) = freshStore()
+        defer { store.removePersistentDomain(forName: suite) }
+        let me = UUID(), other = UUID(), maya = UUID(), stranger = UUID()
+        NewAccountIntro.rememberInviter(.init(id: maya, name: "Maya"), userId: me, store: store)
+        NewAccountIntro.rememberInviter(.init(id: maya, name: "Maya"), userId: other, store: store)
+        // A reaction or comment landing on someone else's post is not the hello.
+        NewAccountIntro.InviterNudge.noteInteraction(withAuthor: stranger, userId: me, store: store)
+        NewAccountIntro.InviterNudge.noteInteraction(withAuthor: nil, userId: me, store: store)
+        #expect(nudge(me, store: store) != nil)
+        // On the inviter's post it is, and it persists.
+        NewAccountIntro.InviterNudge.noteInteraction(withAuthor: maya, userId: me, store: store)
+        #expect(nudge(me, store: store) == nil)
+        #expect(NewAccountIntro.InviterNudge.hasSaidHi(userId: me, store: store))
+        // Another account on the same phone, invited by the same person, still sees it.
+        #expect(nudge(other, store: store) != nil)
+    }
+
+    @Test("a hello already in the loaded feed hides the line: a reaction or a comment by me")
+    func inviterNudgeReadsTheFeed() {
+        let me = UUID(), maya = UUID(), someone = UUID(), post = UUID(), otherPost = UUID()
+        func reaction(_ user: UUID, on postId: UUID) -> PostReaction {
+            PostReaction(id: UUID(), postId: postId, userId: user, emoji: "❤️")
+        }
+        func comment(_ user: UUID, on postId: UUID) -> CommentInfo {
+            CommentInfo(comment: PostComment(id: UUID(), postId: postId, userId: user, body: "hi", createdAt: Date()),
+                        author: nil, likeCount: 0, likedByMe: false)
+        }
+        func saidHi(_ reactions: [UUID: [PostReaction]], _ comments: [UUID: [CommentInfo]]) -> Bool {
+            NewAccountIntro.InviterNudge.saidHi(userId: me, inviterPostIds: [post],
+                                                reactionsByPost: reactions, commentsByPost: comments)
+        }
+        #expect(!saidHi([:], [:]))
+        // Someone else's reaction or comment, or mine on a post that is not the inviter's: no.
+        #expect(!saidHi([post: [reaction(someone, on: post)]], [post: [comment(someone, on: post)]]))
+        #expect(!saidHi([otherPost: [reaction(me, on: otherPost)]], [otherPost: [comment(me, on: otherPost)]]))
+        // Mine on the inviter's post: yes, either kind.
+        #expect(saidHi([post: [reaction(me, on: post)]], [:]))
+        #expect(saidHi([:], [post: [comment(me, on: post)]]))
+
+        let (store, suite) = freshStore()
+        defer { store.removePersistentDomain(forName: suite) }
+        NewAccountIntro.rememberInviter(.init(id: maya, name: "Maya"), userId: me, store: store)
+        #expect(nudge(me, saidHiInFeed: true, store: store) == nil)
+    }
+
+    @Test("the line ends with the new-account window, but never mid-launch once shown")
+    func inviterNudgeWindow() {
+        let (store, suite) = freshStore()
+        defer { store.removePersistentDomain(forName: suite) }
+        let me = UUID()
+        NewAccountIntro.rememberInviter(.init(id: UUID(), name: "Maya"), userId: me, store: store)
+        let created = Date().addingTimeInterval(-4 * 86_400)
+        #expect(nudge(me, created: created, store: store) == nil)
+        #expect(nudge(me, created: Date(timeIntervalSince1970: 1_700_000_000), store: store) == nil)
+        // Shown this launch: a scroll away and back, or the window closing, does not hide it.
+        // A hello still does, and so does the card leaving the feed, and two lines never stack. (Through the pure decision, so this test never writes the
+        // shared `shownThisLaunch` set the other tests in this suite read.)
+        let maya = NewAccountIntro.Inviter(id: UUID(), name: "Maya")
+        func shows(new: Bool = false, saidHi: Bool = false, card: Bool = true, stacks: Bool = false) -> Bool {
+            NewAccountIntro.InviterNudge.shouldShow(inviter: maya, isNewAccount: new, saidHi: saidHi,
+                                                    inviterHasCard: card, shownThisLaunch: true,
+                                                    stacksUnderTopLine: stacks)
+        }
+        #expect(shows())
+        #expect(!shows(stacks: true))
+        #expect(!shows(saidHi: true))
+        #expect(!shows(card: false))
+        // Its key is its own, not the feed surface's.
+        #expect(NewAccountIntro.InviterNudge.shownKey(userId: me) != NewAccountIntro.shownKey(.feed, userId: me))
+    }
+
+    @Test("on the first card the say-hi line wins the first session; the feed's line is held, unspent, for a later launch")
+    func inviterNudgeHoldsTheFeedLine() {
+        let (store, suite) = freshStore()
+        defer { store.removePersistentDomain(forName: suite) }
+        let me = UUID(), maya = UUID(), created = Date()
+        NewAccountIntro.rememberInviter(.init(id: maya, name: "Maya"), userId: me, store: store)
+        func feedLine(held: Bool) -> String? {
+            NewAccountIntro.lineToShow(.feed, userId: me, createdAt: created, held: held, store: store)
+        }
+        typealias Nudge = NewAccountIntro.InviterNudge
+
+        // First launch: the inviter's card is first and nothing is on screen yet. The say-hi
+        // line shows (it does not wait for the feed's line), and the feed's line is held.
+        let first = nudge(me, created: created, stacks: false, store: store)
+        #expect(first == "Maya invited you. Say hi with a reaction on their latest shot.")
+        let held = Nudge.holdsFeedLine(nudgeShowing: first != nil, nudgeOnFirstCard: true, heldThisLaunch: false)
+        #expect(held)
+        #expect(feedLine(held: held) == nil)
+        // Held is not seen: nothing marked it, so it is still owed.
+        #expect(!NewAccountIntro.hasSeen(.feed, userId: me, store: store))
+        // A hello mid-launch takes the say-hi line away, but the feed's line stays held until
+        // the next launch rather than popping in at the top.
+        #expect(Nudge.holdsFeedLine(nudgeShowing: false, nudgeOnFirstCard: false, heldThisLaunch: true))
+
+        // The say-hi line on a later card does not hold anything: no stacking there.
+        #expect(!Nudge.holdsFeedLine(nudgeShowing: true, nudgeOnFirstCard: false, heldThisLaunch: false))
+
+        // Next launch, the hello made: no say-hi line, nothing held, the feed's line shows.
+        Nudge.noteInteraction(withAuthor: maya, userId: me, store: store)
+        let next = nudge(me, created: created, store: store)
+        #expect(next == nil)
+        let heldNext = Nudge.holdsFeedLine(nudgeShowing: next != nil, nudgeOnFirstCard: true, heldThisLaunch: false)
+        #expect(!heldNext)
+        #expect(feedLine(held: heldNext) == NewAccountIntro.Surface.feed.line)
+
+        // Or the inviter's card is simply gone from the loaded feed: the same.
+        let other = UUID()
+        NewAccountIntro.rememberInviter(.init(id: maya, name: "Maya"), userId: other, store: store)
+        let gone = nudge(other, created: created, hasCard: false, store: store)
+        #expect(gone == nil)
+        #expect(NewAccountIntro.lineToShow(.feed, userId: other, createdAt: created,
+                                           held: Nudge.holdsFeedLine(nudgeShowing: gone != nil, nudgeOnFirstCard: true,
+                                                                     heldThisLaunch: false),
+                                           store: store) == NewAccountIntro.Surface.feed.line)
+
+        // A window that closes while the line is held: it is simply never shown.
+        let old = created.addingTimeInterval(-4 * 86_400)
+        #expect(NewAccountIntro.lineToShow(.feed, userId: me, createdAt: old, store: store) == nil)
+    }
 }

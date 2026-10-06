@@ -2035,7 +2035,7 @@ struct PhotoPagerView: View {
             // (optimistic toggle, rolled back with `Haptics.error()` if the write never lands),
             // so there's no reason for this view to keep its own copy of a post's reactions.
             Task {
-                if await !feed.reactToPost(post.id, emoji: emoji, userId: uid) { flashError(ReactionFailure.text) }
+                if await !feed.reactToPost(post.id, emoji: emoji, userId: uid, authorId: post.userId) { flashError(ReactionFailure.text) }
             }
             return
         }
@@ -2080,7 +2080,7 @@ struct PhotoPagerView: View {
             guard !(feed.reactionsByPost[post.id]?.contains { $0.emoji == "❤️" && $0.userId == uid } ?? false) else { return }
             // Same call `FeedUnitCard`'s own double tap makes; see `toggleReaction`'s note.
             Task {
-                if await !feed.reactToPost(post.id, emoji: "❤️", userId: uid) { flashError(ReactionFailure.text) }
+                if await !feed.reactToPost(post.id, emoji: "❤️", userId: uid, authorId: post.userId) { flashError(ReactionFailure.text) }
             }
             return
         }

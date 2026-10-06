@@ -283,6 +283,45 @@ struct SpotlightTests {
                 == .disabled(reason: "Only frames shot this week can go up"))
     }
 
+    @Test("a frame shot just before the week that developed inside it can go up")
+    func menuDevelopedThisWeek() {
+        func item(_ p: Post, developsAt: Date?) -> SpotlightMenuItem {
+            SpotlightMenuItem.resolve(post: p, viewerId: me, entry: entry(), chosenWeekKey: nil,
+                                      isTagged: false, isPhotographer: true, developsAt: developsAt,
+                                      calendar: newYork)
+        }
+        // Sunday night roll frame: shot an hour before Monday 04:00, developed two hours after.
+        let sundayNight = post(owner: me, createdAt: date(9, 21, 9), takenAt: date(9, 21, 3))
+        #expect(item(sundayNight, developsAt: date(9, 21, 6)) == .putUp)
+        // Unknown develop time reads by the shot alone.
+        #expect(item(sundayNight, developsAt: nil) == .disabled(reason: SpotlightMenuItem.notThisWeekReason))
+        // Developed this week, but more than eight days after it was shot.
+        let longRoll = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 13, 12))
+        #expect(item(longRoll, developsAt: date(9, 22, 12)) == .disabled(reason: SpotlightMenuItem.notThisWeekReason))
+        // Exactly eight days is still inside the bound.
+        #expect(item(longRoll, developsAt: date(9, 21, 12)) == .putUp)
+        // Developed before the week too: neither half admits it.
+        let lastWeek = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 19, 18))
+        #expect(item(lastWeek, developsAt: date(9, 20, 18)) == .disabled(reason: SpotlightMenuItem.notThisWeekReason))
+        // The post still has to be this week's: a develop time cannot carry an earlier post.
+        let postedLastWeek = post(owner: me, createdAt: date(9, 20, 12), takenAt: date(9, 20, 11))
+        #expect(item(postedLastWeek, developsAt: date(9, 21, 6)) == .disabled(reason: SpotlightMenuItem.notThisWeekReason))
+    }
+
+    @Test("the session offers a frame that developed this week from its photo")
+    func sessionOffersDevelopedThisWeek() {
+        // A roll frame still posting: the stand-in post is built from the photo, posted now.
+        let pic = Photo(id: UUID(), userId: me, rollId: UUID(), storagePath: "s.jpg", thumbPath: nil,
+                        feedPath: nil, takenAt: date(9, 21, 3), developsAt: date(9, 21, 6),
+                        isDeveloped: true, caption: nil, isSorted: true)
+        let frame = SpotlightSessionFrame(photo: pic, post: nil, isTagged: false)
+        let result = SpotlightSessionOffer.make(frames: [frame], entry: entry(), viewerId: me,
+                                                ledger: SpotlightSessionLedger(), now: date(9, 23, 12),
+                                                calendar: newYork)
+        #expect(result?.photoIds == [frame.id])
+        #expect(result?.shotBeforeThisWeek == 0)
+    }
+
     @Test("a frame already up this week can come down even when it was shot earlier")
     func menuTakeDownShotEarlier() {
         let upNow = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 18, 12))
@@ -838,15 +877,18 @@ struct SpotlightTests {
 
     // MARK: - Long press on a frame
 
-    @Test("only posts posted and shot this week need their tags and photographer read")
+    @Test("posts posted this week, shot in it or up to eight days before, need their inputs read")
     func postsNeedingInputs() {
         let shotAndPosted = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 22, 20))
+        // Shot before the week: it may have developed inside it, so its develops_at is read.
         let shotEarlier = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 19, 18))
+        let shotLongBefore = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 13, 3, 59))
         let postedEarlier = post(owner: me, createdAt: date(9, 20, 12), takenAt: date(9, 20, 11))
         let atStart = post(owner: me, createdAt: date(9, 21, 4), takenAt: date(9, 21, 4))
         let atClose = post(owner: me, createdAt: date(9, 28, 4), takenAt: date(9, 27, 20))
-        let all = [shotAndPosted, shotEarlier, postedEarlier, atStart, atClose]
-        #expect(SpotlightMenuItem.postsNeedingInputs(all, entry: entry()).map(\.id) == [shotAndPosted.id, atStart.id])
+        let all = [shotAndPosted, shotEarlier, shotLongBefore, postedEarlier, atStart, atClose]
+        #expect(SpotlightMenuItem.postsNeedingInputs(all, entry: entry()).map(\.id)
+                == [shotAndPosted.id, shotEarlier.id, atStart.id])
         // Unknown entry: nothing is read, the item stays hidden until it is.
         #expect(SpotlightMenuItem.postsNeedingInputs(all, entry: nil).isEmpty)
     }

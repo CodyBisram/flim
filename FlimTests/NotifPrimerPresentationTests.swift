@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import Flim
 
 /// `shouldPresentNotifPrimer`, the retry rule behind `MainTabView`'s soft notification primer.
@@ -87,5 +88,29 @@ final class NotifPrimerPresentationTests: XCTestCase {
         // iOS would refuse a second system prompt anyway; asking would just be confusing.
         XCTAssertFalse(shouldPresentNotifPrimer(
             decided: true, timesShown: 0, osStatusIsUndetermined: false, didRetryUnaskedPrimer: false))
+    }
+
+    // MARK: - Waiting on the camera coach (`cameraCoachIsSettled`)
+
+    func testTheCoachIsSettledOnceGotItIsTapped() {
+        XCTAssertTrue(cameraCoachIsSettled(hasSeenCoach: true, cameraStatus: .authorized))
+        XCTAssertTrue(cameraCoachIsSettled(hasSeenCoach: true, cameraStatus: .denied))
+    }
+
+    func testAnAuthorizedCameraStillWaitsForTheCoach() {
+        // Unchanged for everyone the coach can reach: the primer follows "Got it".
+        XCTAssertFalse(cameraCoachIsSettled(hasSeenCoach: false, cameraStatus: .authorized))
+    }
+
+    func testARefusedCameraCountsAsTheCoachDone() {
+        // The coach never draws over a denied or restricted camera, so waiting on it meant such
+        // an account was never asked about notifications.
+        XCTAssertTrue(cameraCoachIsSettled(hasSeenCoach: false, cameraStatus: .denied))
+        XCTAssertTrue(cameraCoachIsSettled(hasSeenCoach: false, cameraStatus: .restricted))
+    }
+
+    func testAnUnaskedCameraKeepsTheFreshInstallOrder() {
+        // Fresh install: the camera's own ask is still coming, and the primer must not beat it.
+        XCTAssertFalse(cameraCoachIsSettled(hasSeenCoach: false, cameraStatus: .notDetermined))
     }
 }

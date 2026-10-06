@@ -229,6 +229,9 @@ final class CameraViewModel: NSObject {
             }
         case .notDetermined:
             permission = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
+            // The coach never draws over a denied camera, and the notification primer waits
+            // for the coach; this lets it go ahead (`cameraCoachIsSettled`).
+            if permission == .denied { NotificationCenter.default.post(name: .cameraAccessRefused, object: nil) }
         default:
             permission = .denied
         }

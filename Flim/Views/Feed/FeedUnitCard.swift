@@ -853,7 +853,7 @@ struct FeedUnitCard: View {
 
     /// The write, then the card's toast if `reactToPost` rolled it back.
     private func react(_ emoji: String, userId: UUID) async {
-        guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId) else { return }
+        guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId, authorId: post.userId) else { return }
         withAnimation { reactionFailedToast = true }
         try? await Task.sleep(for: .seconds(2))
         withAnimation { reactionFailedToast = false }

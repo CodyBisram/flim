@@ -587,10 +587,67 @@ struct FeedView: View {
         return entry.postId != nil || !entry.pending.isEmpty
     }
 
+    // MARK: - Say hi to who brought you
+
+    /// The feed's own first-visit line would be up at the top of the list, unless held.
+    private var feedFirstVisitLineWanted: Bool {
+        NewAccountIntro.lineToShow(.feed, userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt) != nil
+    }
+
+    /// The feed's own first-visit line is ALREADY on screen this launch: it keeps its place, and
+    /// the say-hi line does not stack under it.
+    private var feedFirstVisitLineAlreadyUp: Bool {
+        guard let uid = auth.currentUser?.id,
+              NewAccountIntro.shownThisLaunch.contains(NewAccountIntro.shownKey(.feed, userId: uid)) else { return false }
+        return feedFirstVisitLineWanted
+    }
+
+    /// Which card the say-hi line sits above, and what it says; nil for no line. See
+    /// `NewAccountIntro.InviterNudge`. The cheap gates run first, so an account the line can
+    /// never be for reads none of the reaction or comment caches, and its feed does not re-render
+    /// on every reaction poll for a line it will never see.
+    private var inviterNudge: (unitId: String, text: String, onFirstCard: Bool)? {
+        guard let uid = auth.currentUser?.id,
+              let inviter = NewAccountIntro.inviter(for: uid), !inviter.isCampaign,
+              !NewAccountIntro.InviterNudge.hasSaidHi(userId: uid),
+              NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt)
+                || NewAccountIntro.shownThisLaunch.contains(NewAccountIntro.InviterNudge.shownKey(userId: uid))
+        else { return nil }
+        let index = units.firstIndex { $0.author.id == inviter.id }
+        let saidHiInFeed = index != nil && NewAccountIntro.InviterNudge.saidHi(
+            userId: uid,
+            inviterPostIds: feed.feed.filter { $0.author.id == inviter.id }.map(\.post.id),
+            reactionsByPost: feed.reactionsByPost,
+            commentsByPost: feed.commentsByPost)
+        // The announcement only counts once it is already on screen: before that it waits for
+        // this line (`AnnouncementLine`'s `firstVisitLineShowing` below), not the other way round.
+        let announcementUp = NewAccountIntro.shownThisLaunch.contains(NewAccountIntro.shownKey(.spotlight, userId: uid))
+            && NewAccountIntro.announcementToShow(.spotlight, userId: uid, usageKnown: feed.ownSpotlightEntryIsCurrent,
+                                                  firstVisitLineShowing: feedFirstVisitLineAlreadyUp,
+                                                  alreadyUsed: spotlightAlreadyUsed) != nil
+        // On the first card this line wins the top of the feed over the feed's own first-visit
+        // line (that one is held, `holdsFeedLine`), unless a top line is already on screen.
+        guard let index,
+              let text = NewAccountIntro.InviterNudge.lineToShow(
+                userId: uid, createdAt: auth.currentUser?.createdAt,
+                inviterHasCard: true, saidHiInFeed: saidHiInFeed,
+                stacksUnderTopLine: index == 0 && (feedFirstVisitLineAlreadyUp || announcementUp))
+        else { return nil }
+        return (units[index].id, text, index == 0)
+    }
+
     // MARK: - The feed
 
     private var feedList: some View {
-        ScrollViewReader { proxy in
+        // Decided once per render, never per row (see `units`).
+        let nudge = inviterNudge
+        let feedLineHeld = NewAccountIntro.InviterNudge.holdsFeedLine(
+            nudgeShowing: nudge != nil, nudgeOnFirstCard: nudge?.onFirstCard ?? false,
+            heldThisLaunch: auth.currentUser.map {
+                NewAccountIntro.shownThisLaunch.contains(NewAccountIntro.InviterNudge.heldFeedLineKey(userId: $0.id))
+            } ?? false)
+        let firstVisitUp = !feedLineHeld && feedFirstVisitLineWanted
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     Color.clear.frame(height: 0).id("top")
@@ -600,18 +657,21 @@ struct FeedView: View {
                     // seen on landing and scrolls away as you browse. See NotificationNudgeBanner.
                     NotificationNudgeBanner()
                     // One sentence, once, for a brand-new account: see NewAccountIntro. A cohort
-                    // code arrival gets the honest version: nobody here knows them yet.
+                    // code arrival gets the honest version: nobody here knows them yet. Held,
+                    // unspent, while the say-hi line sits on the first card just below.
                     FirstVisitLine(surface: .feed,
                                    text: NewAccountIntro.inviter(for: auth.currentUser?.id ?? UUID())?.isCampaign == true
-                                       ? NewAccountIntro.campaignFeedLine : nil)
+                                       ? NewAccountIntro.campaignFeedLine : nil,
+                                   held: feedLineHeld)
                     // What's new, once per account, for members who were here before it:
                     // Spotlight in 1.6.0. Waits out the first-visit line above, and skips anyone
                     // who has already put a frame up or been chosen.
+                    // It also waits out the say-hi line on the inviter's card: one sentence at
+                    // a time for a new account.
                     AnnouncementLine(
                         announcement: .spotlight,
                         usageKnown: feed.ownSpotlightEntryIsCurrent,
-                        firstVisitLineShowing: NewAccountIntro.lineToShow(
-                            .feed, userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt) != nil,
+                        firstVisitLineShowing: firstVisitUp || nudge != nil,
                         alreadyUsed: spotlightAlreadyUsed)
                     // A thin feed (under three follows) gets three people it knows, with the
                     // reason, at the top; it goes away by itself once the feed has people in it.
@@ -633,6 +693,12 @@ struct FeedView: View {
                         // The strip rides inside its neighbouring unit's row, never as a row
                         // of its own in `units`.
                         spotlightStrips(in: .beforeUnit(unit.id), seamBefore: false)
+
+                        // A new account's nudge to say hi to whoever invited it, directly above
+                        // that person's first card. See `NewAccountIntro.InviterNudge`.
+                        if let nudge, nudge.unitId == unit.id, let uid = auth.currentUser?.id {
+                            InviterNudgeLine(text: nudge.text, userId: uid, holdsFeedLine: feedLineHeld)
+                        }
 
                         FeedUnitCard(
                             unit: unit,

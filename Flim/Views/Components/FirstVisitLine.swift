@@ -9,6 +9,9 @@ struct FirstVisitLine: View {
     /// A sentence built at the call site, when the surface has a fact to put in it (a roll's
     /// develop time). Nil uses the surface's own line.
     var text: String? = nil
+    /// Kept back for a later visit, unspent: nothing drawn, nothing marked seen. See
+    /// `NewAccountIntro.InviterNudge.holdsFeedLine`.
+    var held: Bool = false
     @Environment(AuthService.self) private var auth
 
     // Decided while drawing, not in `onAppear`: modifiers on a Group attach to its children,
@@ -21,7 +24,7 @@ struct FirstVisitLine: View {
         Group {
             if let uid = auth.currentUser?.id,
                let line = NewAccountIntro.lineToShow(surface, userId: uid,
-                                                     createdAt: auth.currentUser?.createdAt, text: text) {
+                                                     createdAt: auth.currentUser?.createdAt, text: text, held: held) {
                 Text(line)
                     .flimFont(13, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
@@ -87,5 +90,32 @@ struct AnnouncementLine: View {
                     }
             }
         }
+    }
+}
+
+/// The say-hi line above the inviter's first card: see `NewAccountIntro.InviterNudge`. The same
+/// quiet chrome as `FirstVisitLine`. The caller decides (it alone knows where the inviter's card
+/// sits); the line only records that it was shown, so it keeps showing for the rest of the launch.
+struct InviterNudgeLine: View {
+    let text: String
+    let userId: UUID
+    /// The feed's own first-visit line is held for this one; it stays held for the launch.
+    var holdsFeedLine: Bool = false
+
+    var body: some View {
+        Text(text)
+            .flimFont(13, relativeTo: .footnote)
+            .foregroundStyle(FlimTheme.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .transition(.opacity)
+            .accessibilityLabel(text)
+            .onAppear { NewAccountIntro.shownThisLaunch.insert(NewAccountIntro.InviterNudge.shownKey(userId: userId)) }
+            // `initial`, so a line that first appears already holding the feed's line records it.
+            .onChange(of: holdsFeedLine, initial: true) { _, holds in
+                if holds { NewAccountIntro.shownThisLaunch.insert(NewAccountIntro.InviterNudge.heldFeedLineKey(userId: userId)) }
+            }
     }
 }

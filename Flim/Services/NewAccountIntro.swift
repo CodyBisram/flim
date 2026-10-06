@@ -52,7 +52,7 @@ enum NewAccountIntro {
         "firstVisit.\(surface.rawValue).\(userId.uuidString)"
     }
 
-    static func hasSeen(_ surface: Surface, userId: UUID) -> Bool {
+    static func hasSeen(_ surface: Surface, userId: UUID, store: UserDefaults = NewAccountIntro.store) -> Bool {
         store.bool(forKey: key(surface, userId: userId))
     }
 
@@ -70,9 +70,14 @@ enum NewAccountIntro {
     static var shownThisLaunch: Set<String> = []
     static func shownKey(_ surface: Surface, userId: UUID) -> String { "\(surface.rawValue).\(userId.uuidString)" }
 
-    static func lineToShow(_ surface: Surface, userId: UUID?, createdAt: Date?, text: String? = nil) -> String? {
-        guard let userId, isNewAccount(createdAt: createdAt) else { return nil }
-        guard !hasSeen(surface, userId: userId) || shownThisLaunch.contains(shownKey(surface, userId: userId)) else { return nil }
+    /// `held` keeps a line back for a later visit without spending it: nothing is drawn, so
+    /// nothing is marked seen (the feed's line yields to the say-hi line, see `InviterNudge`).
+    static func lineToShow(_ surface: Surface, userId: UUID?, createdAt: Date?, text: String? = nil,
+                           held: Bool = false, now: Date = .now,
+                           store: UserDefaults = NewAccountIntro.store) -> String? {
+        guard !held, let userId, isNewAccount(createdAt: createdAt, now: now) else { return nil }
+        guard !hasSeen(surface, userId: userId, store: store)
+                || shownThisLaunch.contains(shownKey(surface, userId: userId)) else { return nil }
         return text ?? surface.line
     }
 
@@ -144,13 +149,17 @@ enum NewAccountIntro {
 
     /// Kept per account once the account exists, so the first Darkroom can offer "Start a roll
     /// with Maya" by name without a fetch. Written by `UsernameView.save`, read by `DarkroomView`.
-    static func rememberInviter(_ inviter: Inviter, userId: UUID) {
+    static func rememberInviter(_ inviter: Inviter, userId: UUID) { rememberInviter(inviter, userId: userId, store: store) }
+
+    static func rememberInviter(_ inviter: Inviter, userId: UUID, store: UserDefaults) {
         store.set(inviter.id.uuidString, forKey: "invitedBy.id.\(userId.uuidString)")
         store.set(inviter.name, forKey: "invitedBy.name.\(userId.uuidString)")
         store.set(inviter.isCampaign, forKey: "invitedBy.campaign.\(userId.uuidString)")
     }
 
-    static func inviter(for userId: UUID) -> Inviter? {
+    static func inviter(for userId: UUID) -> Inviter? { inviter(for: userId, store: store) }
+
+    static func inviter(for userId: UUID, store: UserDefaults) -> Inviter? {
         guard let raw = store.string(forKey: "invitedBy.id.\(userId.uuidString)"), let id = UUID(uuidString: raw),
               let name = store.string(forKey: "invitedBy.name.\(userId.uuidString)") else { return nil }
         return Inviter(id: id, name: name, isCampaign: store.bool(forKey: "invitedBy.campaign.\(userId.uuidString)"))
@@ -168,6 +177,101 @@ enum NewAccountIntro {
 
     /// The feed's first-visit line for a cohort-code arrival, in place of the ordinary one.
     static let campaignFeedLine = "That code was a general invitation, not from someone in particular. Find someone you know and their photos show up here."
+
+    // MARK: - Say hi to who brought you
+
+    /// One quiet line above the inviter's first card in the feed, for a new account, until the
+    /// newcomer reacts to or comments on anything the inviter posted. The follow made at sign-up
+    /// is one way; this is the nudge to make it two (reciprocal pairs fell from 53 to 30 in three
+    /// weeks of growth, 2026-10). Unlike the first-visit lines it is not marked seen by being
+    /// read: it stays every visit for the account's new window, or until the hello happens.
+    enum InviterNudge {
+        static func text(name: String) -> String {
+            "\(name) invited you. Say hi with a reaction on their latest shot."
+        }
+
+        static func saidHiKey(userId: UUID) -> String { "inviterNudge.saidHi.\(userId.uuidString)" }
+        static func shownKey(userId: UUID) -> String { "inviterNudge.\(userId.uuidString)" }
+        /// In `shownThisLaunch` once the feed's line has been held for this line this launch.
+        static func heldFeedLineKey(userId: UUID) -> String { "inviterNudge.heldFeedLine.\(userId.uuidString)" }
+
+        static func hasSaidHi(userId: UUID, store: UserDefaults = NewAccountIntro.store) -> Bool {
+            store.bool(forKey: saidHiKey(userId: userId))
+        }
+
+        static func markSaidHi(userId: UUID, store: UserDefaults = NewAccountIntro.store) {
+            store.set(true, forKey: saidHiKey(userId: userId))
+        }
+
+        /// Called once a reaction or comment has LANDED on a post by `authorId`. Marks the hello
+        /// made, for good, when that author is the person whose invitation let this account in.
+        static func noteInteraction(withAuthor authorId: UUID?, userId: UUID,
+                                    store: UserDefaults = NewAccountIntro.store) {
+            guard let authorId, authorId != userId,
+                  NewAccountIntro.inviter(for: userId, store: store)?.id == authorId else { return }
+            markSaidHi(userId: userId, store: store)
+        }
+
+        /// Whether the loaded feed already shows the newcomer's reaction or comment on one of the
+        /// inviter's posts: made before this line existed, on another device, or from a screen
+        /// that never reported it. Reads only what is loaded; fetches nothing.
+        static func saidHi(userId: UUID, inviterPostIds: [UUID],
+                           reactionsByPost: [UUID: [PostReaction]],
+                           commentsByPost: [UUID: [CommentInfo]]) -> Bool {
+            inviterPostIds.contains { id in
+                (reactionsByPost[id]?.contains { $0.userId == userId } ?? false)
+                    || (commentsByPost[id]?.contains { $0.comment.userId == userId } ?? false)
+            }
+        }
+
+        /// The decision, pure. Shown only for a real person's invitation (a cohort code names
+        /// nobody), only while the inviter has a card in the loaded feed, and never once the
+        /// hello has happened. Once shown this launch it stays for the launch (a scroll away and
+        /// back, or the new window closing mid-session, must not make it vanish); before that it
+        /// needs a new account.
+        ///
+        /// Two quiet lines never stack. When the inviter's card is the first one, this line wins
+        /// the top of the feed in the first session (the owner's call, 2026-10-06): the feed's
+        /// own first-visit line is held for a later visit (`holdsFeedLine`). It gives way only to
+        /// a line that is ALREADY on screen this launch, the feed's line or the announcement
+        /// (`stacksUnderTopLine`), since making that one vanish mid-visit is worse.
+        static func shouldShow(inviter: Inviter?, isNewAccount: Bool, saidHi: Bool,
+                               inviterHasCard: Bool, shownThisLaunch: Bool,
+                               stacksUnderTopLine: Bool) -> Bool {
+            guard let inviter, !inviter.isCampaign, !inviter.name.isEmpty,
+                  inviterHasCard, !saidHi, !stacksUnderTopLine else { return false }
+            return shownThisLaunch || isNewAccount
+        }
+
+        /// Whether the feed's own first-visit line is held back this time: the say-hi line is up
+        /// on the first card, directly under where that line would sit. Held is not seen: the
+        /// line is not drawn, so it is not marked, and it shows on a later visit inside the new
+        /// window, once the say-hi line is gone (a hello, or no longer first). If the window
+        /// closes first it is never shown, which is acceptable. Once held in a launch it stays
+        /// held for that launch (`heldThisLaunch`): a hello mid-visit takes the say-hi line away
+        /// but does not pop the feed's line in at the top; it waits for the next launch.
+        static func holdsFeedLine(nudgeShowing: Bool, nudgeOnFirstCard: Bool, heldThisLaunch: Bool) -> Bool {
+            heldThisLaunch || (nudgeShowing && nudgeOnFirstCard)
+        }
+
+        /// The line to show above the inviter's first card right now, or nil. `saidHiInFeed` is
+        /// `saidHi(...)` over the loaded feed; the persisted hello is read here.
+        static func lineToShow(userId: UUID?, createdAt: Date?, now: Date = .now,
+                               inviterHasCard: Bool, saidHiInFeed: Bool, stacksUnderTopLine: Bool,
+                               store: UserDefaults = NewAccountIntro.store) -> String? {
+            guard let userId else { return nil }
+            let inviter = NewAccountIntro.inviter(for: userId, store: store)
+            let show = shouldShow(
+                inviter: inviter,
+                isNewAccount: NewAccountIntro.isNewAccount(createdAt: createdAt, now: now),
+                saidHi: saidHiInFeed || hasSaidHi(userId: userId, store: store),
+                inviterHasCard: inviterHasCard,
+                shownThisLaunch: NewAccountIntro.shownThisLaunch.contains(shownKey(userId: userId)),
+                stacksUnderTopLine: stacksUnderTopLine)
+            guard show, let inviter else { return nil }
+            return text(name: inviter.name)
+        }
+    }
 
     // MARK: - One-shot states
 

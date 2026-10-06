@@ -202,6 +202,21 @@ struct OwnSpotlightEntry: Decodable, Equatable {
     /// Whether `date` falls inside this week's bounds, start included, close excluded, the
     /// way the server reads them.
     func isThisWeek(_ date: Date) -> Bool { date >= weekStartsAt && date < weekClosesAt }
+
+    /// How long after it was shot a frame may still count for the week it developed in. The
+    /// server's bound (`develops_at <= taken_at + 8 days`), so a long roll cannot carry an old
+    /// frame into a later week.
+    static let developWindow: TimeInterval = 8 * 86_400
+
+    /// Whether a frame shot at `takenAt` belongs to this week: shot inside it, or developed
+    /// inside it within `developWindow` of being shot. The second half is for a roll frame shot
+    /// Sunday night that develops after Monday 04:00; it goes up in the week it developed.
+    /// Mirrors the server's rule in `put_up_for_spotlight`.
+    func admitsFrame(takenAt: Date, developsAt: Date?) -> Bool {
+        if isThisWeek(takenAt) { return true }
+        guard let developsAt else { return false }
+        return isThisWeek(developsAt) && developsAt <= takenAt.addingTimeInterval(Self.developWindow)
+    }
 }
 
 extension OwnSpotlightEntry {
@@ -358,8 +373,11 @@ enum SpotlightMenuItem: Equatable {
     ///   - chosenWeekKey: set when this post is one of the viewer's own published frames.
     ///   - isPhotographer: whether the viewer shot the photo; nil while unknown, which offers
     ///     the item and lets the server's `not_photographer` refusal speak if it must.
+    ///   - developsAt: when the photo develops; nil while unknown, which reads the frame by
+    ///     when it was shot alone (see `OwnSpotlightEntry.admitsFrame`).
     static func resolve(post: Post, viewerId: UUID?, entry: OwnSpotlightEntry?,
                         chosenWeekKey: String?, isTagged: Bool, isPhotographer: Bool?,
+                        developsAt: Date? = nil,
                         now: Date = .now, calendar: Calendar = .current) -> SpotlightMenuItem {
         guard let viewerId, post.isOwned(by: viewerId) else { return .hidden }
         if let chosenWeekKey { return .takeOut(weekKey: chosenWeekKey) }
@@ -378,8 +396,11 @@ enum SpotlightMenuItem: Equatable {
         // capture rule, and the only way off it is the take-down.
         if entry.postId == post.id { return .takeDown }
         // Posted this week is not enough: the frame itself has to be from this week. Before
-        // tags and the photographer, because neither can change when it was shot.
-        if !entry.isThisWeek(post.takenAt) { return .disabled(reason: notThisWeekReason) }
+        // tags and the photographer, because neither can change when it was shot. A frame that
+        // developed this week, soon after it was shot, counts as this week's.
+        if !entry.admitsFrame(takenAt: post.takenAt, developsAt: developsAt) {
+            return .disabled(reason: notThisWeekReason)
+        }
         if isTagged { return .disabled(reason: taggedReason) }
         if isPhotographer == false { return .disabled(reason: notPhotographerReason) }
         if entry.postId != nil {
@@ -391,13 +412,17 @@ enum SpotlightMenuItem: Equatable {
         return .putUp
     }
 
-    /// The posts whose item turns on their tags or who shot them: posted and shot inside this
-    /// week's bounds. Every other post resolves without either (an earlier week's says why, a
-    /// later one's waits for a fresh entry), so a surface with many posts reads them for these
-    /// alone. None while the entry is unknown.
+    /// The posts whose item turns on their tags, who shot them or when they developed: posted
+    /// this week and shot inside it, or shot up to `developWindow` before it began (a frame that
+    /// may have developed this week). Every other post resolves without any of them (an earlier
+    /// week's says why, a later one's waits for a fresh entry), so a surface with many posts
+    /// reads them for these alone. None while the entry is unknown.
     static func postsNeedingInputs(_ posts: [Post], entry: OwnSpotlightEntry?) -> [Post] {
         guard let entry else { return [] }
-        return posts.filter { entry.isThisWeek($0.createdAt) && entry.isThisWeek($0.takenAt) }
+        let earliestShot = entry.weekStartsAt.addingTimeInterval(-OwnSpotlightEntry.developWindow)
+        return posts.filter {
+            entry.isThisWeek($0.createdAt) && $0.takenAt >= earliestShot && $0.takenAt < entry.weekClosesAt
+        }
     }
 
     /// "today", "yesterday", else the weekday ("Tuesday"), for the day a post files under,
@@ -679,6 +704,7 @@ struct SpotlightSessionOffer: Identifiable, Equatable {
         return SpotlightMenuItem.resolve(post: post, viewerId: viewerId, entry: entry, chosenWeekKey: nil,
                                          isTagged: frame.isTagged,
                                          isPhotographer: frame.photo.userId == viewerId,
+                                         developsAt: frame.photo.developsAt,
                                          now: now, calendar: calendar)
     }
 }

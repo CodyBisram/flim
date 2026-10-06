@@ -237,20 +237,26 @@ extension FeedService {
     /// Photo id to "shot by the signed-in account", for the menu's photographer rule. Asks only
     /// about photos it does not know yet, and only which of them are the caller's own, so no
     /// other person's photo row is ever read. A failed read leaves them unknown, which offers
-    /// the item and lets the server refuse by name.
+    /// the item and lets the server refuse by name. The same own rows carry `develops_at` into
+    /// `spotlightDevelopsAt`, for the week rule's developed-this-week half.
     func ensureSpotlightPhotographer(photoIds: [UUID], userId: UUID) async {
         let unknown = Array(Set(photoIds).subtracting(spotlightPhotographer.keys))
         guard !unknown.isEmpty else { return }
         let generation = spotlightPhotographerGeneration
         let epoch = AccountEpoch.current
-        struct Row: Decodable { let id: UUID }
-        guard let rows: [Row] = try? await supabase.from("photos").select("id")
+        struct Row: Decodable {
+            let id: UUID
+            let developsAt: Date?
+            enum CodingKeys: String, CodingKey { case id, developsAt = "develops_at" }
+        }
+        guard let rows: [Row] = try? await supabase.from("photos").select("id, develops_at")
             .in("id", values: unknown.map(\.uuidString))
             .eq("user_id", value: userId.uuidString)
             .execute().value else { return }
         guard AccountEpoch.isCurrent(epoch), generation == spotlightPhotographerGeneration else { return }
         let mine = Set(rows.map(\.id))
         for id in unknown { spotlightPhotographer[id] = mine.contains(id) }
+        for row in rows { spotlightDevelopsAt[row.id] = row.developsAt }
     }
 
     /// What the Spotlight item reads for these own posts, on a surface that shows many of them
@@ -324,7 +330,8 @@ extension FeedService {
             post: post, viewerId: viewerId, entry: ownSpotlightEntry,
             chosenWeekKey: ownSpotlightChosen[post.id],
             isTagged: !(tagsByPost[post.id] ?? []).isEmpty,
-            isPhotographer: spotlightPhotographer[post.photoId])
+            isPhotographer: spotlightPhotographer[post.photoId],
+            developsAt: spotlightDevelopsAt[post.photoId])
     }
 
     /// Why "Tag people" is off for one of your own posts, nil when it is open. See

@@ -977,6 +977,10 @@ final class FeedService {
     var spotlightURLs: [String: URL] = [:]
     /// Photo id to "the signed-in account shot it", for the menu's "Only frames you shot" rule.
     var spotlightPhotographer: [UUID: Bool] = [:]
+    /// Photo id to when it develops, for the caller's own photos only, read beside
+    /// `spotlightPhotographer`: a frame shot just before the week that developed inside it can
+    /// still go up (see `OwnSpotlightEntry.admitsFrame`).
+    var spotlightDevelopsAt: [UUID: Date] = [:]
     /// Frames with a take-out in flight: the menu item's in-flight guard.
     var spotlightTakeOutsInFlight: Set<UUID> = []
     /// A put-up, swap or take-down is on the wire: the menu's in-flight guard, one Spotlight
@@ -1028,6 +1032,7 @@ final class FeedService {
         spotlightPastWeeksInFlight = nil
         spotlightURLs = [:]
         spotlightPhotographer = [:]
+        spotlightDevelopsAt = [:]
         ownSpotlightThumbPath = nil
         ownSpotlightThumbURL = nil
         ownSpotlightThumbPhotoId = nil
@@ -1625,8 +1630,11 @@ final class FeedService {
     /// Returns false only when this tap was rolled back, the one case the screen has to say
     /// so ("Couldn't send that reaction."): the haptic alone read as nothing having happened.
     /// A write superseded by a later tap, or by an account change, is not a failure.
+    ///
+    /// `authorId` is the post's author, when the caller has it: an added reaction that lands on
+    /// the inviter's post is the hello `NewAccountIntro.InviterNudge` waits for.
     @discardableResult
-    func reactToPost(_ postId: UUID, emoji: String, userId: UUID) async -> Bool {
+    func reactToPost(_ postId: UUID, emoji: String, userId: UUID, authorId: UUID? = nil) async -> Bool {
         // Decide and show the change now, on the current state, so the tap feels instant...
         var current = reactionsByPost[postId] ?? []
         let removing = current.contains { $0.emoji == emoji && $0.userId == userId }
@@ -1650,6 +1658,9 @@ final class FeedService {
             let landed = removing
                 ? await self.removeReaction(postId: postId, emoji: emoji, userId: userId)
                 : await self.addReaction(postId: postId, emoji: emoji, userId: userId)
+            if landed, !removing, AccountEpoch.isCurrent(epoch) {
+                NewAccountIntro.InviterNudge.noteInteraction(withAuthor: authorId, userId: userId)
+            }
             guard !landed, AccountEpoch.isCurrent(epoch) else { return true }
             // Roll back only if no later tap on this emoji has taken over the screen. Tap, untap,
             // tap: if the first add fails after the third tap, the third tap's intent stands and
@@ -1707,12 +1718,16 @@ final class FeedService {
     /// Posts a comment and refreshes just that post's cached comments.
     /// Returns false if the comment didn't reach the server (offline, RLS, …) so the
     /// composer can restore the draft instead of silently losing what was typed.
+    /// `authorId` is the post's author, when the caller has it; see `reactToPost`.
     @discardableResult
-    func commentOnPost(_ postId: UUID, body: String, userId: UUID) async -> Bool {
+    func commentOnPost(_ postId: UUID, body: String, userId: UUID, authorId: UUID? = nil) async -> Bool {
         // Captured before the first await: a comment sent just before an account switch must
         // not land the old account's comment list (with its likedByMe) in the new one's cache.
         let epoch = AccountEpoch.current
         let created = await addComment(postId: postId, body: body, userId: userId)
+        if created != nil, AccountEpoch.isCurrent(epoch) {
+            NewAccountIntro.InviterNudge.noteInteraction(withAuthor: authorId, userId: userId)
+        }
         let fresh = await fetchComments(postId: postId, currentUserId: userId)
         guard AccountEpoch.isCurrent(epoch) else { return created != nil }
         // A failed re-read keeps the cache: `nil` is not "no comments", and writing it as one
