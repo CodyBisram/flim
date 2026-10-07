@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FLIM LAST15</title>
+<!--
+  The LAST15 campaign, from the team at FLIM: a photo post (1080x1350), its story (1080x1920) and a
+  15 second reel (1080x1920). Copy, photos and colours live in config.js.
+
+    campaign.html                       all three side by side, the reel playing
+    campaign.html?frame=post            one frame at its real size (post, story, reel)
+    campaign.html?frame=reel&t=7.5      the reel at a moment
+    campaign.html?frame=post&layer=15   one layer alone on transparency
+
+  Layers (data-layer): background, perforations, mount, photo-hero, photo-second, photo-third,
+  handwriting, 15, code, printed, grain.
+-->
+<style>
+@font-face { font-family: 'Archivo'; src: url(fonts/archivo-wdth.woff2) format('woff2'); font-weight: 100 900; font-stretch: 62% 125%; font-display: block; }
+@font-face { font-family: 'DM Mono'; src: url(fonts/dm-mono-400.woff2) format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'DM Mono'; src: url(fonts/dm-mono-500.woff2) format('woff2'); font-weight: 500; font-display: block; }
+@font-face { font-family: 'Caveat'; src: url(fonts/caveat.woff2) format('woff2'); font-weight: 400 700; font-display: block; }
+
+:root { --bg: #0c0908; --text: #f4efe7; --dim: #a79c8e; --amber: #e8a44c; --mount: #ece4d6; --g: .8;
+  --hand: 'Caveat', 'Bradley Hand', cursive; --print: 'Archivo', sans-serif; --mono: 'DM Mono', ui-monospace, monospace; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #050403; color: var(--text); -webkit-font-smoothing: antialiased; }
+body.single { background: transparent; }
+body.single .chrome { display: none; }
+
+/* ---------- overview (browser only) ---------- */
+.chrome { padding: 28px 32px 48px; font-family: var(--print); }
+.chrome h1 { font: 700 15px var(--print); font-stretch: 118%; letter-spacing: .26em; text-transform: uppercase; color: var(--dim); margin: 0 0 22px; }
+.boards { display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; }
+.board h2 { font: 500 12px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+.scaled { position: relative; overflow: hidden; border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.scaled > .frame { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+.transport { margin-top: 12px; display: flex; gap: 10px; align-items: center; font: 12px var(--mono); color: var(--dim); }
+.transport button { background: var(--text); color: #111; border: 0; border-radius: 999px; padding: 6px 14px; font: 600 12px var(--print); cursor: pointer; }
+.transport input { width: 220px; accent-color: var(--amber); }
+
+/* ---------- frames ---------- */
+.frame { position: relative; overflow: hidden; background: var(--bg); color: var(--text); }
+.frame.post { width: 1080px; height: 1350px; }
+.frame.story, .frame.reel { width: 1080px; height: 1920px; }
+.frame > * { position: absolute; }
+.L-background { inset: 0; background:
+  radial-gradient(120% 80% at 50% 38%, rgba(60,40,24,.28), transparent 60%),
+  radial-gradient(140% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.55)); }
+
+/* perforation edge: a sliver of negative along one side, barely there */
+.L-perforations { top: 0; bottom: 0; width: 44px; background: #110c09; border-left: 1px solid rgba(244,239,231,.05); }
+.L-perforations::before { content: ''; position: absolute; left: 13px; top: 18px; bottom: 0; width: 18px;
+  background: repeating-linear-gradient(to bottom, rgba(244,239,231,.085) 0 26px, transparent 26px 50px); border-radius: 4px; }
+.L-perforations.right { right: 0; }
+
+/* the print: a photograph on a soft paper mount */
+.L-mount { background: linear-gradient(160deg, #f1eadf, var(--mount) 55%, #e2d8c8); border-radius: 3px;
+  box-shadow: 0 2px 0 rgba(255,255,255,.25) inset, 0 30px 70px rgba(0,0,0,.55), 0 6px 18px rgba(0,0,0,.4); }
+.L-mount::after { content: ''; position: absolute; inset: 0; border-radius: 3px; pointer-events: none; opacity: .35; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55 0 0 0 0 .5 0 0 0 0 .44 0 0 0 .5 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>"); }
+.photo { position: absolute; overflow: hidden; background: #15100c; }
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block;
+  filter: sepia(calc(var(--g) * .2)) saturate(calc(1 + var(--g) * .1)) contrast(calc(1 + var(--g) * .06)) hue-rotate(calc(var(--g) * -5deg)); }
+.photo::before { content: ''; position: absolute; inset: 0; z-index: 1; mix-blend-mode: soft-light; opacity: var(--g);
+  background: radial-gradient(120% 90% at 25% 15%, rgba(255,176,96,.5), rgba(255,140,70,.16) 45%, rgba(40,20,70,.2)); }
+.photo::after { content: ''; position: absolute; inset: 0; z-index: 2; opacity: calc(var(--g) * .9); mix-blend-mode: multiply;
+  background: radial-gradient(130% 100% at 50% 45%, transparent 58%, rgba(20,8,0,.4)); }
+.photo .ph-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 500 22px var(--mono); letter-spacing: .14em; color: rgba(244,239,231,.4); text-transform: uppercase;
+  background: repeating-linear-gradient(135deg, #1a140f 0 18px, #16110d 18px 36px); }
+
+/* handwriting */
+.L-handwriting { font-family: var(--hand); font-weight: 500; color: var(--text); white-space: nowrap; }
+.L-handwriting .ln { display: block; }
+.amb { color: var(--amber); }
+.amb.big15 { font-size: 1.55em; line-height: .7; font-weight: 600; }
+.signoff { font-family: var(--hand); font-weight: 600; color: var(--text); }
+.scanimg { position: absolute; }
+/* printed */
+.printed { font: 500 20px var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+.codebig { font: 760 168px/1 var(--print); font-stretch: 112%; letter-spacing: .04em; color: var(--amber); white-space: nowrap; }
+.arrow { stroke: var(--dim); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+
+.L-grain { inset: 0; width: 100%; height: 100%; mix-blend-mode: overlay; pointer-events: none; }
+
+/* layer export: only the asked layer, on transparency */
+body.layer-mode .frame { background: transparent; }
+body.layer-mode [data-layer] { visibility: hidden; }
+body.layer-mode [data-layer].on, body.layer-mode [data-layer].on * { visibility: visible; }
+body.layer-mode .hide-in-layer { visibility: hidden !important; }
+</style>
+</head>
+<body>
+<div class="chrome">
+  <h1>FLIM · LAST15 · from the team at FLIM</h1>
+  <div class="boards" id="boards"></div>
+</div>
+<div id="single"></div>
+
+<script src="config.js"></script>
+<script>
+'use strict';
+const C = window.CAMPAIGN;
+const Q = new URLSearchParams(location.search);
+const FRAME = Q.get('frame'), LAYER = Q.get('layer');
+const root = document.documentElement.style;
+root.setProperty('--bg', C.colors.bg); root.setProperty('--text', C.colors.text); root.setProperty('--dim', C.colors.dim);
+root.setProperty('--amber', C.colors.amber); root.setProperty('--mount', C.colors.mount); root.setProperty('--g', C.grade);
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// [[15]] and [[LAST15]] are the only amber words; each goes on its own layer.
+const amberize = (s, big15) => esc(s).replace(/\[\[(.+?)\]\]/g, (_, w) =>
+  `<span class="amb${big15 && w === '15' ? ' big15' : ''}" data-layer="${w === '15' ? '15' : 'code'}">${w}</span>`);
+
+function photo(slot, x, y, w, extra = '') {
+  const h = Math.round(w * 4 / 3), src = C.photos[slot];
+  return `<div class="photo" data-layer="photo-${slot}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;${extra}">${src
+    ? `<img src="${esc(src)}" alt="">` : `<div class="ph-empty">Photo · 3:4</div>`}</div>`;
+}
+// A print: photo w wide on a mount with an even border.
+function print(slot, cx, top, w, rot, border, id = '') {
+  const h = Math.round(w * 4 / 3), W = w + border * 2, H = h + border * 2;
+  return `<div class="L-mount" data-layer="mount" ${id ? `id="${id}"` : ''} style="left:${cx - W / 2}px;top:${top}px;width:${W}px;height:${H}px;transform:rotate(${rot}deg)">${photo(slot, border, border, w)}</div>`;
+}
+function noteBlock(lines, scan, style) {
+  if (scan) return `<img class="scanimg" data-layer="handwriting" src="${esc(scan)}" style="${style}" alt="">`;
+  return `<div class="L-handwriting" data-layer="handwriting" style="${style}">${lines.map(l => `<span class="ln">${amberize(l)}</span>`).join('')}</div>`;
+}
+const grainCanvas = (w, h) => `<canvas class="L-grain" data-layer="grain" width="${w / 2}" height="${h / 2}"></canvas>`;
+
+// ---------- Version A: the photo post, 1080 x 1350 ----------
+function buildPost() {
+  const p = C.post;
+  return `<div class="frame post" id="f-post">
+    <div class="L-background" data-layer="background"></div>
+    <div class="L-perforations right" data-layer="perforations"></div>
+    ${print('hero', 520, 78, 552, -1.3, 18)}
+    ${noteBlock(p.note, C.handwritingScans.post, 'left:96px;top:882px;font-size:59px;line-height:1.16;transform:rotate(-.6deg)')}
+    <div class="signoff L-handwriting" data-layer="handwriting" style="right:120px;top:1110px;font-size:64px;transform:rotate(-2deg)">${esc(p.signoff)}</div>
+    <div class="printed" data-layer="printed" style="left:96px;bottom:56px">${esc(p.label)}</div>
+    <div class="printed" data-layer="printed" style="right:96px;bottom:56px">Founding 100</div>
+    ${grainCanvas(1080, 1350)}
+  </div>`;
+}
+
+// ---------- Version A: the matching story, 1080 x 1920 ----------
+function buildStory() {
+  const s = C.story;
+  return `<div class="frame story" id="f-story">
+    <div class="L-background" data-layer="background"></div>
+    <div class="L-perforations right" data-layer="perforations"></div>
+    <div class="printed" data-layer="printed" style="left:96px;top:236px">${esc(s.label)}</div>
+    ${print('hero', 520, 300, 660, -1.2, 20)}
+    ${noteBlock(s.note, C.handwritingScans.story, 'left:96px;top:1236px;font-size:59px;line-height:1.16;transform:rotate(-.6deg)')}
+    <div class="signoff L-handwriting" data-layer="handwriting" style="right:120px;top:1458px;font-size:64px;transform:rotate(-2deg)">${esc(s.signoff)}</div>
+    <div class="L-handwriting" data-layer="handwriting" style="left:96px;top:1568px;font-size:76px;font-weight:600">${esc(s.link)}</div>
+    <svg data-layer="handwriting" style="left:92px;top:1660px" width="330" height="30" viewBox="0 0 330 30"><path class="arrow" d="M4 18c60-9 150-12 230-8 30 2 60 6 92 1"/></svg>
+    <div class="printed" data-layer="printed" style="right:96px;top:236px">Founding 100</div>
+    ${grainCanvas(1080, 1920)}
+  </div>`;
+}
+
+// ---------- Version B: the reel, 1080 x 1920, 15 s ----------
+function buildReel() {
+  const r = C.reel;
+  const prints = r.beats.filter(b => b.photo).map((b, i) =>
+    print(b.photo, 540 + [0, 18, -14][i], 300 + i * 6, 592, [-1.6, 1.4, -0.8][i], 18, 'rp' + i)).join('');
+  const lines = r.beats.map((b, i) => `<div class="L-handwriting" data-layer="handwriting" id="rl${i}" style="left:96px;top:${b.code ? 1352 : 1226}px;font-size:${b.close ? 82 : 66}px;line-height:1.14;font-weight:${b.close ? 600 : 500}">${
+    b.lines.map((l, j) => `<span class="ln" data-beat="${i}" data-line="${j}">${amberize(l, true)}</span>`).join('')}</div>`).join('');
+  return `<div class="frame reel" id="f-reel">
+    <div class="L-background" data-layer="background"></div>
+    <div class="L-perforations right" data-layer="perforations"></div>
+    <div class="printed" data-layer="printed" style="left:96px;top:220px" id="rLabel">${esc(C.post.label)}</div>
+    <div class="printed" data-layer="printed" style="right:96px;top:220px" id="rLabel2">Founding 100</div>
+    ${prints}
+    ${lines}
+    <div class="codebig" data-layer="code" id="rCode" style="left:90px;top:1196px">LAST15</div>
+    <div class="signoff L-handwriting" data-layer="handwriting" id="rSign" style="right:120px;top:1440px;font-size:66px;transform:rotate(-2deg)">${esc(r.signoff)}</div>
+    ${grainCanvas(1080, 1920)}
+  </div>`;
+}
+
+// ---------- the reel's clock ----------
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = p => 1 - Math.pow(1 - p, 3);
+const eIO = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const lerp = (a, b, p) => a + (b - a) * p;
+
+function renderReel(t) {
+  const f = document.getElementById('f-reel'); if (!f) return;
+  const beats = C.reel.beats, D = C.reel.duration;
+  // prints: each drops in and develops from dark when its beat starts
+  let pi = 0;
+  beats.forEach((b, i) => {
+    if (!b.photo) return;
+    const el = f.querySelector('#rp' + pi); pi++;
+    const k = eOut(P(t, b.at - .3, b.at + .5));
+    const dev = eIO(P(t, b.at, b.at + 2.0));
+    el.style.opacity = k;
+    el.style.translate = `0 ${(1 - k) * 60}px`;
+    const img = el.querySelector('.photo');
+    img.style.filter = `brightness(${lerp(.04, 1, dev)}) saturate(${lerp(.25, 1, dev)}) blur(${lerp(5, 0, dev)}px)`;
+  });
+  // handwriting writes on, line by line, and clears before the next beat
+  beats.forEach((b, i) => {
+    const next = beats[i + 1] ? beats[i + 1].at : D + 1;
+    const block = f.querySelector('#rl' + i);
+    const out = 1 - eOut(P(t, next - .3, next - .05));
+    block.style.opacity = t < b.at ? 0 : out;
+    let start = b.at + (b.photo ? .55 : .25) + (b.code ? .35 : 0);
+    block.querySelectorAll('.ln').forEach(ln => {
+      const len = ln.textContent.length, dur = Math.max(.35, len * .022);
+      const p = clamp((t - start) / dur);
+      ln.style.clipPath = `inset(-20% ${(1 - p) * 100}% -40% -2%)`;
+      start += dur + .1;
+    });
+  });
+  // the code, printed big in amber
+  const cb = beats.find(b => b.code);
+  const code = f.querySelector('#rCode');
+  const cNext = beats[beats.indexOf(cb) + 1].at;
+  const ck = eOut(P(t, cb.at + .15, cb.at + .6));
+  code.style.opacity = t < cb.at ? 0 : Math.min(ck, 1 - eOut(P(t, cNext - .3, cNext - .05)));
+  code.style.translate = `0 ${(1 - ck) * 18}px`;
+  code.style.filter = `blur(${(1 - ck) * 6}px)`;
+  // the close: prints settle, the sign-off writes on
+  const close = beats.find(b => b.close);
+  const s = f.querySelector('#rSign');
+  const sp = clamp((t - close.at - 1.2) / .7);
+  s.style.opacity = t > close.at ? 1 : 0;
+  s.style.clipPath = `inset(-20% ${(1 - sp) * 100}% -40% -2%)`;
+  const labels = eOut(P(t, .2, 1.2));
+  f.querySelector('#rLabel').style.opacity = labels; f.querySelector('#rLabel2').style.opacity = labels;
+  drawGrain(f, Math.floor(t * 24));
+}
+
+// film grain, seeded so renders repeat
+let grainCache = {};
+function drawGrain(frame, n) {
+  const cv = frame.querySelector('.L-grain'); if (!cv) return;
+  const key = cv.width + 'x' + cv.height + ':' + (n % 6);
+  const ctx = cv.getContext('2d');
+  if (!grainCache[key]) {
+    let seed = 99991 + (n % 6) * 7919;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const img = ctx.createImageData(cv.width, cv.height);
+    for (let i = 0; i < img.data.length; i += 4) { const v = 128 + (rnd() + rnd() + rnd() - 1.5) * 120; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    grainCache[key] = img;
+  }
+  ctx.putImageData(grainCache[key], 0, 0);
+  cv.style.opacity = C.grain * .22;
+}
+
+// ---------- mount ----------
+const builders = { post: buildPost, story: buildStory, reel: buildReel };
+async function ready() {
+  await document.fonts.ready;
+  await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
+}
+window.campaign = { ready: false, duration: C.reel.duration, seek(t) { renderReel(t); } };
+
+(async () => {
+  if (FRAME) {
+    document.body.classList.add('single');
+    document.getElementById('single').innerHTML = builders[FRAME]();
+    if (LAYER) {
+      document.body.classList.add('layer-mode');
+      document.querySelectorAll(`[data-layer="${LAYER}"]`).forEach(e => e.classList.add('on'));
+      // the amber words keep their place inside a line, but belong to their own layers
+      if (LAYER === 'handwriting') document.querySelectorAll('.amb').forEach(e => e.classList.add('hide-in-layer'));
+    }
+    document.querySelectorAll('.frame').forEach(f => drawGrain(f, 0));
+    if (FRAME === 'reel') renderReel(Number(Q.get('t') || 14.6));
+  } else {
+    const boards = document.getElementById('boards');
+    const S = .42;
+    boards.innerHTML = [['Version A · Photo post · 1080 x 1350', 'post', 1080, 1350], ['Version A · Story · 1080 x 1920', 'story', 1080, 1920], ['Version B · Reel · 15 s · 1080 x 1920', 'reel', 1080, 1920]]
+      .map(([t, k, w, h]) => `<div class="board"><h2>${t}</h2><div class="scaled" style="width:${w * S}px;height:${h * S}px"><div style="transform:scale(${S});transform-origin:0 0">${builders[k]()}</div></div>${k === 'reel' ? '<div class="transport"><button id="play">Pause</button><input id="scrub" type="range" min="0" max="15" step="0.01" value="0"><span id="clock">0.0 s</span></div>' : ''}</div>`).join('');
+    document.querySelectorAll('.frame').forEach(f => drawGrain(f, 0));
+    let t = 0, last = performance.now(), playing = true;
+    const pb = document.getElementById('play'), sc = document.getElementById('scrub'), ck = document.getElementById('clock');
+    pb.onclick = () => { playing = !playing; pb.textContent = playing ? 'Pause' : 'Play'; };
+    sc.oninput = e => { t = +e.target.value; playing = false; pb.textContent = 'Play'; };
+    (function tick(now) { if (playing) { t += (now - last) / 1000; if (t > C.reel.duration) t = 0; } last = now; renderReel(t); sc.value = t; ck.textContent = t.toFixed(1) + ' s'; requestAnimationFrame(tick); })(last);
+  }
+  await ready();
+  window.campaign.ready = true;
+})();
+</script>
+</body>
+</html>
