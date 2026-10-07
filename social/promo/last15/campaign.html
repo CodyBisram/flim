@@ -5,16 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FLIM LAST15</title>
 <!--
-  The LAST15 campaign, from the team at FLIM: a photo post (1080x1350), its story (1080x1920) and a
-  15 second reel (1080x1920). Copy, photos and colours live in config.js.
+  The LAST15 campaign, from the team at FLIM: a photo post (1080x1350) and its story (1080x1920).
+  Copy, photos and colours live in config.js.
 
-    campaign.html                       all three side by side, the reel playing
-    campaign.html?frame=post            one frame at its real size (post, story, reel)
-    campaign.html?frame=reel&t=7.5      the reel at a moment
+    campaign.html                       both side by side
+    campaign.html?frame=post            one frame at its real size (post, story)
     campaign.html?frame=post&layer=15   one layer alone on transparency
 
-  Layers (data-layer): background, perforations, mount, photo-hero, photo-second, photo-third,
-  handwriting, 15, code, printed, grain.
+  Layers (data-layer): background, perforations, mount, photo-hero, copy, 15, code,
+  handwriting (the sign-off and the story's underline), printed, grain.
 -->
 <style>
 @font-face { font-family: 'Archivo'; src: url(fonts/archivo-wdth.woff2) format('woff2'); font-weight: 100 900; font-stretch: 62% 125%; font-display: block; }
@@ -43,7 +42,7 @@ body.single .chrome { display: none; }
 /* ---------- frames ---------- */
 .frame { position: relative; overflow: hidden; background: var(--bg); color: var(--text); }
 .frame.post { width: 1080px; height: 1350px; }
-.frame.story, .frame.reel { width: 1080px; height: 1920px; }
+.frame.story { width: 1080px; height: 1920px; }
 .frame > * { position: absolute; }
 .L-background { inset: 0; background:
   radial-gradient(120% 80% at 50% 38%, rgba(60,40,24,.28), transparent 60%),
@@ -70,11 +69,14 @@ body.single .chrome { display: none; }
 .photo .ph-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 500 22px var(--mono); letter-spacing: .14em; color: rgba(244,239,231,.4); text-transform: uppercase;
   background: repeating-linear-gradient(135deg, #1a140f 0 18px, #16110d 18px 36px); }
 
-/* handwriting */
+/* the note, printed */
+.L-copy .sent { display: block; text-wrap: balance; }
+.L-copy .sent + .sent { margin-top: .3em; }
+.L-copy { font-family: var(--print); font-weight: 400; font-stretch: 100%; color: var(--text); letter-spacing: -.005em; text-wrap: pretty; }
+/* handwriting: only the sign-off and its marks */
 .L-handwriting { font-family: var(--hand); font-weight: 500; color: var(--text); white-space: nowrap; }
 .L-handwriting .ln { display: block; }
 .amb { color: var(--amber); }
-.amb.big15 { font-size: 1.55em; line-height: .7; font-weight: 600; }
 .signoff { font-family: var(--hand); font-weight: 600; color: var(--text); }
 .scanimg { position: absolute; }
 /* printed */
@@ -110,8 +112,8 @@ root.setProperty('--amber', C.colors.amber); root.setProperty('--mount', C.color
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // [[15]] and [[LAST15]] are the only amber words; each goes on its own layer.
-const amberize = (s, big15) => esc(s).replace(/\[\[(.+?)\]\]/g, (_, w) =>
-  `<span class="amb${big15 && w === '15' ? ' big15' : ''}" data-layer="${w === '15' ? '15' : 'code'}">${w}</span>`);
+const amberize = s => esc(s).replace(/\[\[(.+?)\]\]/g, (_, w) =>
+  `<span class="amb" data-layer="${w === '15' ? '15' : 'code'}">${w}</span>`);
 
 function photo(slot, x, y, w, extra = '') {
   const h = Math.round(w * 4 / 3), src = C.photos[slot];
@@ -123,9 +125,13 @@ function print(slot, cx, top, w, rot, border, id = '') {
   const h = Math.round(w * 4 / 3), W = w + border * 2, H = h + border * 2;
   return `<div class="L-mount" data-layer="mount" ${id ? `id="${id}"` : ''} style="left:${cx - W / 2}px;top:${top}px;width:${W}px;height:${H}px;transform:rotate(${rot}deg)">${photo(slot, border, border, w)}</div>`;
 }
-function noteBlock(lines, scan, style) {
+function noteBlock(lines, style) {
+  // One sentence a line, wrapped evenly; printed type gets proper apostrophes.
+  return `<div class="L-copy" data-layer="copy" style="${style}">${lines.map(l => `<span class="sent">${amberize(l.replace(/'/g, '\u2019'))}</span>`).join('')}</div>`;
+}
+function signoff(text, scan, style) {
   if (scan) return `<img class="scanimg" data-layer="handwriting" src="${esc(scan)}" style="${style}" alt="">`;
-  return `<div class="L-handwriting" data-layer="handwriting" style="${style}">${lines.map(l => `<span class="ln">${amberize(l)}</span>`).join('')}</div>`;
+  return `<div class="signoff L-handwriting" data-layer="handwriting" style="${style}">${esc(text)}</div>`;
 }
 const grainCanvas = (w, h) => `<canvas class="L-grain" data-layer="grain" width="${w / 2}" height="${h / 2}"></canvas>`;
 
@@ -136,10 +142,10 @@ function buildPost() {
     <div class="L-background" data-layer="background"></div>
     <div class="L-perforations right" data-layer="perforations"></div>
     ${print('hero', 520, 78, 552, -1.3, 18)}
-    ${noteBlock(p.note, C.handwritingScans.post, 'left:96px;top:882px;font-size:59px;line-height:1.16;transform:rotate(-.6deg)')}
-    <div class="signoff L-handwriting" data-layer="handwriting" style="right:120px;top:1110px;font-size:64px;transform:rotate(-2deg)">${esc(p.signoff)}</div>
+    ${noteBlock(p.note, 'left:96px;top:880px;width:880px;font-size:45px;line-height:1.28')}
+    ${signoff(p.signoff, C.signoffScans.post, 'right:110px;top:1166px;font-size:66px;transform:rotate(-2deg)')}
     <div class="printed" data-layer="printed" style="left:96px;bottom:56px">${esc(p.label)}</div>
-    <div class="printed" data-layer="printed" style="right:96px;bottom:56px">Founding 100</div>
+    <div class="printed" data-layer="printed" style="right:96px;bottom:56px">15 spots</div>
     ${grainCanvas(1080, 1350)}
   </div>`;
 }
@@ -152,88 +158,13 @@ function buildStory() {
     <div class="L-perforations right" data-layer="perforations"></div>
     <div class="printed" data-layer="printed" style="left:96px;top:236px">${esc(s.label)}</div>
     ${print('hero', 520, 300, 660, -1.2, 20)}
-    ${noteBlock(s.note, C.handwritingScans.story, 'left:96px;top:1236px;font-size:59px;line-height:1.16;transform:rotate(-.6deg)')}
-    <div class="signoff L-handwriting" data-layer="handwriting" style="right:120px;top:1458px;font-size:64px;transform:rotate(-2deg)">${esc(s.signoff)}</div>
-    <div class="L-handwriting" data-layer="handwriting" style="left:96px;top:1568px;font-size:76px;font-weight:600">${esc(s.link)}</div>
-    <svg data-layer="handwriting" style="left:92px;top:1660px" width="330" height="30" viewBox="0 0 330 30"><path class="arrow" d="M4 18c60-9 150-12 230-8 30 2 60 6 92 1"/></svg>
-    <div class="printed" data-layer="printed" style="right:96px;top:236px">Founding 100</div>
+    ${noteBlock(s.note, 'left:96px;top:1256px;width:880px;font-size:46px;line-height:1.28')}
+    ${signoff(s.signoff, C.signoffScans.story, 'right:110px;top:1550px;font-size:68px;transform:rotate(-2deg)')}
+    <div class="L-copy" data-layer="copy" style="left:96px;top:1650px;font-size:52px;font-weight:600">${esc(s.link)}</div>
+    <svg data-layer="handwriting" style="left:90px;top:1718px" width="300" height="30" viewBox="0 0 300 30"><path class="arrow" d="M4 18c55-9 136-12 208-8 28 2 54 6 84 1"/></svg>
+    <div class="printed" data-layer="printed" style="right:96px;top:236px">15 spots</div>
     ${grainCanvas(1080, 1920)}
   </div>`;
-}
-
-// ---------- Version B: the reel, 1080 x 1920, 15 s ----------
-function buildReel() {
-  const r = C.reel;
-  const prints = r.beats.filter(b => b.photo).map((b, i) =>
-    print(b.photo, 540 + [0, 18, -14][i], 300 + i * 6, 592, [-1.6, 1.4, -0.8][i], 18, 'rp' + i)).join('');
-  const lines = r.beats.map((b, i) => `<div class="L-handwriting" data-layer="handwriting" id="rl${i}" style="left:96px;top:${b.code ? 1352 : 1226}px;font-size:${b.close ? 82 : 66}px;line-height:1.14;font-weight:${b.close ? 600 : 500}">${
-    b.lines.map((l, j) => `<span class="ln" data-beat="${i}" data-line="${j}">${amberize(l, true)}</span>`).join('')}</div>`).join('');
-  return `<div class="frame reel" id="f-reel">
-    <div class="L-background" data-layer="background"></div>
-    <div class="L-perforations right" data-layer="perforations"></div>
-    <div class="printed" data-layer="printed" style="left:96px;top:220px" id="rLabel">${esc(C.post.label)}</div>
-    <div class="printed" data-layer="printed" style="right:96px;top:220px" id="rLabel2">Founding 100</div>
-    ${prints}
-    ${lines}
-    <div class="codebig" data-layer="code" id="rCode" style="left:90px;top:1196px">LAST15</div>
-    <div class="signoff L-handwriting" data-layer="handwriting" id="rSign" style="right:120px;top:1440px;font-size:66px;transform:rotate(-2deg)">${esc(r.signoff)}</div>
-    ${grainCanvas(1080, 1920)}
-  </div>`;
-}
-
-// ---------- the reel's clock ----------
-const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-const P = (t, a, b) => clamp((t - a) / (b - a));
-const eOut = p => 1 - Math.pow(1 - p, 3);
-const eIO = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-const lerp = (a, b, p) => a + (b - a) * p;
-
-function renderReel(t) {
-  const f = document.getElementById('f-reel'); if (!f) return;
-  const beats = C.reel.beats, D = C.reel.duration;
-  // prints: each drops in and develops from dark when its beat starts
-  let pi = 0;
-  beats.forEach((b, i) => {
-    if (!b.photo) return;
-    const el = f.querySelector('#rp' + pi); pi++;
-    const k = eOut(P(t, b.at - .3, b.at + .5));
-    const dev = eIO(P(t, b.at, b.at + 2.0));
-    el.style.opacity = k;
-    el.style.translate = `0 ${(1 - k) * 60}px`;
-    const img = el.querySelector('.photo');
-    img.style.filter = `brightness(${lerp(.04, 1, dev)}) saturate(${lerp(.25, 1, dev)}) blur(${lerp(5, 0, dev)}px)`;
-  });
-  // handwriting writes on, line by line, and clears before the next beat
-  beats.forEach((b, i) => {
-    const next = beats[i + 1] ? beats[i + 1].at : D + 1;
-    const block = f.querySelector('#rl' + i);
-    const out = 1 - eOut(P(t, next - .3, next - .05));
-    block.style.opacity = t < b.at ? 0 : out;
-    let start = b.at + (b.photo ? .55 : .25) + (b.code ? .35 : 0);
-    block.querySelectorAll('.ln').forEach(ln => {
-      const len = ln.textContent.length, dur = Math.max(.35, len * .022);
-      const p = clamp((t - start) / dur);
-      ln.style.clipPath = `inset(-20% ${(1 - p) * 100}% -40% -2%)`;
-      start += dur + .1;
-    });
-  });
-  // the code, printed big in amber
-  const cb = beats.find(b => b.code);
-  const code = f.querySelector('#rCode');
-  const cNext = beats[beats.indexOf(cb) + 1].at;
-  const ck = eOut(P(t, cb.at + .15, cb.at + .6));
-  code.style.opacity = t < cb.at ? 0 : Math.min(ck, 1 - eOut(P(t, cNext - .3, cNext - .05)));
-  code.style.translate = `0 ${(1 - ck) * 18}px`;
-  code.style.filter = `blur(${(1 - ck) * 6}px)`;
-  // the close: prints settle, the sign-off writes on
-  const close = beats.find(b => b.close);
-  const s = f.querySelector('#rSign');
-  const sp = clamp((t - close.at - 1.2) / .7);
-  s.style.opacity = t > close.at ? 1 : 0;
-  s.style.clipPath = `inset(-20% ${(1 - sp) * 100}% -40% -2%)`;
-  const labels = eOut(P(t, .2, 1.2));
-  f.querySelector('#rLabel').style.opacity = labels; f.querySelector('#rLabel2').style.opacity = labels;
-  drawGrain(f, Math.floor(t * 24));
 }
 
 // film grain, seeded so renders repeat
@@ -254,12 +185,12 @@ function drawGrain(frame, n) {
 }
 
 // ---------- mount ----------
-const builders = { post: buildPost, story: buildStory, reel: buildReel };
+const builders = { post: buildPost, story: buildStory };
 async function ready() {
   await document.fonts.ready;
   await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
 }
-window.campaign = { ready: false, duration: C.reel.duration, seek(t) { renderReel(t); } };
+window.campaign = { ready: false };
 
 (async () => {
   if (FRAME) {
@@ -269,21 +200,15 @@ window.campaign = { ready: false, duration: C.reel.duration, seek(t) { renderRee
       document.body.classList.add('layer-mode');
       document.querySelectorAll(`[data-layer="${LAYER}"]`).forEach(e => e.classList.add('on'));
       // the amber words keep their place inside a line, but belong to their own layers
-      if (LAYER === 'handwriting') document.querySelectorAll('.amb').forEach(e => e.classList.add('hide-in-layer'));
+      if (LAYER === 'copy') document.querySelectorAll('.amb').forEach(e => e.classList.add('hide-in-layer'));
     }
     document.querySelectorAll('.frame').forEach(f => drawGrain(f, 0));
-    if (FRAME === 'reel') renderReel(Number(Q.get('t') || 14.6));
   } else {
     const boards = document.getElementById('boards');
     const S = .42;
-    boards.innerHTML = [['Version A · Photo post · 1080 x 1350', 'post', 1080, 1350], ['Version A · Story · 1080 x 1920', 'story', 1080, 1920], ['Version B · Reel · 15 s · 1080 x 1920', 'reel', 1080, 1920]]
-      .map(([t, k, w, h]) => `<div class="board"><h2>${t}</h2><div class="scaled" style="width:${w * S}px;height:${h * S}px"><div style="transform:scale(${S});transform-origin:0 0">${builders[k]()}</div></div>${k === 'reel' ? '<div class="transport"><button id="play">Pause</button><input id="scrub" type="range" min="0" max="15" step="0.01" value="0"><span id="clock">0.0 s</span></div>' : ''}</div>`).join('');
+    boards.innerHTML = [['Photo post · 1080 x 1350', 'post', 1080, 1350], ['Story · 1080 x 1920', 'story', 1080, 1920]]
+      .map(([t, k, w, h]) => `<div class="board"><h2>${t}</h2><div class="scaled" style="width:${w * S}px;height:${h * S}px"><div style="transform:scale(${S});transform-origin:0 0">${builders[k]()}</div></div></div>`).join('');
     document.querySelectorAll('.frame').forEach(f => drawGrain(f, 0));
-    let t = 0, last = performance.now(), playing = true;
-    const pb = document.getElementById('play'), sc = document.getElementById('scrub'), ck = document.getElementById('clock');
-    pb.onclick = () => { playing = !playing; pb.textContent = playing ? 'Pause' : 'Play'; };
-    sc.oninput = e => { t = +e.target.value; playing = false; pb.textContent = 'Play'; };
-    (function tick(now) { if (playing) { t += (now - last) / 1000; if (t > C.reel.duration) t = 0; } last = now; renderReel(t); sc.value = t; ck.textContent = t.toFixed(1) + ' s'; requestAnimationFrame(tick); })(last);
   }
   await ready();
   window.campaign.ready = true;
