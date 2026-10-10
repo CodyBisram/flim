@@ -1,7 +1,8 @@
 name: R2 tripwire
 
 # The R2 migration's watchman. Runs weekly; stays green and silent while the gauges are quiet,
-# and FAILS the moment a migration trigger fires, which makes GitHub email the owner. The
+# and FAILS the moment a migration trigger fires, which pushes the owner (and a run that
+# produces no verdict, or never gets a runner, fails and pushes the same way). The
 # thresholds and their reasoning live in scripts/r2_trigger_check.sh and docs/R2_MIGRATION.md.
 on:
   schedule:
@@ -12,7 +13,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Check the migration triggers
         env:
           FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
@@ -24,3 +25,16 @@ jobs:
             QUIET*) exit 0;;
             *) echo "::error::tripwire produced no verdict"; exit 1;;
           esac
+      # GitHub's failure email goes unread; a push to the owner's phone does not (the same reason
+      # scripts/one_shot_push_run.py pushes instead). Inputs reach the script through env only.
+      - name: Push the owner on failure
+        if: failure()
+        env:
+          OWNER_NOTIFY_SECRET: ${{ secrets.OWNER_NOTIFY_SECRET }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body=$(printf '%s' "Either a migration trigger fired (docs/R2_MIGRATION.md) or the check produced no verdict. The log says which: $RUN_URL" | python3 -c 'import json,sys; print(json.dumps({"title": "R2 tripwire failed", "body": sys.stdin.read()}))')
+          curl -sS -m 20 --retry 3 --retry-all-errors -X POST \
+            "https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/notify-owner" \
+            -H "x-owner-notify-secret: $OWNER_NOTIFY_SECRET" -H 'content-type: application/json' \
+            -d "$body"

@@ -4,7 +4,7 @@ name: Pi heartbeat
 # burn, the build checklist, the webhook receiver) runs on the one Raspberry Pi, and until this
 # nothing watched the Pi: a power cut looked like a quiet week. GitHub's runners are the one
 # piece of the loop that does not live on it, so this asks the receiver at hooks.flim-app.com
-# for its health line every hour and fails the run, which emails the owner, when three tries a
+# for its health line every hour and fails the run, which pushes the owner, when three tries a
 # minute apart get anything but a 200 whose body is "ok". Cloudflare answers 530 when the
 # tunnel is gone (the Pi is off or offline) and 502 when the tunnel is up but the receiver is
 # not, so both land here. The receiver answers "ok" to any GET, so /health is a name, not a
@@ -36,3 +36,16 @@ jobs:
           done
           echo "::error::hooks.flim-app.com did not answer ok in three tries over two minutes. The Pi, its tunnel, or the receiver is down, and with it every monitor that runs there."
           exit 1
+      # GitHub's failure email goes unread; a push to the owner's phone does not (the same reason
+      # scripts/one_shot_push_run.py pushes instead). Inputs reach the script through env only.
+      - name: Push the owner on failure
+        if: failure()
+        env:
+          OWNER_NOTIFY_SECRET: ${{ secrets.OWNER_NOTIFY_SECRET }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body=$(printf '%s' "hooks.flim-app.com did not answer ok in three tries over two minutes: the Pi, its tunnel or the receiver is down, and every monitor on it with it. $RUN_URL" | python3 -c 'import json,sys; print(json.dumps({"title": "Pi heartbeat failed", "body": sys.stdin.read()}))')
+          curl -sS -m 20 --retry 3 --retry-all-errors -X POST \
+            "https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/notify-owner" \
+            -H "x-owner-notify-secret: $OWNER_NOTIFY_SECRET" -H 'content-type: application/json' \
+            -d "$body"

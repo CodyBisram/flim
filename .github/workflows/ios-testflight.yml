@@ -46,10 +46,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: latest-stable   # pin to e.g. '26.3' if a beta sneaks in
 
@@ -100,20 +99,23 @@ jobs:
             -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -skipPackagePluginValidation \
+            -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO \
             test | xcbeautify --renderer github-actions || \
           xcodebuild \
             -project Flim.xcodeproj -scheme Flim -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" \
-            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO test
+            -skipPackagePluginValidation -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO test
 
   # --------------------------------------------------------------------------
   # Swift 6 readiness — reports only, never blocks.
   #
   # The app builds in Swift 5 language mode. Under `-strict-concurrency=complete`
-  # there are 23 real warnings, mostly `static let` on non-Sendable types
-  # (CubeLUT.cache, ImageCache.shared, QuickCaptureIntent) plus four
-  # sending-closure sites in CameraViewModel. Each one is an ERROR in Swift 6.
+  # there were 23 real warnings when this job was written; on 2026-10-10 the
+  # same count was 103 (33 sending non-Sendable values, 27 non-isolated statics,
+  # the rest closure and isolation sites; FeedService and CameraViewModel lead),
+  # unseen because this job only runs on pull requests and main is pushed to
+  # directly. Each one is an ERROR in Swift 6.
   #
   # The point is to keep that number from growing quietly while the migration is
   # still on the backlog, so the eventual switch is a known, bounded piece of
@@ -127,10 +129,9 @@ jobs:
     timeout-minutes: 30
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: latest-stable
 
@@ -149,6 +150,7 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
+            -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO \
             SWIFT_STRICT_CONCURRENCY=complete \
             build 2>&1 | tee /tmp/strict.log || true
@@ -187,15 +189,14 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: latest-stable
 
       - name: Set up Ruby + fastlane
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.3"
           bundler-cache: true
@@ -232,7 +233,7 @@ jobs:
       # Making the repo private is what would actually buy the longer window.
       - name: Archive dSYM for crash symbolication
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dsym-${{ github.sha }}
           path: build/*.dSYM.zip

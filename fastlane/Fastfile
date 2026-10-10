@@ -101,6 +101,9 @@ platform :ios do
       export_method:  "app-store",
       output_directory: "build",
       output_name:    "Flim.ipa",
+      # Exactly the package versions in the committed Package.resolved, never newer ones picked
+      # at archive time: what ships is what was built and tested.
+      disable_package_automatic_updates: true,
       # Signing is configured on the app target in project.yml — passing it here
       # (globally) would force provisioning profiles onto SPM package targets and
       # fail the archive. Keep xcargs to just the build number.

@@ -15,7 +15,7 @@ jobs:
   numbers:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Read the numbers and append the day
         env:
           FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
@@ -28,13 +28,40 @@ jobs:
           git diff --cached --quiet && exit 0
           DAY=$(tail -1 docs/NUMBERS.md | cut -d'|' -f2 | tr -d ' ')
           git commit -m "Numbers for $DAY."
-          git push
+          # The Pi pushes to main every day too; one of its commits landing between checkout and
+          # here rejected this push, lost the day's line and skipped the repair below.
+          for _ in 1 2 3; do
+            git pull --rebase -q && git push && exit 0
+            sleep 5
+          done
+          exit 1
       # After the count AND after the commit: the alert still says how many captures leaked,
       # the day's line is already on main, and a NO MASTER row can turn this run red without
       # costing the line (nightly review, 2026-09-14).
+      # Its own Python, not the runner's: ubuntu-latest moves to Ubuntu 26 from 2026-10-19, and a
+      # system pip that refuses installs (PEP 668) would fail the repair every night.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: ${{ !cancelled() }}
+        with:
+          python-version: "3.12"
+      # Runs whatever the steps above did: a missed line is no reason to let renditions pile up.
       - name: Rebuild missing renditions
+        if: ${{ !cancelled() }}
         env:
           FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
         run: |
           pip install --quiet --retries 10 --timeout 60 pillow
           python3 scripts/repair_renditions.py
+      # GitHub's failure email goes unread; a push to the owner's phone does not (the same reason
+      # scripts/one_shot_push_run.py pushes instead). Inputs reach the script through env only.
+      - name: Push the owner on failure
+        if: failure()
+        env:
+          OWNER_NOTIFY_SECRET: ${{ secrets.OWNER_NOTIFY_SECRET }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body=$(printf '%s' "The numbers, their commit or the rendition repair failed tonight: $RUN_URL" | python3 -c 'import json,sys; print(json.dumps({"title": "Nightly numbers failed", "body": sys.stdin.read()}))')
+          curl -sS -m 20 --retry 3 --retry-all-errors -X POST \
+            "https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/notify-owner" \
+            -H "x-owner-notify-secret: $OWNER_NOTIFY_SECRET" -H 'content-type: application/json' \
+            -d "$body"
