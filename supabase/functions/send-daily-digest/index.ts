@@ -7,9 +7,9 @@
 // whole point of the app. A digest is a fixed one-per-day cost no matter how active the network
 // gets.
 //
-// Scheduled HOURLY, not daily. A once-a-day cron that misses its window sends nothing that day;
-// running hourly and gating on `digest_state.last_sent_at` means a missed run is picked up on the
-// next pass, and the covered window stretches to match rather than dropping posts.
+// Gated on `digest_state.last_sent_at`, so the covered window stretches back to the last digest
+// (up to MAX_WINDOW_HOURS) rather than dropping posts when a run is missed. It used to run hourly
+// for exactly that reason; since 2026-10-10 it runs once a day (see SCHEDULED below).
 //
 // Only notifies people who: follow at least one person who posted in the window, have a device
 // token, aren't blocked either way with the poster, and haven't already had a digest inside
@@ -19,8 +19,10 @@
 //   supabase functions deploy send-daily-digest --no-verify-jwt
 // Requires: supabase/migrations/2026-08-03_daily_digest_state.sql
 //
-// SCHEDULED (pg_cron job `flim-daily-digest`):  0 14-23,0-1 * * *
-//   Hourly, but only between 14:00 and 01:00 UTC, roughly 10am to 9pm US Eastern. The other two
+// SCHEDULED (pg_cron job `flim-daily-digest`):  0 16 * * *
+//   Once a day at noon US Eastern (daylight time; 17 UTC in standard time), the owner's choice
+//   since 2026-10-10. Before that 0 14-16 (10am to noon) and 0 14-23,0-1 (10am to 9pm). One run a
+//   day means a failed run skips that day's digest; the next day's covers both. The other two
 //   push functions run every minute because they're reacting to something the user just did; this
 //   one initiates contact, so the hour it fires is the hour someone's phone buzzes. Since each
 //   person gets at most one digest per DIGEST_INTERVAL_HOURS, restricting WHEN the job runs is
