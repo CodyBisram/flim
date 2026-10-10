@@ -433,3 +433,36 @@ Date	App Name	App Apple Identifier	Event	Page Type	Source Type	Engagement Type	D
 2026-10-06	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 18.7	TH	1	1
 2026-10-06	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.3	RU	2	1
 2026-10-06	FLIM: Disposable Camera	6786079629	Impression	No page	App Store browse		iPhone	iOS 27.2	US	2	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 27.0	US	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Open	iPhone	iOS 26.6	US	2	2
+2026-10-07	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Update	iPhone	iOS 26.5	US	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Tap	No page	Unavailable	Update	iPhone	iOS 26.6	US	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Update	iPhone	iOS 26.6	US	3	3
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.3	US	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Page view	Product page	App referrer		iPhone	iOS 26.6	US	4	4
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 15.8	US	2	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store browse		iPhone	iOS 26.6	US	2	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 27.0	GE	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Open	iPhone	iOS 26.5	US	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 27.0	TH	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.6	US	4	2
+2026-10-07	FLIM: Disposable Camera	6786079629	Page view	Product page	App referrer		iPhone	iOS 26.5	US	1	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Page view	Product page	App Store search		iPhone	iOS 26.6	US	3	1
+2026-10-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store browse		iPhone	iOS 27.0	US	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 27.0	US	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 27.0	TH	5	2
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.6	JM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Page view	Product page	App Store search		iPhone	iOS 27.0	US	2	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 18.6	JM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 18.7	TH	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Page view	Product page	App Store search		iPhone	iOS 18.6	JM	2	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 15.8	GM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Share	iPhone	iOS 27.0	US	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Tap	No page	App Store search	Get	iPhone	iOS 26.6	JM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Tap	No page	App Store search	Update	iPhone	iOS 18.6	JM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Share	iPhone	iOS 18.6	JM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Tap	No page	App Store search	Open	iPhone	iOS 26.6	JM	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 18.7	US	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.6	US	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.2	TH	1	1
+2026-10-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.6	TH	3	3
