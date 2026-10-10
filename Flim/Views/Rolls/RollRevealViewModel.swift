@@ -40,6 +40,9 @@ final class RollRevealViewModel {
     /// session, so threading it through `finish()` as a second parameter would only mean also
     /// touching `RollRevealView`'s existing call site for no functional gain.
     private weak var rollService: RollService?
+    /// The one deck load, owned here rather than by the view's `.task`, so a profile pushed
+    /// while it runs neither cancels it halfway nor starts a second one on the way back.
+    private var deckLoad: Task<Void, Never>?
 
     /// Roll ids whose reveal was opened and then dismissed unfinished (closed, backgrounded,
     /// swiped away) THIS APP LAUNCH. `RollDetailView`'s auto-present check skips a roll in this
@@ -173,6 +176,14 @@ final class RollRevealViewModel {
 
     // MARK: - Load
 
+    /// Starts `loadDeck` the first time and waits for it every time; see `deckLoad`.
+    func loadDeckOnce(photoService: PhotoService, auth: AuthService, rollService: RollService) async {
+        if deckLoad == nil {
+            deckLoad = Task { await loadDeck(photoService: photoService, auth: auth, rollService: rollService) }
+        }
+        await deckLoad?.value
+    }
+
     /// Re-fetches the roll's CURRENT photos so a shot deleted after the caller's own fetch (but
     /// before this reveal opened) never enters the deck, then resolves signed URLs and starts
     /// playback. Falls back to `fallbackPhotos` if the re-fetch itself fails (e.g. offline); an
@@ -189,7 +200,12 @@ final class RollRevealViewModel {
     /// after the await that could have let the account change underneath it, not once at the
     /// top: a stale response is internally consistent, it's just consistent with an account that
     /// isn't signed in anymore. See `AccountEpoch`.
-    func loadDeck(photoService: PhotoService, auth: AuthService, rollService: RollService) async {
+    ///
+    /// Runs once per reveal, through `loadDeckOnce`. The view's `.task` re-fires every time a
+    /// profile pushed from the credit line is popped, and a second run replaced the frozen
+    /// `playedDeck` mid-reveal: after a co-member's delete, the positional index then pointed one
+    /// frame on, and reactions and comments went to the wrong photo (audit RC-2).
+    private func loadDeck(photoService: PhotoService, auth: AuthService, rollService: RollService) async {
         self.rollService = rollService
         let epoch = AccountEpoch.current
         let fresh: [Photo]

@@ -1179,7 +1179,7 @@ struct RollDetailView: View {
 
     private func setCover(_ photo: Photo) {
         Haptics.select()
-        Task { await rollService.setRollCover(rollId: roll.id, path: photo.storagePath) }
+        Task { await rollService.setRollCover(rollId: roll.id, path: photo.storagePath, thumbPath: photo.thumbPath) }
         showToast("Roll cover updated")
     }
 

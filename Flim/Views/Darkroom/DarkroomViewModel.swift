@@ -308,6 +308,11 @@ final class DarkroomViewModel {
     }
 
     func loadMoreRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
+        // Only while the shared session is still this roll's. After a Darkroom visit it holds the
+        // personal list, and paging it here ran the roll filter on the Darkroom's cursor and then
+        // assigned the Darkroom's private photos into the roll grid, where the creator could even
+        // make one the cover (audit RC-3). RollDetailView's own load takes the session back.
+        guard ownsSharedList(photoService) else { return }
         guard photoService.hasMore, !photoService.isLoading else { return }
         guard (try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)) == true else { return }
         let fetched = photoService.loadedPhotos

@@ -53,6 +53,9 @@ final class PhotoService {
     var isLoading = false
     var uploadError: String?
     var failedUploads: [FailedUpload] = []
+    /// Photos this session deleted. A retry already holding one of them (it left `failedUploads`
+    /// before the delete landed) checks here and stands down rather than putting it back.
+    private var deletedPhotoIds: Set<UUID> = []
 
     /// Bumped once each time a queued capture for a roll that finished developing before the
     /// upload landed is re-saved as a personal instant instead of staying stuck (see
@@ -171,6 +174,7 @@ final class PhotoService {
         hasMore = true
         photoCursor = nil
         failedUploads = []
+        deletedPhotoIds = []
         uploadError = nil
         isUploading = false
         pendingCaptureCount = 0   // queued shots belong to the previous account; see enqueueCapture
@@ -1537,13 +1541,22 @@ final class PhotoService {
                 // Row there, cards not: finish that leg from the sidecar (it clears itself).
                 uploadRenditions(photoId: photoId, userId: upload.userId, imageData: upload.data)
             } else {
-                await failedUploadStore.remove(id: upload.id, userId: upload.userId)
+                // Both copies, not just the sidecar: the capture queue's raw would otherwise be
+                // replayed on the next launch and uploaded over the photo, or re-insert it if it
+                // was deleted in between (audit DS-1).
+                await clearPersistedCopies(photoId: upload.id, userId: upload.userId)
             }
         }
         let stillPending = pending.filter { !verdict.confirmed.contains($0.id) }
 
         for upload in stillPending {
             guard AccountEpoch.isCurrent(epoch) else { return }
+            // Deleted while this retry was in hand: no row is exactly what a delete leaves, and
+            // uploading now would bring the photo back (audit DS-1).
+            if deletedPhotoIds.contains(upload.photoId ?? upload.id) {
+                await clearPersistedCopies(photoId: upload.id, userId: upload.userId)
+                continue
+            }
             await captureAndUpload(imageData: upload.data,
                                    userId: upload.userId,
                                    rollId: upload.rollId,
@@ -1693,8 +1706,9 @@ final class PhotoService {
             }
             if verdict.confirmed.contains(record.id) {
                 // The upload plainly succeeded: drop the stale sidecar so this stops coming back,
-                // and never surface a retry for a photo already sitting in the Darkroom.
-                await store.remove(id: record.id, userId: userId)
+                // and never surface a retry for a photo already sitting in the Darkroom. The
+                // capture queue's raw goes too, or the next launch replays it (audit DS-1).
+                await clearPersistedCopies(photoId: record.id, userId: userId)
                 continue
             }
             toRestore.append(record)
@@ -1889,6 +1903,18 @@ final class PhotoService {
         let gone = toDelete.filter { confirmed.contains($0.id) }
         if AccountEpoch.isCurrent(epoch) {
             loadedPhotos.removeAll { confirmed.contains($0.id) }
+            // A deleted photo may still have an upload retry waiting (its row insert committed
+            // but the reply was lost, so it was queued and also showed up in the Darkroom). That
+            // retry finds no row, which is what a delete leaves, and uploads it again: the photo
+            // came back, into a developing roll for every member (audit DS-1).
+            deletedPhotoIds.formUnion(confirmed)
+            failedUploads.removeAll { confirmed.contains($0.photoId ?? $0.id) }
+        }
+        // The files on disk belong to the photo, not to whoever is signed in now.
+        for photo in gone {
+            await clearPersistedCopies(photoId: photo.id, userId: photo.userId)
+        }
+        if AccountEpoch.isCurrent(epoch) {
             WidgetSync.refresh()
             // The lock-screen card carries a roll-wide shot count; a delete changes it too.
             for rollId in Set(gone.compactMap(\.rollId)) { scheduleRollActivitySync(rollId: rollId) }

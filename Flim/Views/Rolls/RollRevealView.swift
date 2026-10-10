@@ -126,7 +126,7 @@ struct RollRevealView: View {
         .task {
             viewModel.reduceMotion = reduceMotion
             viewModel.displayScale = displayScale
-            await viewModel.loadDeck(photoService: photoService, auth: auth, rollService: rollService)
+            await viewModel.loadDeckOnce(photoService: photoService, auth: auth, rollService: rollService)
         }
         // Its own task, independent of the deck: the summary can render long before this
         // answers, and a slow quota read must never hold up the reveal itself.

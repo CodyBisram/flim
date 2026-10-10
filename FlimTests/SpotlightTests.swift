@@ -932,6 +932,32 @@ struct SpotlightTests {
         #expect(SortDeckView.opening(for: [photo(owner: UUID(), takenAt: .now)]) == .cards)
     }
 
+    // MARK: - The compose sheet posts its own photo (audit RC-1)
+
+    @Test("the compose sheet's photo goes back on top, so Post never publishes a card a failed delete put there")
+    func composePostActsOnItsOwnPhoto() {
+        let deleted = photo(owner: me, takenAt: .now)
+        let composed = photo(owner: me, takenAt: .now)
+        let next = photo(owner: me, takenAt: .now)
+        // A delete failed while the sheet was open for `composed`, and its card came back on top.
+        let deck = [deleted, composed, next]
+        let reordered = SortDeckView.deck(deck, withOnTop: composed.id)
+        #expect(reordered?.map(\.id) == [composed.id, deleted.id, next.id])
+        // Already on top: unchanged.
+        #expect(SortDeckView.deck([composed, next], withOnTop: composed.id)?.map(\.id) == [composed.id, next.id])
+        // Gone from the deck: nothing to post, so nothing else is posted in its place.
+        #expect(SortDeckView.deck([deleted, next], withOnTop: composed.id) == nil)
+    }
+
+    @Test("a failed delete goes back under a top card someone is dragging, flying or composing on")
+    func failedDeleteNeverTakesTheTopCardsPlace() {
+        #expect(SortDeckView.reinsertionIndex(busyWithTopCard: false, count: 3) == 0)
+        #expect(SortDeckView.reinsertionIndex(busyWithTopCard: true, count: 3) == 1)
+        // The flying card is the only one left: under it, so it is on top once that card is gone.
+        #expect(SortDeckView.reinsertionIndex(busyWithTopCard: true, count: 1) == 1)
+        #expect(SortDeckView.reinsertionIndex(busyWithTopCard: true, count: 0) == 0)
+    }
+
     // MARK: - The sort session's sheet
 
     private func photo(owner: UUID, takenAt: Date, id: UUID = UUID()) -> Photo {

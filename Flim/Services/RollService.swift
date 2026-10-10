@@ -329,6 +329,23 @@ final class RollService {
         // still resolve to its thumbnail rendition rather than downloading the full image.
         var thumbForStorage: [String: String] = [:]
         for row in rows { thumbForStorage[row.storage_path] = row.thumb_path }
+        // `roll_covers` answers one row per roll, the latest developed photo, so a chosen cover
+        // is in that map only when it happens to be the latest. Every other one resolved to the
+        // 2048px master, about ten times the bytes on every member's phone (audit PF-2). Their
+        // thumbnails, in one indexed read; a miss keeps the master as the last resort below.
+        let unresolved = Set(rolls.compactMap(\.coverPath)).subtracting(thumbForStorage.keys)
+        if !unresolved.isEmpty {
+            struct ThumbRow: Decodable { let storage_path: String; let thumb_path: String? }
+            let extra: [ThumbRow] = await QueryBatch.inChunks(Array(unresolved)) { chunk in
+                (try? await supabase
+                    .from("photos")
+                    .select("storage_path,thumb_path")
+                    .in("storage_path", values: chunk)
+                    .execute()
+                    .value) ?? []
+            }
+            for row in extra { thumbForStorage[row.storage_path] = row.thumb_path }
+        }
 
         var covers: [UUID: String] = [:]
         for row in rows where covers[row.roll_id] == nil {
@@ -554,7 +571,9 @@ final class RollService {
     }
 
     /// The creator picks a specific photo as the roll's cover (RLS: creator-only update).
-    func setRollCover(rollId: UUID, path: String) async {
+    /// `path` is the photo's storage path, what `rolls.cover_path` holds. `thumbPath` is what this
+    /// phone shows meanwhile, so setting a cover does not download the master (audit PF-2).
+    func setRollCover(rollId: UUID, path: String, thumbPath: String? = nil) async {
         struct U: Encodable { let cover_path: String }
         let epoch = AccountEpoch.current
         _ = try? await supabase.from("rolls").update(U(cover_path: path))
@@ -563,7 +582,7 @@ final class RollService {
         // account switch mid-request wrote the departing account's cover into the next account's
         // cache and snapshot.
         guard AccountEpoch.isCurrent(epoch) else { return }
-        coverPaths[rollId] = path
+        coverPaths[rollId] = thumbPath ?? path
         if let i = rolls.firstIndex(where: { $0.id == rollId }) {
             let r = rolls[i]
             rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,

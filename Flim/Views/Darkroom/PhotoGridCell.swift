@@ -387,6 +387,9 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     /// used only while this view still shows that path, so a cell that moves on to another
     /// rendition or another photo never loads the old bytes under the new key.
     @State private var resigned: (path: String, url: URL)?
+    /// The path a failed load already re-signed on its own (see `load`), so it happens once per
+    /// path and a second failure shows the retry instead of looping.
+    @State private var autoResignedPath: String?
     // Bumped at the start of every `load()` call and captured locally by that call. The decode
     // underneath `DiskImageCache.load`/`ImageLoader.fetch` runs on `Task.detached`, which is NOT
     // part of the tree `.task(id:)` cancels, so an old call's awaits can still resolve after a
@@ -481,6 +484,18 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         shown = false
         guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale, cacheKey: cacheKey) else {
             guard generation == loadGeneration else { return }
+            // The usual reason is a link that expired while the screen stayed open: every
+            // long-lived surface (feed cards, the Rolls covers, profiles, the pager) signs once and
+            // keeps the URL, and after an hour in the background its unseen frames all failed
+            // with "This shot didn't load" until someone tapped Retry (audit PF-1). So sign the
+            // path again and try once more on our own before showing anything, unless this load
+            // already used a fresh signature.
+            if let key = cacheKey, key.contains("/"), !key.hasPrefix("http"),
+               autoResignedPath != key, resigned?.path != key {
+                autoResignedPath = key
+                await retry()
+                return
+            }
             failed = true   // network/decode failed → show retry, not endless shimmer
             onFailure?()
             return

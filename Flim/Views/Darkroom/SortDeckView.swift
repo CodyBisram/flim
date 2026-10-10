@@ -186,8 +186,9 @@ struct SortDeckView: View {
                 // Same publish path as swipe-right/the Post button, just carrying what was
                 // typed into the sheet: `performSwipe` already commits the PREVIOUS held
                 // action, flies this card off, and holds this one for undo exactly as it does
-                // for the fast path.
-                performSwipe(.publish, caption: composeCaption, tags: composeTags)
+                // for the fast path. It names its photo: the top card can have changed under the
+                // sheet (a failed delete puts its card back), and the sheet posts what it opened for.
+                performSwipe(.publish, caption: composeCaption, tags: composeTags, photo: composePhoto)
             }
         }
         .sheet(item: $sessionOffer, onDismiss: { sessionSheetClosed() }) { offer in
@@ -259,7 +260,9 @@ struct SortDeckView: View {
     }
 
     private func openCompose(for photo: Photo) {
-        guard composePhoto == nil else { return }
+        // Not while a swiped card is flying off: it is still the top card for those 280 ms and
+        // its pill still takes taps, so the sheet would open for a card already acted on.
+        guard composePhoto == nil, !isTransitioning else { return }
         Haptics.tap()
         composeCaption = ""
         composeTags = []
@@ -450,11 +453,27 @@ struct SortDeckView: View {
     /// `caption`/`tags` are only ever non-empty when this came from the compose sheet; the plain
     /// swipe-right and the green Post button both call this with neither, so they stay exactly
     /// the instant, caption-less, tag-less publish they always were.
-    private func performSwipe(_ action: SortAction, caption: String? = nil, tags: [PendingTag] = []) {
+    ///
+    /// `target` is the compose sheet's photo. Every other caller acts on the top card, the one
+    /// under the finger; the sheet acts on the photo it was opened for, which is put back on top
+    /// first if anything moved it. Without that, a delete that failed while the sheet was up put
+    /// the deleted photo on top and Post published IT, with the caption and tags written for
+    /// another (audit RC-1).
+    private func performSwipe(_ action: SortAction, caption: String? = nil, tags: [PendingTag] = [],
+                              photo target: Photo? = nil) {
         // One action per card. A second tap (or a swipe plus a tap) inside the 280 ms transition
         // used to act on the SAME top card and then remove a second one, so the next photograph
         // left the deck unreviewed. The card is claimed here and released when it is gone.
-        guard !isTransitioning, let photo = cards.first else { return }
+        guard !isTransitioning else { return }
+        if let target {
+            guard let reordered = Self.deck(cards, withOnTop: target.id) else {
+                // Already acted on and gone; nothing here is what the sheet was opened for.
+                Haptics.error()
+                return
+            }
+            cards = reordered
+        }
+        guard let photo = cards.first else { return }
         isTransitioning = true
         postedNotice = false
         Haptics.tap()
@@ -752,11 +771,32 @@ struct SortDeckView: View {
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()
                 publishError = "Couldn't delete that one. Check your connection and try again."
+                // Back on top only when nobody is acting on the top card. Mid-drag it would swap
+                // the card under the finger; mid-flight it would take the flying card's place;
+                // under the compose sheet it would become what that sheet's Post acts on.
+                let index = Self.reinsertionIndex(
+                    busyWithTopCard: drag != .zero || isTransitioning || composePhoto != nil,
+                    count: cards.count)
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    cards.insert(photo, at: 0)
+                    cards.insert(photo, at: index)
                 }
             }
         }
+    }
+
+    /// The deck with `photoId` moved to the top, the rest in order; nil when it is not in the
+    /// deck at all.
+    static func deck(_ cards: [Photo], withOnTop photoId: UUID) -> [Photo]? {
+        guard let i = cards.firstIndex(where: { $0.id == photoId }) else { return nil }
+        var reordered = cards
+        reordered.insert(reordered.remove(at: i), at: 0)
+        return reordered
+    }
+
+    /// Where a card whose delete failed goes back: on top, unless the top card is being
+    /// dragged, is flying off, or has the compose sheet open, and then just under it.
+    static func reinsertionIndex(busyWithTopCard: Bool, count: Int) -> Int {
+        busyWithTopCard ? min(1, count) : 0
     }
 
     /// What opening the deck found. `fetchUnsorted` answers nil for a read that failed and an
