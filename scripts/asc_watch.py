@@ -139,8 +139,10 @@ def main():
             print("done: final state")
             return 0
         if time.time() + POLL_SECONDS > deadline:
-            notify(f"FLIM {version}", f"Stopped watching after the time limit. Still {WORDS.get(state, state)}.")
-            return 0
+            # Failing the run when this push fails lets the backstop try once more (a resume run
+            # before the deadline, a stop run after it) instead of reading success and switching off.
+            told = notify(f"FLIM {version}", f"Stopped watching after the time limit. Still {WORDS.get(state, state)}.")
+            return 0 if told else 1
         if time.time() + POLL_SECONDS - started > RUN_BUDGET_SECONDS:
             hand_off(deadline, last, version)
             return 0
