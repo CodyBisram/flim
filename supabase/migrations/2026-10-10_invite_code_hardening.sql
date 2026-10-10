@@ -28,7 +28,8 @@
 --      code that is already someone's personal code, or a roll's, is refused with a message, so
 --      the owner picks another rather than silently killing that person's invites.
 --   c. redeem_invite: campaign codes first, then personal, then roll (was personal, campaign,
---      roll). A malformed code is refused before any counter. A per-client key (40 an hour) is
+--      roll). A roll code that is, or ever was, a campaign code is never honoured: roll codes are
+--      client-chosen, so a roll made with LAST15 would take its redemptions once it expired. A malformed code is refused before any counter. A per-client key (40 an hour) is
 --      bumped before 'global'; a refused call raises, which rolls back every counter it touched,
 --      so a client over its own limit never spends the shared one. Return values unchanged.
 --   d. invite_preview: the same precedence, made explicit with ORDER BY (UNION ALL ... LIMIT 1
@@ -40,10 +41,11 @@
 --      FALSE that would tell a member they are not invited.
 --   f. request_invite: ON CONFLICT DO NOTHING, as join_waitlist does. The first request stands.
 --
--- Before applying, re-check the clash counts (expect 0 | 0 | 0 | 0):
+-- Before applying, re-check the clash counts (expect 0 | 0 | 0 | 0 | 0):
 --   SELECT (SELECT count(*) FROM public.users u JOIN public.invite_campaigns c ON c.code = u.invite_code),
 --          (SELECT count(*) FROM public.users u JOIN public.rolls r ON r.invite_code = u.invite_code),
 --          (SELECT count(*) FROM public.users WHERE invite_code !~ '^[A-Z0-9]{6}$'),
+--          (SELECT count(*) FROM public.rolls r JOIN public.invite_campaigns c ON c.code = r.invite_code),
 --          (SELECT count(*) FROM public.users u JOIN auth.users a ON a.id = u.id
 --             WHERE lower(u.email) IS DISTINCT FROM lower(a.email));
 --
@@ -198,10 +200,14 @@ BEGIN
     END IF;
 
     -- A roll code: the creator vouches for whoever holds it, for as long as the roll is open.
+    -- Never a code that is, or was, a campaign's: roll codes are client-chosen, and a roll made
+    -- with a public campaign code would otherwise take its redemptions once the campaign expired
+    -- or filled.
     SELECT r.created_by INTO v_roll_owner
     FROM public.rolls r
     WHERE r.invite_code = v_code
       AND NOT public.is_roll_developed(r.id)
+      AND NOT EXISTS (SELECT 1 FROM public.invite_campaigns c WHERE c.code = v_code)
     LIMIT 1;
     IF v_roll_owner IS NULL THEN
         RETURN FALSE;
@@ -261,6 +267,7 @@ BEGIN
         JOIN public.users u ON u.id = r.created_by
         WHERE r.invite_code = v_code
           AND NOT public.is_roll_developed(r.id)
+          AND NOT EXISTS (SELECT 1 FROM public.invite_campaigns c WHERE c.code = v_code)
     ) s
     ORDER BY s.rank
     LIMIT 1;
