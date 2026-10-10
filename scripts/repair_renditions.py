@@ -24,6 +24,7 @@ Run:  FLIM_SERVICE_KEY=... .venv/bin/python scripts/repair_renditions.py [--dry-
 import io
 import json
 import os
+import re
 import sys
 import urllib.request
 import urllib.error
@@ -82,6 +83,15 @@ rows = rest("GET", "photos?select=id,user_id,storage_path,thumb_path,feed_path"
                    f"&or=(thumb_path.is.null,feed_path.is.null)&taken_at=lt.{cutoff}&order=taken_at")
 
 print(f"{len(rows)} photos need repair{' (dry run)' if DRY else ''}")
+# Its output lands in a public Actions log, so a photo is named by the first 8 characters of its
+# id (enough for `WHERE id::text LIKE 'abcd1234%'`), never by its <user id>/<photo id> path.
+UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def short(photo_id):
+    return str(photo_id)[:8]
+
+
 patched = uploaded = adopted = failed = 0
 no_master = []
 for row in rows:
@@ -90,7 +100,7 @@ for row in rows:
     updates = {}
     if not exists(row["storage_path"]):
         no_master.append(row["id"])
-        print(f"  NO MASTER {row['storage_path']}")
+        print(f"  NO MASTER photo {short(pid)}")
         continue
     for kind in ("thumb", "feed"):
         if row[f"{kind}_path"] is not None:
@@ -102,7 +112,7 @@ for row in rows:
                 adopted += 1
                 continue
             if DRY:
-                print(f"  would build {target}")
+                print(f"  would build {kind} for photo {short(pid)}")
                 continue
             long_edge, quality = SPECS[kind]
             master = download(row["storage_path"])
@@ -111,7 +121,7 @@ for row in rows:
             updates[f"{kind}_path"] = target
             uploaded += 1
         except Exception as e:
-            print(f"  FAILED {target}: {e}")
+            print(f"  FAILED {kind} for photo {short(pid)}: {UUID.sub('<id>', str(e))}")
             failed += 1
     if updates and not DRY:
         conds = "&".join(f"{k}=is.null" for k in updates)   # never clobber a concurrent repair

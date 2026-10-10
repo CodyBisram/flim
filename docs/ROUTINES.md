@@ -17,7 +17,7 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 | 02:07 daily | Nightly review (the prompt below); on a night with no commits it deep-audits one module in rotation instead | Raspberry Pi | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
 | 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` (GitHub's cron is best-effort; it has run up to five hours late) | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
 | Mon 07:30 | Product memo | Raspberry Pi | `docs/memos/<date>.md`, committed to main. A "What the database says" section reads `public.memo_snapshot()` through the read-only role (below) |
-| Mon 08:00 | Creator outreach (below): five to ten people who published an email address, each note through the send gate twice, one email per passing person from the owner's Gmail with its own one-use invite code | Raspberry Pi (`flim-outreach.timer`) | `social/outreach/<date>.md` committed to main with every entry's Status; one push, "Outreach: N sent, M held, K earlier codes used." Added 2026-09-26, not installed until the owner steps below are done |
+| Mon 08:00 | Creator outreach (below): five to ten people who published an email address, each note through the send gate twice, one email per passing person from the owner's Gmail with its own one-use invite code | Raspberry Pi (`flim-outreach.timer`) | `<date>.md` with every entry's Status, kept in the Pi's private archive `~/work/flim-ops/outreach/archive` (never committed: the repo is public and the file names people and their addresses); one push, "Outreach: N sent, M held, K earlier codes used." Added 2026-09-26, not installed until the owner steps below are done |
 | Sun 06:00 | Ledger burn (the prompt below): up to five small open ledger rows a person can hit, fixed one commit each on `burn/<date>`, one pull request | Raspberry Pi | PR "Ledger burn, week of <Mon DD>"; CI verifies, the owner merges; `OPEN.md` is left for the nightly review to update once the merge lands. Never main. Added 2026-09-21 |
 | every 30 min | TestFlight build checklist: a green `ios-testflight` run on main plus ninety minutes is a processed build (the App Store Connect key on the Pi is Sales and Reports only, so `/v1/builds` is closed to it); the build number is read from the run's log | Raspberry Pi | one push per build, never repeated, with the "On device:" list from the newest done block in `docs/PENDING.md` that names the build's train, or "nothing owed on device for this build". Added 2026-09-21 |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
@@ -132,10 +132,13 @@ next Monday runs) in five steps, each with only the tools it needs:
    on the same date refuses to start, so nobody is emailed twice.
 5. **Record.** Each entry's Status becomes "contacted <date> by email" or "held: <reason>"
    ("unconfirmed" if the send step left no result: check Gmail Sent). The file is checked
-   for every outreach code and for any invite link, and is not committed if one is there. Then one
-   commit, "Outreach for <Mon DD>: N sent, M held.", pushed to main, and one push to the owner:
-   "Outreach: N sent, M held, K earlier codes used." K counts earlier outreach codes redeemed at
-   least once.
+   for every outreach code and for any invite link (a hit is in the owner's push), then copied to
+   the Pi's private archive, `~/work/flim-ops/outreach/archive/<date>.md` (mode 600). It is never
+   committed: the repo is public and every entry names a person next to the address they
+   published. Each run copies the archive into the clone's git-ignored `social/outreach/` before
+   research, so the skill and the gate still see every earlier batch, and removes the copies on
+   the way out. Then one push to the owner: "Outreach: N sent, M held, K earlier codes used." K
+   counts earlier outreach codes redeemed at least once.
 
 Every headless run uses `--permission-mode dontAsk` (anything not allowed is refused, never
 asked), `--tools` to hide every other built-in tool, and `--setting-sources project` so no user

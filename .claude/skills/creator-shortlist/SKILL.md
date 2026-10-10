@@ -29,6 +29,11 @@ in `social/outreach/` first: anyone already listed in any of them, under any sta
 listed again. That covers "contacted", "replied", "declined", "no", "held" and "not contacted"
 alike: someone the owner chose not to write to last week is not re-offered this week.
 
+The folder is git-ignored and the files are never committed: the repo is public and every entry
+names a person next to the address they published. The weekly job keeps them in the Pi's private
+archive (`~/work/flim-ops/outreach/archive`) and copies them in here for the length of a run. Run
+by hand, the file stays on this machine.
+
 ## Who belongs on it
 
 Five to ten entries, no more. Quality over count; a batch of five good ones is a good batch, and

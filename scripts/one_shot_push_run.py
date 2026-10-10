@@ -28,6 +28,7 @@ Environment: ONE_SHOT_PUSH_SECRET, OWNER_NOTIFY_SECRET, FUNCTIONS_URL (".../func
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -87,6 +88,21 @@ def output(**values):
             handle.write(f"{key}={value}\n")
 
 
+UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def loggable(reply, text):
+    """The reply as the job log may show it. The repo is public, and so is every Actions log: the
+    dry run's `preview` names each recipient by user id (the 2026-10-06 spotlight dry run printed
+    22 of them), so it is reduced to a count, and any id left anywhere else is masked."""
+    if reply is not None and "preview" in reply:
+        preview = reply["preview"] if isinstance(reply["preview"], list) else []
+        reply = {k: v for k, v in reply.items() if k != "preview"}
+        reply["previewCount"] = len(preview)
+    shown = json.dumps(reply) if reply is not None else text
+    return UUID.sub("<id>", shown)[:4000]
+
+
 def people(n):
     return "1 person" if n == 1 else f"{n} people"
 
@@ -108,7 +124,7 @@ def main():
     args = parser.parse_args()
 
     status, reply, text = call(args.campaign, send=not args.dry_run)
-    print(f"HTTP {status}: {text[:4000]}")
+    print(f"HTTP {status}: {loggable(reply, text)}")
 
     if args.dry_run:
         if status != 200 or reply is None:

@@ -1,9 +1,9 @@
 #!/bin/bash
 # Weekly creator outreach, Mondays 08:00 New York, on the Pi (flim-outreach.timer).
 #
-#   outreach-weekly.sh             research, gate, mint one code per person, draft, send, commit, push
+#   outreach-weekly.sh             research, gate, mint one code per person, draft, send, archive
 #   outreach-weekly.sh --dry-run   research, gate, every email sent to the owner only, subject
-#                                  starting DRY RUN; no code minted, nothing committed or pushed
+#                                  starting DRY RUN; no code minted, nothing archived
 #
 # Five steps, each with only what it needs (docs/ROUTINES.md, "Weekly outreach"):
 #   1. Preflight: the database (SET ROLE flim_outreach, outreach_codes_status) and Gmail (an
@@ -17,7 +17,14 @@
 #   4. Send: codes minted here, in shell, one per passing entry; then outreach_send.py hands the
 #      exact emails to Gmail's SMTP server. Not the Gmail connector: it rewrote every link into an
 #      expiring google.com redirect (the first batch, 2026-09-25).
-#   5. Status lines written, the file checked for codes, committed and pushed, one ntfy push.
+#   5. Status lines written, the file checked for codes, kept in the Pi's private archive, one
+#      ntfy push.
+#
+# The batch files are never committed. The repo is public and each file names real people next to
+# the addresses they published, so they live only in $OPS/outreach/archive (mode 600). Every run
+# copies the archive into the clone's git-ignored social/outreach/ before research, so the skill
+# and the gate still see every earlier batch (nobody is ever listed twice), and removes the
+# copies again on the way out.
 #
 # Claude runs on the Pi's claude.ai login (~/.claude/.credentials.json from /login), NOT the
 # setup-token in CLAUDE_CODE_OAUTH_TOKEN: that token cannot load claude.ai connectors, so it is
@@ -34,12 +41,12 @@ main() {
   esac
 
   OPS=~/work/flim-ops; REPO=~/work/flim; HERE=$REPO/scripts/pi
-  DATE=$(TZ=America/New_York date +%F); WEEK=$(TZ=America/New_York date +"%b %-d")
+  DATE=$(TZ=America/New_York date +%F)
   SUFFIX=""; MODE="real run"; [ $DRY = 1 ] && { SUFFIX="-dry"; MODE="dry run"; }
   RUN=$OPS/outreach/$DATE$SUFFIX; LOG=$OPS/logs/outreach-$DATE$SUFFIX.log
-  FILE=social/outreach/$DATE.md
+  FILE=social/outreach/$DATE.md; ARCHIVE=$OPS/outreach/archive
   umask 077
-  mkdir -p "$OPS/logs" "$RUN"
+  mkdir -p "$OPS/logs" "$RUN" "$ARCHIVE"
   # shellcheck disable=SC1090
   [ -f ~/.config/watchdog.env ] && . ~/.config/watchdog.env      # NTFY_URL, NTFY_TOPIC, NTFY_TOKEN
   DB_URL=$(sed -n 's/^FLIM_DB_URL=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
@@ -53,10 +60,14 @@ main() {
   GMAIL_APP_PASSWORD=$(sed -n 's/^FLIM_GMAIL_APP_PASSWORD=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
   GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD#[\"\']}; GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD%[\"\']}
   # Codes live in these files for the length of one run and are deleted on the way out.
-  trap 'rm -f "$RUN/send.json" "$RUN/codes.json" "$RUN/status.tsv"' EXIT
+  # The clone's copies of the archive go too, but only once this run holds the clone: a second
+  # run that exits at the lock must not delete the first run's working files.
+  OWN_CLONE=0
+  trap 'rm -f "$RUN/send.json" "$RUN/codes.json" "$RUN/status.tsv"; [ "$OWN_CLONE" = 1 ] && rm -f "$REPO"/social/outreach/*.md "$REPO"/social/outreach/.plan.json' EXIT
 
   exec 9>"$OPS/.lock-outreach"; flock -n 9 || return 0
   exec 8>"$OPS/.lock-repo"; flock -w 900 8 || { stop "another job held ~/work/flim for 15 minutes"; return 1; }
+  OWN_CLONE=1
   echo "== $(date -Is) outreach $MODE" >> "$LOG"
 
   # A real run happens once per date. The marker is written before the send step starts, so a
@@ -68,9 +79,12 @@ main() {
   cd "$REPO" || { stop "no clone at $REPO"; return 1; }
   git fetch -q origin && git checkout -q main && git reset -q --hard origin/main && git clean -qfd \
     || { stop "git sync of ~/work/flim failed"; return 1; }
-  if git cat-file -e "origin/main:$FILE" 2>/dev/null; then
-    stop "$FILE is already on main; one batch per day"; return 1
+  if [ $DRY = 0 ] && [ -e "$ARCHIVE/$DATE.md" ]; then
+    stop "$DATE.md is already in the archive; one batch per day"; return 1
   fi
+  # Every earlier batch, for the skill's "never listed twice" rule and the gate's address check.
+  mkdir -p social/outreach && rm -f social/outreach/*.md social/outreach/.plan.json
+  cp "$ARCHIVE"/*.md social/outreach/ 2>/dev/null || true
 
   # ---- 1. Preflight --------------------------------------------------------------------------
   [ -n "$DB_URL" ] || { stop "no FLIM_DB_URL in ~/.config/flim-hooks.env"; return 1; }
@@ -125,7 +139,7 @@ main() {
     gmail_send --send "$RUN/send.json" --out "$RUN/result.json" $([ $DRY = 1 ] && echo --dry) >> "$LOG" 2>&1 || true
   fi
 
-  # ---- 5. Status, leak check, commit, push, alert --------------------------------------------
+  # ---- 5. Status, leak check, archive, alert --------------------------------------------------
   COUNTS=$(python3 "$HERE/outreach_gate.py" finalize --gate "$RUN/gate.json" --result "$RUN/result.json" \
     --file "$FILE" --date "$DATE" $SENDSTEP $([ $DRY = 1 ] && echo --dry) 2>> "$LOG")
   SENT=${COUNTS% *}; HELD=${COUNTS#* }
@@ -139,18 +153,16 @@ main() {
     return 0
   fi
 
+  # Archived whatever the leak check says: the people in it were contacted (or held) and must stay
+  # visible to every later run. A code in the file still means the research step broke its rules,
+  # so that is the alert.
+  LEAK=""
   { db_status 2>/dev/null | cut -f1; [ -f "$RUN/codes.json" ] && python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1])).values()))' "$RUN/codes.json"; } \
     | python3 "$HERE/outreach_gate.py" leakcheck --file "$FILE" \
-    || { alert "FLIM outreach: NOT committed" "Outreach: $SENT sent, $HELD held, $EARLIER_USED earlier codes used. The batch file carried an invite code or link, so it was not committed; copy kept at $OPS/logs/outreach-$DATE.md.$UNREAD" "warning"; cp "$FILE" "$OPS/logs/outreach-$DATE.md"; return 1; }
-
-  git add "$FILE" && git commit -q -m "Outreach for $WEEK: $SENT sent, $HELD held." >> "$LOG" 2>&1
-  PUSHED=0
-  for _ in 1 2 3; do
-    if git pull -q --rebase origin main >> "$LOG" 2>&1 && git push -q origin main >> "$LOG" 2>&1; then PUSHED=1; break; fi
-    sleep 20
-  done
-  NOTE=""; [ $PUSHED = 1 ] || { NOTE=" The commit did not push; it is on the Pi's clone only, and the next job's reset will drop it. Copy kept at $OPS/logs/outreach-$DATE.md."; cp "$FILE" "$OPS/logs/outreach-$DATE.md"; }
-  alert "FLIM outreach" "Outreach: $SENT sent, $HELD held, $EARLIER_USED earlier codes used.$UNREAD$NOTE" "$([ $PUSHED = 1 ] && [ -z "$UNREAD" ] && echo email || echo warning)"
+    || LEAK=" The batch file carried an invite code or link; it is archived on the Pi only, check $ARCHIVE/$DATE.md."
+  cp "$FILE" "$ARCHIVE/$DATE.md" \
+    || { alert "FLIM outreach: NOT archived" "Outreach: $SENT sent, $HELD held. Archiving the batch failed, so next week could list these people again; copy it by hand from $REPO/$FILE before the next job runs.$UNREAD" "warning"; OWN_CLONE=0; return 1; }
+  alert "FLIM outreach" "Outreach: $SENT sent, $HELD held, $EARLIER_USED earlier codes used.$UNREAD$LEAK" "$([ -z "$UNREAD$LEAK" ] && echo email || echo warning)"
 }
 
 # The two prompt parts, cut from outreach-prompt.md at the "=== PART" lines.
