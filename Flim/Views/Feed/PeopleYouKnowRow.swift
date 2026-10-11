@@ -19,6 +19,13 @@ struct PeopleYouKnowRow: View {
     @State private var people: [(profile: UserProfile, reason: String)] = []
     @State private var loaded = false
 
+    /// Keyed by account id, kept outside `@State`: this row is a direct `LazyVStack` child, the
+    /// same container already flagged (OPEN.md, 2026-09-10) for reclaiming and rebuilding a child
+    /// that scrolls out of the lazy render window and back, which would otherwise reset `people`/
+    /// `loaded` to empty and rerun `.task`'s `loadFollowers`/`discoverSections` round trip and the
+    /// visible flash that comes with it every time this row scrolls back into view.
+    private static var cachedPeople: [UUID: [(profile: UserProfile, reason: String)]] = [:]
+
     static let followThreshold = 3
     static let shownCount = 3
 
@@ -98,10 +105,18 @@ struct PeopleYouKnowRow: View {
             }
         }
         .task {
-            guard let uid = auth.currentUser?.id, feed.followingIds.count < Self.followThreshold else { loaded = true; return }
+            guard let uid = auth.currentUser?.id else { loaded = true; return }
+            if let cached = Self.cachedPeople[uid] {
+                people = cached
+                loaded = true
+                return
+            }
+            guard feed.followingIds.count < Self.followThreshold else { loaded = true; return }
             await feed.loadFollowers(userId: uid)
             let sections = await feed.discoverSections(excluding: uid)
-            people = Self.pick(sections)
+            let picked = Self.pick(sections)
+            people = picked
+            Self.cachedPeople[uid] = picked
             loaded = true
         }
         .animation(.easeOut(duration: 0.3), value: visible)
