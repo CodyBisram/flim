@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import Flim
 
 /// The Darkroom zoom ladder's pure logic: `DarkroomZoom` clamping/entry resolution, the anchor's
@@ -227,6 +228,26 @@ final class DarkroomZoomTests: XCTestCase {
         let anchor = DarkroomYearMonth(year: 2026, month: 8)
         let summaries = [summary(2026, 8, shots: 700, nights: 40), summary(2025, 7, shots: 342, nights: 174)]
         XCTAssertEqual(DarkroomZoomChrome.sub(zoom: .allTime, anchor: anchor, summaries: summaries, calendar: calendar), "· 2 years · 214 nights")
+    }
+
+    /// Regression: `DarkroomAllTimeRow.init(totals:monthSummaries:...)` keys `shotsByMonth`/
+    /// `topCoverByMonth` by reading `monthStart` back through a calendar. `monthStart` is always
+    /// the Gregorian date `DarkroomMonthSummaryV2.parseMonthStart` produced, so every month here
+    /// must resolve under its true Gregorian month number regardless of the device's own
+    /// calendar, the same guarantee `monthName` a few lines above this init already holds.
+    func testAllTimeRowKeysMonthsByGregorianMonthNumber() {
+        let totals = DarkroomYearTotals(year: 2026, shotCount: 922, nightCount: 62)
+        let summaries = [
+            summary(2026, 8, shots: 700, nights: 40),
+            summary(2025, 12, shots: 222, nights: 22),
+        ]
+        let row = DarkroomAllTimeRow(totals: totals, monthSummaries: summaries, anchor: DarkroomYearMonth(year: 2026, month: 8), accent: .blue, onSelectMonth: { _ in })
+        XCTAssertEqual(row.monthShotCount(8), 700)
+        XCTAssertEqual(row.monthShotCount(12), 222)
+        XCTAssertTrue(row.monthHasPhotos(8))
+        XCTAssertTrue(row.monthHasPhotos(12))
+        XCTAssertFalse(row.monthHasPhotos(1))
+        XCTAssertNil(row.monthShotCount(1))
     }
 
     // MARK: - DarkroomYearMonth ordering (PR 5 of the zoom redesign, revision 2)
