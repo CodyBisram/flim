@@ -1737,10 +1737,10 @@ final class FeedService {
         } else if let created {
             // The comment landed but the thread could not be read back. Kept as it would have
             // read, or the person sees it vanish and types it again, posting it twice. The
-            // author comes from any comment of theirs already on screen; the next good read
-            // fills in the rest.
-            let author = commentsByPost.values.lazy.flatMap { $0 }
-                .first { $0.comment.userId == userId }?.author
+            // author is the commenter's own profile, not whichever comment happens to already be
+            // cached: a user's first-ever comment anywhere has nothing to scan for.
+            let author = await fetchProfiles(ids: [userId])[userId]
+            guard AccountEpoch.isCurrent(epoch) else { return created != nil }
             var list = commentsByPost[postId] ?? []
             if !list.contains(where: { $0.id == created.id }) {
                 list.append(CommentInfo(comment: created, author: author, likeCount: 0, likedByMe: false))
