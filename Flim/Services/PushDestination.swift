@@ -206,28 +206,44 @@ enum PendingPushDestination {
     static var store: UserDefaults = .standard
 
     static func store(_ destination: PushDestination) {
-        guard let data = try? JSONEncoder().encode(destination) else { return }
-        store.set(data, forKey: key)
+        writeData(destination)
         store.removeObject(forKey: heldAtKey)
     }
 
     /// Puts a tap back because its lookup could not reach the server (`PushLookupOutcome.hold`),
-    /// stamped so it lapses after `heldTapLifetime`.
+    /// stamped so it lapses after `heldTapLifetime`. Leaves an existing stamp alone: a retry that
+    /// takes this same held destination and fails again (see `take(now:)`) holds it again, and
+    /// must not reset the lifetime's clock back to that retry's own `now`.
     static func hold(_ destination: PushDestination, now: Date = .now) {
-        store(destination)
-        store.set(now.timeIntervalSince1970, forKey: heldAtKey)
+        writeData(destination)
+        if store.object(forKey: heldAtKey) == nil {
+            store.set(now.timeIntervalSince1970, forKey: heldAtKey)
+        }
+    }
+
+    private static func writeData(_ destination: PushDestination) {
+        guard let data = try? JSONEncoder().encode(destination) else { return }
+        store.set(data, forKey: key)
     }
 
     /// Reads and clears in one step, so a destination is acted on once, never replayed on a later
     /// launch after it has already been handled (or after an account that couldn't see its
     /// content already tried and came up empty, see `MainTabView.route(to:)`). A held tap older
-    /// than `heldTapLifetime` is dropped here rather than routed.
+    /// than `heldTapLifetime` is dropped here rather than routed. The hold stamp itself is left in
+    /// place when a destination is handed back: only a genuinely fresh tap (`store(_:)`) or a
+    /// lapsed drop clears it, so a retry that holds this same destination again picks up the
+    /// original stamp instead of starting a new one.
     static func take(now: Date = .now) -> PushDestination? {
-        let heldAt = store.object(forKey: heldAtKey) as? Double
-        store.removeObject(forKey: heldAtKey)
-        guard let data = store.data(forKey: key) else { return nil }
+        guard let data = store.data(forKey: key) else {
+            store.removeObject(forKey: heldAtKey)
+            return nil
+        }
         store.removeObject(forKey: key)
-        if let heldAt, now.timeIntervalSince1970 - heldAt > heldTapLifetime { return nil }
+        let heldAt = store.object(forKey: heldAtKey) as? Double
+        if let heldAt, now.timeIntervalSince1970 - heldAt > heldTapLifetime {
+            store.removeObject(forKey: heldAtKey)
+            return nil
+        }
         return try? JSONDecoder().decode(PushDestination.self, from: data)
     }
 

@@ -219,6 +219,21 @@ struct PendingPushDestinationTests {
         #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(86_400)) == .feed)
     }
 
+    @Test("a retry that holds the same tap again does not reset the lifetime's clock")
+    func heldTapRetryKeepsOriginalStamp() {
+        isolate()
+        let destination = PushDestination.feed
+        let heldAt = Date(timeIntervalSince1970: 1_790_000_000)
+        PendingPushDestination.hold(destination, now: heldAt)
+        // A retry 10 minutes later takes the destination back out, fails again, and holds it
+        // again; that must not read as a fresh hold stamped at its own `now`.
+        #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(10 * 60)) == destination)
+        PendingPushDestination.hold(destination, now: heldAt.addingTimeInterval(10 * 60))
+        // Measured from the ORIGINAL stamp, the lifetime has now lapsed even though the most
+        // recent retry's own `now` is only moments in the past.
+        #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(PendingPushDestination.heldTapLifetime + 1)) == nil)
+    }
+
     @Test("a destination survives to be collected later")
     func heldUntilCollected() {
         isolate()
