@@ -271,6 +271,10 @@ struct FeedUnitCard: View {
             } else {
                 selection = min(selection, max(0, newIds.count - 1))
             }
+            // Re-anchored to whatever is on screen now. When the shown post was deleted and the
+            // index still fits, `selection` does not change, so its own onChange never runs, and
+            // the next membership change remapped to the dead id's old spot instead of this frame.
+            shownPostId = selection < newIds.count ? newIds[selection] : nil
             // A shot arriving on a card already on screen is seen like the rest of it, and
             // lights as new for this look, so the pill reads "1 new" while you are there.
             // Recorded even while marking waits on the feed's snapshot (a reload holds it shut),

@@ -56,6 +56,12 @@ struct SortDeckView: View {
     @State private var lastCaption: String?
     @State private var lastTags: [PendingTag] = []
     @State private var publishError: String?
+    /// Post and tag failures so far, and how many there were when the deck emptied. A failure
+    /// after that (the last card's commit runs as the deck closes) has had no banner on screen,
+    /// so the emptied deck shows it rather than closing over it.
+    @State private var publishFailures = 0
+    @State private var failuresSeenAtEmpty = 0
+    @State private var unseenFinalError: String?
     /// A post that landed, said once so the person knows where it went. Cleared by the next
     /// action or a few seconds, whichever first.
     @State private var postedNotice = false
@@ -132,6 +138,14 @@ struct SortDeckView: View {
                         await load()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let unseenFinalError {
+                    // The last commit failed as the deck closed. The X above closes it.
+                    Text(unseenFinalError)
+                        .flimFont(15, relativeTo: .body)
+                        .foregroundStyle(FlimTheme.error)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if cards.isEmpty && loaded {
                     // Nothing left to sort, return to the previous screen (no "all sorted" wall),
                     // by way of the Spotlight session sheet when this sort posted a frame that
@@ -525,6 +539,16 @@ struct SortDeckView: View {
         Task {
             if let p, let a { await commit(p, a, caption: caption, tags: tags) }
             await finishCommit?.value
+            // A failure since the deck emptied was never on screen. Say it here instead of
+            // closing over it; the X closes the deck once it has been seen. An explicit
+            // destination (View on the posted notice) still goes where it was asked.
+            if destination == nil, cards.isEmpty, publishFailures > failuresSeenAtEmpty, let publishError {
+                failuresSeenAtEmpty = publishFailures
+                finishCommit = nil
+                unseenFinalError = publishError
+                closing = false
+                return
+            }
             dismiss()
             // A new account's first sort ends in the Darkroom, once (owner's call 2026-09-09):
             // the frame they just kept is the reason the Darkroom exists, and landing back on
@@ -567,6 +591,7 @@ struct SortDeckView: View {
     private func finishSession() {
         guard !finishing, !closing else { return }
         finishing = true
+        failuresSeenAtEmpty = publishFailures
         // A new account's first sort goes straight to its first frame, with no sheet. Checked
         // here, before `closeDeck` marks that first sort landed.
         if NewAccountIntro.skipsSessionSheet(userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt) {
@@ -739,6 +764,7 @@ struct SortDeckView: View {
                     Haptics.error()
                     ReviewPrompt.noteVisibleFailure()
                     publishError = "Posted, but the tags didn't save. Try again from Edit tags."
+                    publishFailures += 1
                 }
             } catch {
                 // The photo is already marked sorted and the card is gone, so silence here means
@@ -747,6 +773,7 @@ struct SortDeckView: View {
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()
                 publishError = "Couldn't post that one. It's in your Darkroom, post it from there."
+                publishFailures += 1
                 session.failed(photoId: photo.id)
                 // The session sheet never shows a frame that did not post; with nothing left to
                 // offer, it goes (not a decline), and its dismissal closes the deck. A sheet

@@ -530,11 +530,14 @@ Deno.serve(async (req: Request) => {
   let sent = 0;
   let considered = 0;
 
-  // Stop taking new recipients before the 240 s lease can lapse under a live run; the next
-  // hour's tick finishes the rest (the same budget the other two senders keep).
+  // Stop taking new recipients before the 240 s lease can lapse under a live run (the same
+  // budget the other two senders keep). Longest-waiting first: the job runs once a day now, and
+  // in token order a run that hit the budget stopped at the same place every day, so the same
+  // people never got a digest. Whoever a run misses is first in line for the next one.
   const RUN_BUDGET_MS = 200_000;
   const runStartedAt = Date.now();
-  for (const [userId, tokens] of tokensByUser) {
+  const recipients = [...tokensByUser].sort(([a], [b]) => (lastSent.get(a) ?? 0) - (lastSent.get(b) ?? 0));
+  for (const [userId, tokens] of recipients) {
     if (Date.now() - runStartedAt > RUN_BUDGET_MS) { console.warn(JSON.stringify({ at: "digest_budget_hit" })); break; }
     const following = followingByUser.get(userId);
     if (!following || following.size === 0) continue;

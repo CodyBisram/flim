@@ -664,6 +664,13 @@ final class PhotoService {
             // success was dropped for good by any failure below (nightly review, 2026-09-05).
             // One UPDATE, its own row only, best-effort, fire-and-forget.
             Self.patchEarlierBurstGroup(burst.patchEarlier)
+            // Deleted while this upload was in flight. The retry loop checks before it starts,
+            // but the Storage upload and the burst wait above are long enough for a delete to
+            // land in between, and the insert below would then put the photo back (audit DS-1).
+            if deletedPhotoIds.contains(photoId) {
+                await discardDeletedUpload(photoId: photoId, userId: userId, path: path, rowInserted: false, epoch: epoch)
+                return nil
+            }
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
@@ -725,6 +732,12 @@ final class PhotoService {
                     return nil
                 }
                 inserted = existing
+            }
+            // And while the insert itself was in flight: the delete removed the old row, then
+            // this insert made a new one. Take it back out rather than leave it for every member.
+            if deletedPhotoIds.contains(photoId) {
+                await discardDeletedUpload(photoId: photoId, userId: userId, path: path, rowInserted: true, epoch: epoch)
+                return nil
             }
 
             // The row exists now, under whichever account captured it, independent of whether
@@ -1808,6 +1821,20 @@ final class PhotoService {
     }
 
     // MARK: - Delete
+
+    /// Undoes what an upload still in flight put back after its photo was deleted: the row it
+    /// inserted (if it got that far), the master it rewrote, and the copies on disk. Best-effort,
+    /// like the delete's own Storage removal; `sweep-orphaned-storage` reconciles any bytes left.
+    private func discardDeletedUpload(photoId: UUID, userId: UUID, path: String,
+                                      rowInserted: Bool, epoch: Int) async {
+        Self.captureLog.info("upload stood down: its photo was deleted while it was in flight")
+        if rowInserted {
+            _ = try? await supabase.from("photos").delete().eq("id", value: photoId.uuidString).execute()
+        }
+        _ = try? await supabase.storage.from("photos").remove(paths: [path])
+        await clearPersistedCopies(photoId: photoId, userId: userId)
+        if AccountEpoch.isCurrent(epoch) { isUploading = false }
+    }
 
     /// Deletes a photo the current user owns, removes the storage objects and the row,
     /// then drops it from the in-memory list.

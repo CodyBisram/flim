@@ -644,19 +644,32 @@ final class RollService {
 
     /// Deletes a roll (creator only, enforced by RLS) and removes it locally.
     func deleteRoll(rollId: UUID) async throws {
-        try await supabase
+        let epoch = AccountEpoch.current
+        // Read back, because a DELETE that RLS filtered to zero rows (sent under another account
+        // after a switch) does not throw: it reported success while the roll lived on.
+        let deleted: [DeletedRow] = try await supabase
             .from("rolls")
             .delete()
             .eq("id", value: rollId.uuidString)
+            .select("id")
             .execute()
+            .value
+        guard !deleted.isEmpty else { throw RollError.notApplied }
+        // The roll is gone, but its Live Activity, widget and snapshot belong to the account
+        // that deleted it; a newer account's must not be rewritten for it.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         forget(rollId)
     }
 
     /// The current user leaves a roll, drops their membership and removes it locally.
     func leaveRoll(rollId: UUID, userId: UUID) async throws {
+        let epoch = AccountEpoch.current
         try await removeMember(rollId: rollId, userId: userId)
+        guard AccountEpoch.isCurrent(epoch) else { return }
         forget(rollId)
     }
+
+    private struct DeletedRow: Decodable { let id: UUID }
 
     /// Drops every trace of a roll this account no longer has, including the ones OUTSIDE the app.
     ///
@@ -677,12 +690,21 @@ final class RollService {
     /// Removes a member from a roll. RLS allows this only for the member themselves
     /// (leaving) or the roll's creator (moderation).
     func removeMember(rollId: UUID, userId: UUID) async throws {
-        try await supabase
+        // Read back for the same reason as `deleteRoll`: zero rows is not an error to PostgREST.
+        let removed: [RemovedMember] = try await supabase
             .from("roll_members")
             .delete()
             .eq("roll_id", value: rollId.uuidString)
             .eq("user_id", value: userId.uuidString)
+            .select("user_id")
             .execute()
+            .value
+        guard !removed.isEmpty else { throw RollError.notApplied }
+    }
+
+    private struct RemovedMember: Decodable {
+        let userId: UUID
+        enum CodingKeys: String, CodingKey { case userId = "user_id" }
     }
 
     /// Reflects a creator-initiated `removeMember` locally once the server confirms it: the
@@ -741,6 +763,9 @@ enum RollError: LocalizedError {
     case revealAlreadyPassed
     /// `set_roll_reveal_at` refused a target outside `[now, created_at + 7 days]`.
     case revealOutOfRange
+    /// A delete the server accepted but applied to no row: RLS filtered it (a request sent under
+    /// another account after a switch), or the row was already gone.
+    case notApplied
 
     var errorDescription: String? {
         switch self {
@@ -749,6 +774,8 @@ enum RollError: LocalizedError {
         case .developed: "This roll already developed. It's closed to new members, but whoever invited you can share the photos."
         case .revealAlreadyPassed: "This roll already developed, its reveal time can't be changed."
         case .revealOutOfRange: "Pick a time between now and 7 days after the roll started."
+        // Every caller already says what failed in its own words ("Couldn't delete the roll...").
+        case .notApplied: nil
         }
     }
 }

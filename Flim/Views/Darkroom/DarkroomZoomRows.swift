@@ -319,7 +319,12 @@ extension DarkroomAllTimeRow {
     /// The fully-resolved case: every number (and cover) comes straight from the server summary
     /// rows.
     init(totals: DarkroomYearTotals, monthSummaries: [DarkroomMonthSummaryV2], anchor: DarkroomYearMonth, accent: Color, onSelectMonth: @escaping (DarkroomYearMonth) -> Void) {
-        let calendar = Calendar.current
+        // Gregorian, the calendar `parseMonthStart` built `monthStart` with: `Calendar.current`
+        // on a phone set to the Hebrew, Islamic or Chinese calendar read a different month
+        // number back out of it, and the row put each month's count and cover under the wrong
+        // month.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
         let shotsByMonth = Dictionary(monthSummaries.map { (calendar.component(.month, from: $0.monthStart), $0.shotCount) },
                                        uniquingKeysWith: { first, _ in first })
         // Each month's own `topCoverPath`, the same field (never re-picked here) `DarkroomAllTimeRow

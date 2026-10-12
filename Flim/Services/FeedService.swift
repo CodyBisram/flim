@@ -1901,15 +1901,27 @@ final class FeedService {
     func deletePost(id: UUID) async -> Bool? {
         // Captured for the Spotlight writes below, which must not land in another account.
         let epoch = AccountEpoch.current
+        struct DeletedRow: Decodable { let id: UUID }
+        let deleted: [DeletedRow]
         do {
-            try await supabase.from("posts").delete().eq("id", value: id.uuidString).execute()
+            // Read back: a DELETE that RLS filtered to zero rows (sent under another account
+            // after a switch) does not throw, and used to report a post taken down that was not.
+            deleted = try await supabase.from("posts").delete().eq("id", value: id.uuidString)
+                .select("id").execute().value
         } catch {
             guard !UserFacingError.isCancellation(error) else { return nil }
             Self.log.error("deletePost failed: \(String(describing: error), privacy: .public)")
             return false
         }
+        guard !deleted.isEmpty else {
+            // Superseded by an account switch, not the person's failure: nothing to show.
+            guard AccountEpoch.isCurrent(epoch) else { return nil }
+            Self.log.error("deletePost removed zero rows")
+            return false
+        }
+        guard AccountEpoch.isCurrent(epoch) else { return true }
         feed.removeAll { $0.post.id == id }
-        if AccountEpoch.isCurrent(epoch) { ownPostsByPhotoId = ownPostsByPhotoId.filter { $0.value.id != id } }
+        ownPostsByPhotoId = ownPostsByPhotoId.filter { $0.value.id != id }
         // Same per-post caches `dropPosts(forDeletedPhotoIds:)` clears, so nothing stays keyed
         // to a post id no card displays anymore.
         reactionsByPost.removeValue(forKey: id)
@@ -1917,10 +1929,8 @@ final class FeedService {
         tagsByPost.removeValue(forKey: id)
         // The row cascades server-side; the strip, the sheet, the shelves and the menu's entry
         // must not keep a frame that is gone.
-        if AccountEpoch.isCurrent(epoch) {
-            pruneSpotlightFrames { $0.postId == id }
-            if ownSpotlightEntry?.holds(postId: id) == true { Task { await refreshOwnSpotlightEntry() } }
-        }
+        pruneSpotlightFrames { $0.postId == id }
+        if ownSpotlightEntry?.holds(postId: id) == true { Task { await refreshOwnSpotlightEntry() } }
         return true
     }
 
