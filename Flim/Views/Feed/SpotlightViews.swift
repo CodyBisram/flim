@@ -221,7 +221,7 @@ struct SpotlightWeeksSheet: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        Text("Each week the team at \(AppInfo.appName) chooses a few frames from the ones people put up. To put one of yours up, press and hold a frame you shot this week.")
+                        Text("Each week the team at \(AppInfo.appName) chooses a few frames from the ones people put up. To put one of yours up, press and hold a frame you posted this week.")
                             .flimType(.body)
                             .foregroundStyle(FlimTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

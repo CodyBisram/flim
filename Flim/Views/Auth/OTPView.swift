@@ -126,10 +126,15 @@ struct OTPView: View {
         do {
             try await auth.verifyOTP(token: code)
         } catch {
-            // Raw server prose told people nothing they could act on. Name the two things that
-            // actually go wrong: they read an older email, or the code expired.
-            self.error = "That code didn't work. Check the newest email, or send a new code."
-            code = ""
+            if NetworkFailure.isUnreachable(error) {
+                // The server never saw the code, so it may well be right: keep it for the retry.
+                self.error = UserFacingError.genericMessage
+            } else {
+                // Raw server prose told people nothing they could act on. Name the two things that
+                // actually go wrong: they read an older email, or the code expired.
+                self.error = "That code didn't work. Check the newest email, or send a new code."
+                code = ""
+            }
         }
         isVerifying = false
     }

@@ -25,6 +25,17 @@ struct FailedUploadStoreTests {
         Data(repeating: byte, count: count)
     }
 
+    @Test("the sign-out warning counts every shot in the retry list once")
+    @MainActor
+    func unsentShotCountCountsRetryList() {
+        let service = PhotoService()
+        #expect(service.unsentShotCount == 0)
+        let user = UUID()
+        service.failedUploads = [FailedUpload(data: jpeg(), userId: user, rollId: nil),
+                                 FailedUpload(data: jpeg(0x11), userId: user, rollId: nil)]
+        #expect(service.unsentShotCount == 2)
+    }
+
     @Test("a saved capture survives being read back by a different store instance")
     func survivesProcessRestart() async {
         let (store, root) = makeStore(); defer { cleanUp(root) }

@@ -237,7 +237,7 @@ struct NewAccountIntroTests {
     func announcementWords() {
         let line = NewAccountIntro.Announcement.spotlight.line
         #expect(NewAccountIntro.Announcement.spotlight.detail
-                == "Each week, put up one frame you shot that week: press and hold it and choose Put it up for Spotlight. The team at \(AppInfo.appName) chooses a few to show everyone.")
+                == "Each week, put up one frame you posted that week: press and hold it and choose Put it up for Spotlight. The team at \(AppInfo.appName) chooses a few to show everyone.")
         #expect(line.contains("The team at \(AppInfo.appName)"))
         #expect(line.contains("week"))
         #expect(line.contains("press and hold"))

@@ -27,6 +27,9 @@ struct ProfileView: View {
     @State private var showWipePage = false
     @State private var showBlockedUsers = false
     @State private var showFeedbackSheet = false
+    /// How many shots had not reached the server when Sign out was tapped; non-nil shows the
+    /// warning. Taken once at the tap so the title does not count down under the person's thumb.
+    @State private var unsentAtSignOut: Int?
     /// Guards `requestAuthorizationIfNeeded()` against a double tap while the OS's one-shot
     /// prompt (or the settings read backing it) is still in flight.
     @State private var isRequestingNotifAuth = false
@@ -175,7 +178,12 @@ struct ProfileView: View {
 
                 Section {
                     Button {
-                        Task { try? await auth.signOut(); dismiss() }
+                        // Unsent shots are not lost by signing out (they wait on disk under this
+                        // account and send on its next sign-in here), but they stop sending, and
+                        // nothing said so: one tap and they went quiet until a sign-in that may
+                        // never come on this phone.
+                        let unsent = photos.unsentShotCount
+                        if unsent > 0 { unsentAtSignOut = unsent } else { signOut() }
                     } label: {
                         Text("Sign out")
                             .flimFont(15, weight: .medium, relativeTo: .body)
@@ -235,6 +243,19 @@ struct ProfileView: View {
             .navigationDestination(isPresented: $showWipePage) {
                 AccountDeleteView(mode: .wipeData)
             }
+            .confirmationDialog(
+                unsentAtSignOut == 1 ? "1 shot hasn't uploaded yet" : "\(unsentAtSignOut ?? 0) shots haven't uploaded yet",
+                isPresented: Binding(get: { unsentAtSignOut != nil },
+                                     set: { if !$0 { unsentAtSignOut = nil } }),
+                titleVisibility: .visible
+            ) {
+                // Queued shots send on their own; this also retries any that already failed.
+                Button("Wait and upload") { Task { await photos.retryFailedUploads() } }
+                Button("Sign out anyway", role: .destructive) { signOut() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("They stay on this phone and send when you sign back in here.")
+            }
         }
         .task { await notifications.refreshAuthorizationState() }
         // Someone who leaves for iOS Settings to flip notifications on (or off) and comes back
@@ -256,6 +277,10 @@ struct ProfileView: View {
     /// normal request path, whose instant `.denied` answer re-offers the Open Settings alert;
     /// once access is restored the stored preference (never cleared by the revoke) shows through
     /// again on the next refresh without needing a re-tap.
+    private func signOut() {
+        Task { try? await auth.signOut(); dismiss() }
+    }
+
     private func refreshCameraRollAutoSaveState() {
         guard let uid = auth.currentUser?.id else { cameraRollAutoSaveEnabled = false; return }
         let authorized = PHPhotoLibrary.authorizationStatus(for: .addOnly) == .authorized

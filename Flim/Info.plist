@@ -32,7 +32,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Used to take disposable photos that develop over time.</string>
+	<string>FLIM uses the camera to take your photos. Shots you send to a shared roll stay hidden until the roll develops.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save your developed photos to your camera roll.</string>
 	<key>NSSupportsLiveActivities</key>

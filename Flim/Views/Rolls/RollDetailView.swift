@@ -385,10 +385,13 @@ struct RollDetailView: View {
                             Image(systemName: "photo.on.rectangle.angled")
                                 .font(.system(size: 36, weight: .ultraLight))
                                 .foregroundStyle(accent.opacity(0.8))
-                            Text("No photos in this roll yet.")
+                            // A developed roll takes no more shots, so asking for one is a dead end.
+                            Text(roll.isDeveloped ? "No shots in this roll." : "No photos in this roll yet.")
                                 .flimFont(15, weight: .light, relativeTo: .body)
                                 .foregroundStyle(FlimTheme.textSecondary)
-                            Text("Take a photo and send it to \"\(roll.name)\".")
+                            Text(roll.isDeveloped
+                                 ? "Nobody shot into \"\(roll.name)\" before it developed."
+                                 : "Take a photo and send it to \"\(roll.name)\".")
                                 .flimFont(13, relativeTo: .subheadline)
                                 .foregroundStyle(FlimTheme.textTertiary)
                                 .multilineTextAlignment(.center)

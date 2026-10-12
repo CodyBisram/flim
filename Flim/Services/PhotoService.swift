@@ -150,6 +150,15 @@ final class PhotoService {
 
     var inFlightCaptureIds: Set<UUID> { Set(inFlightCaptureCounts.keys) }
 
+    /// Shots that have not fully reached the server: queued, uploading, retrying, building their
+    /// cards, or waiting in the retry list. A union, not `pendingCaptureCount + failedUploads.count`:
+    /// a retry takes its records out of `failedUploads` for the length of the attempt, and a shot
+    /// can sit in both sets in the moment one hands over to the other. What the sign-out warning
+    /// counts.
+    var unsentShotCount: Int {
+        inFlightCaptureIds.union(failedUploads.map(\.id)).count
+    }
+
     /// `Cache-Control` for a photo or rendition object: one year, where Storage's default is an
     /// hour. Every one of these paths is named by the photo's own UUID and never names different
     /// pixels later (an upsert only ever rewrites the same shot after a lost reply), so there is

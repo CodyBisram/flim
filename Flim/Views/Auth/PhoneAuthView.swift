@@ -52,7 +52,7 @@ struct EmailAuthView: View {
                         .tracking(12)
                         .foregroundStyle(.white)
                     // One line, not a pitch. The camera says the rest by being the next screen.
-                    Text("Invite only. Your code and your email, and you are in.")
+                    Text("Invite only. Already a member? Just your email.")
                         .font(.system(size: subtitleSize))
                         .foregroundStyle(FlimTheme.textSecondary)
                 }
@@ -135,7 +135,7 @@ struct EmailAuthView: View {
                     .foregroundStyle(.white)
                 Text(needsInvite
                      ? "Enter the code a friend sent you and we'll get you straight in."
-                     : "Enter it now and you'll go straight in.")
+                     : "New here? Enter it now and you'll go straight in. Members can leave it blank.")
                     .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textSecondary)
 

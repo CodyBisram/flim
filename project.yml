@@ -51,7 +51,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSCameraUsageDescription: "Used to take disposable photos that develop over time."
+        NSCameraUsageDescription: "FLIM uses the camera to take your photos. Shots you send to a shared roll stay hidden until the roll develops."
         NSPhotoLibraryAddUsageDescription: "Save your developed photos to your camera roll."
         UIUserInterfaceStyle: Dark
         NSSupportsLiveActivities: true

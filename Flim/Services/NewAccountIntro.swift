@@ -102,7 +102,7 @@ enum NewAccountIntro {
         /// The rest of the sentence: what it is and where it lives.
         var detail: String {
             switch self {
-            case .spotlight: "Each week, put up one frame you shot that week: press and hold it and choose Put it up for Spotlight. The team at \(AppInfo.appName) chooses a few to show everyone."
+            case .spotlight: "Each week, put up one frame you posted that week: press and hold it and choose Put it up for Spotlight. The team at \(AppInfo.appName) chooses a few to show everyone."
             }
         }
 
