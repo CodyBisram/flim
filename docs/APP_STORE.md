@@ -761,7 +761,7 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 
 **Time zone (1.6.2, owner decision 2026-10-01):** the phone's IANA time zone setting is stored on
 `client_versions.timezone` (linked to the account, overwritten each launch) to answer "roughly
-where are people". Treated as a device setting, not Location: it is not read through location
+where are people", and since 2026-10-12 to send the daily digest at noon on the person's clock. Treated as a device setting, not Location: it is not read through location
 services and is not derived from the IP address, so the App Privacy label stays "Location: not
 collected". Disclosed on the privacy page (web/privacy.html, "Your app version and your phone's
 time zone setting"). Revisit if Apple's review or guidance says otherwise.

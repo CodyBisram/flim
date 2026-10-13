@@ -8,8 +8,8 @@
 // gets.
 //
 // Gated on `digest_state.last_sent_at`, so the covered window stretches back to the last digest
-// (up to MAX_WINDOW_HOURS) rather than dropping posts when a run is missed. It used to run hourly
-// for exactly that reason; since 2026-10-10 it runs once a day (see SCHEDULED below).
+// (up to MAX_WINDOW_HOURS) rather than dropping posts when a run is missed. It runs hourly, and
+// each run sends only to the people for whom it is noon (see SCHEDULED below).
 //
 // Only notifies people who: follow at least one person who posted in the window, have a device
 // token, aren't blocked either way with the poster, and haven't already had a digest inside
@@ -19,22 +19,16 @@
 //   supabase functions deploy send-daily-digest --no-verify-jwt
 // Requires: supabase/migrations/2026-08-03_daily_digest_state.sql
 //
-// SCHEDULED (pg_cron job `flim-daily-digest`):  0 16 * * *
-//   Once a day at noon US Eastern (daylight time; 17 UTC in standard time), the owner's choice
-//   since 2026-10-10. Before that 0 14-16 (10am to noon) and 0 14-23,0-1 (10am to 9pm). One run a
-//   day means a failed run skips that day's digest; the next day's covers both. The other two
-//   push functions run every minute because they're reacting to something the user just did; this
-//   one initiates contact, so the hour it fires is the hour someone's phone buzzes. Since each
-//   person gets at most one digest per DIGEST_INTERVAL_HOURS, restricting WHEN the job runs is
-//   what keeps a digest from landing at 4am: the first eligible run after their window expires is
-//   always inside daytime.
-//
-//   The window assumes a US-Eastern-weighted user base, which is true today and won't stay true.
-//   The proper fix is a per-user timezone (or just the hour they usually open the app) and a
-//   send-window check per recipient; until then this is a blunt instrument that errs toward not
-//   waking anyone up. To change it:
-//     SELECT cron.unschedule('flim-daily-digest');
-//     SELECT cron.schedule('flim-daily-digest', '<cron>', $$ SELECT net.http_post(url := '<fn url>'); $$);
+// SCHEDULED (pg_cron job `flim-daily-digest`):  0 * * * *
+//   Every hour, but each person's digest goes out at noon on their own phone's clock, the owner's
+//   choice since 2026-10-12 (2026-10-10 to 2026-10-12: once a day at 16:00 UTC for everyone).
+//   The zone is the one the phone last reported on launch (client_versions.timezone, since 1.6.2);
+//   someone with none (an older build, or never launched one) gets noon US Eastern, which is what
+//   everyone got before. Someone with two phones in two zones goes by whichever launched last. A
+//   run that fails, or hits its time budget, misses those people until the next day's noon, whose
+//   window covers both days.
+//   The other two push functions run every minute because they're reacting to something the user
+//   just did; this one initiates contact, so the hour it lands is the hour someone's phone buzzes.
 //
 // Uses the SAME APNs secrets as the other push functions (APNS_KEY_ID, APNS_TEAM_ID,
 // APNS_PRIVATE_KEY, APNS_BUNDLE_ID, APNS_ENVIRONMENT).
@@ -61,6 +55,28 @@ const DIGEST_INTERVAL_HOURS = 20;
 /// Never look further back than this, so someone returning after a month gets "yesterday's
 /// photos", not a summary of four hundred.
 const MAX_WINDOW_HOURS = 48;
+/// The hour, on the recipient's own clock, a digest goes out. Half-hour zones (India, Newfoundland)
+/// get it at 12:30, the top of the UTC hour that falls inside their noon hour.
+const SEND_LOCAL_HOUR = 12;
+/// For someone whose phone has never reported a zone: noon US Eastern, the old schedule's hour.
+const FALLBACK_TIMEZONE = "America/New_York";
+
+/// One formatter per zone per run. `null` for a name Intl doesn't know (report_client_version only
+/// checks the name's shape), which falls back like a missing zone.
+const hourFormatters = new Map<string, Intl.DateTimeFormat | null>();
+function localHour(timeZone: string, at: Date): number | null {
+  let formatter = hourFormatters.get(timeZone);
+  if (formatter === undefined) {
+    try {
+      formatter = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" });
+    } catch {
+      formatter = null;
+    }
+    hourFormatters.set(timeZone, formatter);
+  }
+  const hour = formatter?.formatToParts(at).find((part) => part.type === "hour")?.value;
+  return hour === undefined ? null : Number(hour);
+}
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -454,9 +470,11 @@ Deno.serve(async (req: Request) => {
   // paged the same way as the other whole/large reads above in case that set ever exceeds
   // PostgREST's 1000-row cap.
   const recipientIds = [...tokensByUser.keys()];
-  const { rows: clientVersionRows, failed: clientVersionsFailed } = await fetchAllPages<{ user_id: string; updated_at: string }>(
+  const { rows: clientVersionRows, failed: clientVersionsFailed } = await fetchAllPages<
+    { user_id: string; updated_at: string; timezone: string | null }
+  >(
     (from, to) =>
-      supabase.from("client_versions").select("user_id, updated_at")
+      supabase.from("client_versions").select("user_id, updated_at, timezone")
         .in("user_id", recipientIds)
         .order("user_id", { ascending: true })
         .range(from, to),
@@ -468,6 +486,19 @@ Deno.serve(async (req: Request) => {
   const lastLaunch = new Map<string, number>(
     clientVersionRows.map((r) => [r.user_id, new Date(r.updated_at).getTime()]),
   );
+
+  // Only the people whose clock reads noon right now, by the zone their phone last reported
+  // (client_versions.timezone, stamped on every launch since 1.6.2). Narrowed before the posts,
+  // follows and blocks reads, so a run that falls on nobody's noon stops here.
+  const zoneByUser = new Map<string, string>();
+  for (const r of clientVersionRows) if (r.timezone) zoneByUser.set(r.user_id, r.timezone);
+  const runAt = new Date(now);
+  for (const userId of recipientIds) {
+    const zone = zoneByUser.get(userId);
+    const hour = (zone ? localHour(zone, runAt) : null) ?? localHour(FALLBACK_TIMEZONE, runAt);
+    if (hour !== SEND_LOCAL_HOUR) tokensByUser.delete(userId);
+  }
+  if (tokensByUser.size === 0) return new Response("nobody's noon this hour");
 
   // Posts inside the widest window any user could need. Fetched once, then filtered per user,
   // rather than a query per candidate. Paged the same way as the whole-table reads above: this
@@ -531,7 +562,7 @@ Deno.serve(async (req: Request) => {
   let considered = 0;
 
   // Stop taking new recipients before the 240 s lease can lapse under a live run (the same
-  // budget the other two senders keep). Longest-waiting first: the job runs once a day now, and
+  // budget the other two senders keep). Longest-waiting first: each person has one run a day, and
   // in token order a run that hit the budget stopped at the same place every day, so the same
   // people never got a digest. Whoever a run misses is first in line for the next one.
   const RUN_BUDGET_MS = 200_000;

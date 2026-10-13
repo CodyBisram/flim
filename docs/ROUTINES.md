@@ -24,7 +24,7 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 | hourly, :17 | Pi heartbeat: asks the receiver at hooks.flim-app.com for its health line, three tries a minute apart | GitHub Actions `pi-heartbeat.yml` (the one watcher that does not live on the Pi) | silent while the Pi answers `ok`; a failed run, which pushes the owner through notify-owner (since 2026-10-10; GitHub's failure email goes unread), when it does not, which is also every other row marked Raspberry Pi going dark. Added 2026-09-22 |
 | every 2 min | Social push | pg_cron `flim-social-push` | pushes, `push_deliveries`, drains `ops_alerts` to the owner |
 | every 5 min | Develop push, mark developed | pg_cron `flim-develop-push`, `flim-mark-developed` | roll-developed pushes |
-| 12:00 daily (16:00 UTC) | Daily digest | pg_cron `flim-daily-digest` | one digest push per person per day, longest-waiting first when the run's time budget runs out |
+| hourly; each person at noon local | Daily digest | pg_cron `flim-daily-digest` | one digest push per person per day at noon on their phone's clock (client_versions.timezone; noon Eastern if none), longest-waiting first when the run's time budget runs out |
 | 04:20 daily | pg_net cleanup | pg_cron `flim-cron-cleanup` | keeps `net._http_response` small (runs BEFORE a late numbers job can read the day; see the numbers row) |
 | 05:17 daily | Storage sweep | pg_cron `flim-storage-sweep` | orphaned objects removed, `ops_alerts` on surprises |
 | Sun 05:00 / 05:30 | pg_net vacuum, invite rate sweep | pg_cron | housekeeping |
