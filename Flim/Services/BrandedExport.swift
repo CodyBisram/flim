@@ -575,6 +575,63 @@ enum BrandedExport {
         }
     }
 
+    /// The story a chosen person shares from Spotlight: the same ground and print as `story`,
+    /// with the frame lit (a soft amber light around it, the mark a chosen frame gets in the
+    /// app, never a ring or badge on the photograph), "SPOTLIGHT" above it, and the week and
+    /// flim-app.com below. The print already carries the FLIM wordmark.
+    static func spotlightStory(print: UIImage, weekPhrase: String) -> UIImage {
+        let canvas = storyCanvas
+        guard print.size.width > 0, print.size.height > 0 else { return print }
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+
+        return UIGraphicsImageRenderer(size: canvas, format: format).image { ctx in
+            let cg = ctx.cgContext
+            drawStoryGround(in: canvas, context: cg)
+            drawGrain(in: canvas, context: cg)
+
+            let printWidth = canvas.width * storyPrintWidthFraction
+            let printHeight = printWidth * print.size.height / print.size.width
+            let rect = CGRect(x: (canvas.width - printWidth) / 2,
+                              y: canvas.height * storyTopFraction,
+                              width: printWidth, height: printHeight)
+
+            // The light first, then the print over it with the usual drop shadow.
+            cg.saveGState()
+            cg.setShadow(offset: .zero, blur: canvas.width * 0.16,
+                         color: UIColor(red: 0.98, green: 0.74, blue: 0.36, alpha: 0.42).cgColor)
+            UIColor(white: 0.05, alpha: 1).setFill()
+            cg.fill(rect)
+            cg.restoreGState()
+            cg.saveGState()
+            cg.setShadow(offset: CGSize(width: 0, height: canvas.width * 0.041),
+                         blur: canvas.width * 0.099,
+                         color: UIColor.black.withAlphaComponent(0.6).cgColor)
+            print.draw(in: rect)
+            cg.restoreGState()
+
+            func centred(_ text: String, size: CGFloat, weight: UIFont.Weight, kern: CGFloat,
+                         white: CGFloat, centreY: CGFloat) {
+                let attributed = NSAttributedString(string: text, attributes: [
+                    .font: UIFont.systemFont(ofSize: size, weight: weight),
+                    .kern: kern,
+                    .foregroundColor: UIColor(white: white, alpha: 1)
+                ])
+                let bounds = attributed.size()
+                attributed.draw(at: CGPoint(x: (canvas.width - bounds.width + kern) / 2,
+                                            y: centreY - bounds.height / 2))
+            }
+            centred("SPOTLIGHT", size: 40, weight: .light, kern: 10, white: 0.94,
+                    centreY: rect.minY / 2 + 20)
+            centred(weekPhrase, size: 42, weight: .regular, kern: 0.5, white: 0.8,
+                    centreY: rect.maxY + 96)
+            centred("flim-app.com", size: 32, weight: .regular, kern: 1, white: 0.55,
+                    centreY: rect.maxY + 160)
+        }
+    }
+
     /// A dark surface with one warm lift behind where the print sits.
     ///
     /// Deliberately NOT a blurred copy of the photograph: that reads as every other app, and it

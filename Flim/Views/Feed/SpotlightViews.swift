@@ -138,6 +138,9 @@ struct SpotlightStrip: View {
     @Environment(\.flimAccent) private var accent
     let week: SpotlightWeek
     let isNew: Bool
+    /// Holding the top of the feed (the newest week nobody has opened yet): drawn on a lit
+    /// panel, the same light a chosen frame gets.
+    var isPinned = false
     /// The frame being fetched before it opens, if any.
     var openingId: UUID? = nil
     let onOpenWeeks: () -> Void
@@ -187,8 +190,207 @@ struct SpotlightStrip: View {
 
             SpotlightFramesRow(frames: week.frames, openingId: openingId, onOpen: onOpenFrame)
         }
+        .padding(.top, isPinned ? 12 : 10)
+        .padding(.bottom, isPinned ? 14 : 4)
+        .background {
+            if isPinned { SpotlightLitPanel() }
+        }
+        // The frames scroll inside the panel, not past its edge.
+        .clipShape(RoundedRectangle(cornerRadius: isPinned ? FlimRadius.panel : 0))
+        .padding(.horizontal, isPinned ? 12 : 0)
+        .padding(.top, isPinned ? 10 : 0)
+    }
+}
+
+/// The lit ground under a Spotlight element that holds the top of the feed: a faint wash of
+/// the accent with a hairline of it, never a gradient. `strength` 1 is the strip and the
+/// closing row; the last day's row is a little brighter.
+struct SpotlightLitPanel: View {
+    @Environment(\.flimAccent) private var accent
+    var strength: Double = 1
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: FlimRadius.panel)
+            .fill(accent.opacity(0.055 * strength))
+            .overlay(RoundedRectangle(cornerRadius: FlimRadius.panel)
+                .strokeBorder(accent.opacity(0.14 * strength), lineWidth: 1))
+    }
+}
+
+// MARK: - The closing row
+
+/// "Spotlight closes Sunday night", for someone who can still put a frame up this week and has
+/// not (`SpotlightClosingRow`). Put one up opens the end-of-sort picker with this week's frames;
+/// the X hides it for the rest of the week. On the last day it is a little brighter and shows
+/// the frames themselves.
+struct SpotlightClosingRowView: View {
+    @Environment(\.flimAccent) private var accent
+    let copy: SpotlightClosingRow.Copy
+    /// This week's eligible frames, for the last day's row of small pictures.
+    let frames: [SpotlightSessionFrame]
+    let urls: [UUID: URL]
+    let onPutUp: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                SpotlightGlyphBadge()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(copy.title)
+                        .flimFont(15, weight: .medium, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                    Text(copy.subtitle)
+                        .flimFont(12.5, relativeTo: .footnote)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                if !copy.isLastDay { putUpButton }
+                Button {
+                    Haptics.tap()
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Not this week")
+            }
+            if copy.isLastDay {
+                HStack(spacing: 8) {
+                    ForEach(frames.prefix(4)) { frame in
+                        CachedImage(url: urls[frame.photo.id], maxPixel: 200, cacheKey: frame.photo.viewPath) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.white.opacity(0.06)
+                        }
+                        .frame(width: 54, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .accessibilityHidden(true)
+                    }
+                    Spacer(minLength: 0)
+                    putUpButton
+                }
+                .padding(.trailing, 10)
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .padding(.vertical, copy.isLastDay ? 14 : 12)
+        .background { SpotlightLitPanel(strength: copy.isLastDay ? 1.4 : 1) }
+        .padding(.horizontal, 12)
         .padding(.top, 10)
-        .padding(.bottom, 4)
+    }
+
+    private var putUpButton: some View {
+        Button {
+            Haptics.tap()
+            onPutUp()
+        } label: {
+            Text("Put one up")
+                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 34)
+                .background(accent, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
+    }
+}
+
+/// The closing row in the feed, with what it needs: this week's own frames, loaded when the row
+/// is due, and the end-of-sort picker it opens, hosted here so the feed's own body stays small.
+struct SpotlightClosingHost: View {
+    @Environment(FeedService.self) private var feed
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// A strip is holding the top of the feed: one Spotlight element at the top at a time.
+    let isHidden: Bool
+
+    @State private var session: SortDeckSession?
+    @State private var prepared: SpotlightSessionOffer?
+    @State private var presented: SpotlightSessionOffer?
+    @State private var dismissedWeek: String?
+
+    private var entry: OwnSpotlightEntry? { feed.currentSpotlightEntry }
+
+    /// Reloads when the week, what is up, or whether the row is due changes (the day it starts,
+    /// a put-up from anywhere), and on an account switch.
+    private struct LoadKey: Equatable {
+        let userId: UUID?
+        let weekKey: String?
+        let postId: UUID?
+        let isDue: Bool
+    }
+
+    private var loadKey: LoadKey {
+        LoadKey(userId: auth.currentUser?.id, weekKey: entry?.weekKey, postId: entry?.postId,
+                isDue: SpotlightClosingRow.isDue(entry: entry))
+    }
+
+    /// The row, when it shows: due, not dismissed for this week, and at least one frame from
+    /// this week that can go up. Nothing eligible shows nothing; the row never nags.
+    private var row: (entry: OwnSpotlightEntry, session: SortDeckSession, offer: SpotlightSessionOffer,
+                      frames: [SpotlightSessionFrame])? {
+        guard !isHidden, let entry, SpotlightClosingRow.isDue(entry: entry), dismissedWeek != entry.weekKey,
+              !SpotlightClosingDismissal.isDismissed(entry.weekKey, userId: auth.currentUser?.id),
+              let session, let prepared, prepared.weekKey == entry.weekKey else { return nil }
+        let frames = session.offered(prepared)
+        return frames.isEmpty ? nil : (entry, session, prepared, frames)
+    }
+
+    var body: some View {
+        Group {
+            if let row {
+                SpotlightClosingRowView(
+                    copy: SpotlightClosingRow.copy(closesAt: row.entry.weekClosesAt, frameCount: row.frames.count),
+                    frames: row.frames,
+                    urls: row.session.urls,
+                    onPutUp: {
+                        var offer = row.offer
+                        offer.firstTime = auth.currentUser.map { !SpotlightFirstTime.hasSeen(userId: $0.id) } ?? false
+                        presented = offer
+                    },
+                    onDismiss: {
+                        dismissedWeek = row.entry.weekKey
+                        SpotlightClosingDismissal.dismiss(row.entry.weekKey, userId: auth.currentUser?.id)
+                    })
+                .transition(.opacity)
+            }
+        }
+        .task(id: loadKey) { await load() }
+        .sheet(item: $presented) { offer in
+            if let session {
+                SpotlightSessionSheet(
+                    offer: offer, session: session,
+                    accessibilitySize: typeSize.isAccessibilitySize,
+                    onPutUp: { post in
+                        await feed.putUpFromSessionSheet(post, offer: offer, session: session,
+                                                         userId: auth.currentUser?.id)
+                    })
+            }
+        }
+    }
+
+    private func load() async {
+        guard let uid = auth.currentUser?.id, let entry, SpotlightClosingRow.isDue(entry: entry),
+              !SpotlightClosingDismissal.isDismissed(entry.weekKey, userId: uid) else {
+            if presented == nil { session = nil; prepared = nil }
+            return
+        }
+        let epoch = AccountEpoch.current
+        guard let loaded = await feed.spotlightWeekSession(entry: entry, userId: uid),
+              !Task.isCancelled, AccountEpoch.isCurrent(epoch) else { return }
+        // Never swapped under an open picker: it reads the session it was opened with.
+        guard presented == nil else { return }
+        session = loaded
+        prepared = loaded.offer(entry: entry, viewerId: uid, ledger: SpotlightSessionLedger())
     }
 }
 
@@ -211,9 +413,21 @@ struct SpotlightWeeksSheet: View {
     @State private var opening: UUID?
     @State private var toast: String?
     @State private var toastDismiss: Task<Void, Never>?
+    @State private var sharing: SpotlightShareRoute?
+    @Environment(AuthService.self) private var auth
 
     private var weeks: [SpotlightWeek] {
         SpotlightWeek.visible(feed.spotlightPastWeeks, blocked: feed.blockedIds)
+    }
+
+    /// The viewer's own chosen frame to offer sharing for: the week the sheet was opened on
+    /// (the push that told them lands here), else their newest.
+    private var ownChosen: SpotlightShareRoute? {
+        guard let me = auth.currentUser?.id else { return nil }
+        let mine = weeks.compactMap { week in
+            week.frames.first { $0.userId == me }.map { SpotlightShareRoute(frame: $0, weekKey: week.weekKey) }
+        }
+        return mine.first { $0.weekKey == focusWeek } ?? mine.first
     }
 
     var body: some View {
@@ -228,6 +442,13 @@ struct SpotlightWeeksSheet: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
                             .padding(.bottom, 18)
+
+                        if let ownChosen {
+                            SpotlightChosenCallout(frame: ownChosen.frame, weekKey: ownChosen.weekKey) {
+                                sharing = ownChosen
+                            }
+                            .padding(.bottom, 22)
+                        }
 
                         if !loaded {
                             ProgressView().tint(.white)
@@ -314,6 +535,9 @@ struct SpotlightWeeksSheet: View {
             .navigationDestination(item: $route) { route in
                 PostDetailView(item: route.item, spotlightWeekKey: route.weekKey)
             }
+            .sheet(item: $sharing) { route in
+                SpotlightShareSheet(frame: route.frame, weekKey: route.weekKey)
+            }
         }
         // A sheet paints over the tab host's capsule: without its own, a notice or an undo
         // staged from a post opened here would never be seen.
@@ -366,6 +590,256 @@ struct SpotlightWeeksSheet: View {
             try? await Task.sleep(for: .seconds(2.4))
             guard !Task.isCancelled else { return }
             withAnimation { toast = nil }
+        }
+    }
+}
+
+// MARK: - The share card
+
+/// One of the viewer's own chosen frames, to share.
+struct SpotlightShareRoute: Identifiable, Equatable {
+    let frame: SpotlightFrame
+    let weekKey: String
+    var id: UUID { frame.postId }
+}
+
+/// What goes with the card in the share sheet. With an invite link when the person has
+/// invites to give and asked for it, so a friend who sees the story can get in.
+enum SpotlightShareCopy {
+    static func message(weekKey: String, inviteCode: String?) -> String {
+        let lead = "My shot is in the \(AppInfo.appName) Spotlight for \(SpotlightWeekLabel.phrase(weekKey))."
+        guard let inviteCode else { return "\(lead) flim-app.com" }
+        return "\(lead) Come shoot with me: \(AppInfo.personalInviteURL(code: inviteCode).absoluteString)"
+    }
+}
+
+/// "Your frame is in the Spotlight", at the top of the week's sheet for someone whose frame was
+/// chosen, with the way to share it. The chosen used to get a push and a badge and then nothing
+/// they could show anyone.
+struct SpotlightChosenCallout: View {
+    @Environment(\.flimAccent) private var accent
+    @Environment(FeedService.self) private var feed
+    let frame: SpotlightFrame
+    let weekKey: String
+    let onShare: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Color.clear
+                .frame(width: 84, height: 84 / FlimTheme.frameAspect)
+                .overlay {
+                    if let path = frame.cardPath {
+                        CachedImage(url: feed.spotlightURLs[path], maxPixel: 260, cacheKey: path) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.white.opacity(0.06)
+                        }
+                    } else {
+                        Color.white.opacity(0.06)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .shadow(color: accent.opacity(0.32), radius: 12)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Your frame is in the Spotlight")
+                        .flimFont(16, weight: .semibold, relativeTo: .body)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(SpotlightWeekLabel.sentence(weekKey))
+                        .flimFont(13, relativeTo: .footnote)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+                Button {
+                    Haptics.tap()
+                    onShare()
+                } label: {
+                    Label("Share it", systemImage: "square.and.arrow.up")
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(accent, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background { SpotlightLitPanel(strength: 1.3) }
+        .padding(.horizontal, 16)
+    }
+}
+
+/// The card, the words that go with it, and the share. The card is the app's own story export
+/// (`BrandedExport.spotlightStory`), made from the frame's master, never a screenshot.
+struct SpotlightShareSheet: View {
+    @Environment(\.flimAccent) private var accent
+    @Environment(FeedService.self) private var feed
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
+    let frame: SpotlightFrame
+    let weekKey: String
+
+    @State private var story: UIImage?
+    @State private var loadFailed = false
+    @State private var includeInvite = true
+    @State private var quota: AuthService.InviteQuota = .unknown
+    @State private var exportFile: SharePreviewSheet.ExportFile?
+    @State private var isWriting = false
+
+    private var inviteCode: String? {
+        guard let code = auth.currentUser?.inviteCode, !code.isEmpty,
+              InviteCopy.revealOfferVisible(for: quota) else { return nil }
+        return code
+    }
+
+    private var message: String {
+        SpotlightShareCopy.message(weekKey: weekKey, inviteCode: includeInvite ? inviteCode : nil)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ZStack {
+                    Text("Share your frame")
+                        .flimFont(16, weight: .medium, relativeTo: .body)
+                        .foregroundStyle(.white)
+                    HStack {
+                        Button { Haptics.tap(); dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 19, weight: .regular))
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Close")
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 18)
+
+                ZStack {
+                    Color.clear
+                    if let story {
+                        Image(uiImage: story).resizable().scaledToFit()
+                            .accessibilityLabel("Your frame in the Spotlight, \(SpotlightWeekLabel.phrase(weekKey))")
+                    } else if loadFailed {
+                        Text("Couldn't load your frame. Check your connection.")
+                            .flimType(.meta)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(16)
+                    } else {
+                        ProgressView().tint(FlimTheme.textTertiary)
+                    }
+                }
+                .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                .frame(maxHeight: 360)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                .padding(.top, 16)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    if inviteCode != nil {
+                        Toggle(isOn: $includeInvite) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Add my invite link")
+                                    .flimFont(16, relativeTo: .body)
+                                    .foregroundStyle(FlimTheme.textPrimary)
+                                if let line = InviteCopy.revealQuotaLine(for: quota) {
+                                    Text(line)
+                                        .flimFont(12.5, relativeTo: .footnote)
+                                        .foregroundStyle(FlimTheme.textTertiary)
+                                }
+                            }
+                        }
+                        .tint(accent)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 52)
+                        Rectangle().fill(FlimTheme.stroke).frame(height: 1).padding(.leading, 16)
+                    }
+                    Text(message)
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(16)
+                }
+                .background(FlimTheme.sheetRow, in: RoundedRectangle(cornerRadius: FlimRadius.panel))
+                .padding(.horizontal, 16)
+                .padding(.top, 22)
+
+                Button(action: share) {
+                    HStack(spacing: 8) {
+                        if isWriting || story == nil {
+                            ProgressView().tint(Color.black).controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 17, weight: .semibold))
+                        }
+                        Text("Share")
+                            .flimFont(17, weight: .semibold, relativeTo: .body)
+                    }
+                    .foregroundStyle(Color.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 52)
+                    .background(accent, in: RoundedRectangle(cornerRadius: FlimRadius.panel))
+                }
+                .buttonStyle(.plain)
+                .disabled(isWriting || story == nil)
+                .opacity(story == nil ? 0.5 : 1)
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 28)
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .flimSheetSurface()
+        .sheet(item: $exportFile) { file in
+            ActivityView(items: [file.url, message])
+        }
+        .task {
+            async let quotaRead = auth.ownInviteQuota()
+            await render()
+            quota = await quotaRead
+        }
+    }
+
+    private func render() async {
+        var image: UIImage?
+        if let raw = await DiskImageCache.loadRaw(path: frame.storagePath) {
+            image = UIImage(data: raw)
+        }
+        if image == nil, let url = await feed.signedURL(for: frame.storagePath),
+           let (data, _) = try? await URLSession.shared.data(from: url) {
+            image = UIImage(data: data)
+            if image != nil { DiskImageCache.saveRaw(data, path: frame.storagePath) }
+        }
+        guard let image else { loadFailed = true; return }
+        let phrase = SpotlightWeekLabel.sentence(weekKey)
+        story = await Task.detached(priority: .userInitiated) {
+            BrandedExport.spotlightStory(print: BrandedExport.print(image), weekPhrase: phrase)
+        }.value
+    }
+
+    private func share() {
+        guard !isWriting, let story else { return }
+        Haptics.tap()
+        isWriting = true
+        Task {
+            defer { isWriting = false }
+            let file = await Task.detached(priority: .userInitiated) { () -> URL? in
+                guard let data = story.jpegData(compressionQuality: 0.9) else { return nil }
+                let url = PhotoExport.begin().appendingPathComponent("flim-spotlight.jpg")
+                do { try data.write(to: url, options: .atomic) } catch { return nil }
+                return url
+            }.value
+            if let file { exportFile = SharePreviewSheet.ExportFile(url: file) } else { Haptics.error() }
         }
     }
 }

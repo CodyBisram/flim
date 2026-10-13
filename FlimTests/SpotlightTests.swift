@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import Observation
+import UIKit
 @testable import Flim
 
 /// Spotlight's pure rules: where the strip sits, which menu item a post gets, the push rider,
@@ -175,41 +176,65 @@ struct SpotlightTests {
         }
     }
 
-    @Test("an unseen strip older than every loaded unit, seam after a unit: a page load places it at its own place, never above the reader")
+    @Test("an opened strip older than every loaded unit, seam after a unit: a page load places it at its own place, never above the reader")
     func snapshotGrowOnlyNeverLifts() {
         let firstPage = items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)])
         let pageOne = FeedUnit.units(from: firstPage, calendar: newYork)
         let seamUnit = pageOne[0].id
         let old = week("2026-09-14", publishedAt: date(9, 20, 9), frames: [frame()])
+        // Opened already, so it does not hold the top (an unopened one would, see below).
         // The reload: the strip's place is below a page not loaded yet.
         let atReload = SpotlightSlot.snapshot(previous: [:], weeks: [old], units: pageOne, seam: .after(seamUnit),
-                                              hasMoreFeed: true, seen: [], growOnly: false)
+                                              hasMoreFeed: true, seen: [old.weekKey], growOnly: false)
         #expect(atReload[old.weekKey] == .hidden)
-        // The next page lands with a unit older than the publish instant. The strip is still
-        // unseen, and its place is on the seen side of the seam, but lifting it now would drop
-        // it in above someone already reading.
+        // The next page lands with a unit older than the publish instant: the strip takes its
+        // own place there, below what is already on screen.
         let pageTwo = FeedUnit.units(from: firstPage + items([date(9, 19, 20)]), calendar: newYork)
         let olderUnit = pageTwo[3].id
         let afterPage = SpotlightSlot.snapshot(previous: atReload, weeks: [old], units: pageTwo, seam: .after(seamUnit),
-                                               hasMoreFeed: true, seen: [], growOnly: true)
+                                               hasMoreFeed: true, seen: [old.weekKey], growOnly: true)
         #expect(afterPage[old.weekKey] == .beforeUnit(olderUnit))
         // The window fully loaded with nothing older: below the last unit, still not lifted.
         let lastPage = SpotlightSlot.snapshot(previous: atReload, weeks: [old], units: pageOne, seam: .after(seamUnit),
-                                              hasMoreFeed: false, seen: [], growOnly: true)
+                                              hasMoreFeed: false, seen: [old.weekKey], growOnly: true)
         #expect(lastPage[old.weekKey] == .afterLast)
     }
 
-    @Test("a full snapshot still lifts an unseen strip over the seam, and a grow-only pass keeps it there")
-    func snapshotFullLiftsAndHolds() {
+    @Test("a full snapshot pins the newest unopened strip at the top, and a grow-only pass keeps it there")
+    func snapshotFullPinsAndHolds() {
         let pageOne = FeedUnit.units(from: items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)]), calendar: newYork)
         let seamUnit = pageOne[0].id
         let recent = week("2026-09-14", publishedAt: date(9, 21, 22), frames: [frame()])
         let atReload = SpotlightSlot.snapshot(previous: [:], weeks: [recent], units: pageOne, seam: .after(seamUnit),
                                               hasMoreFeed: true, seen: [], growOnly: false)
-        #expect(atReload[recent.weekKey] == .aboveCaughtUpBlock(afterUnit: seamUnit))
+        #expect(atReload[recent.weekKey] == .top)
+        // Opened since: the pass that follows (paging) never moves it under the reader.
         let held = SpotlightSlot.snapshot(previous: atReload, weeks: [recent], units: pageOne, seam: .after(seamUnit),
                                           hasMoreFeed: true, seen: [recent.weekKey], growOnly: true)
-        #expect(held[recent.weekKey] == .aboveCaughtUpBlock(afterUnit: seamUnit))
+        #expect(held[recent.weekKey] == .top)
+        // The next reload settles it at its own place.
+        let settled = SpotlightSlot.snapshot(previous: held, weeks: [recent], units: pageOne, seam: .after(seamUnit),
+                                             hasMoreFeed: true, seen: [recent.weekKey], growOnly: false)
+        #expect(settled[recent.weekKey] == .beforeUnit(pageOne[2].id))
+    }
+
+    @Test("two unopened weeks: only the newer holds the top, the older is lifted over the seam as before")
+    func snapshotPinsOnlyTheNewest() {
+        let pageOne = FeedUnit.units(from: items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)]), calendar: newYork)
+        let seamUnit = pageOne[0].id
+        let older = week("2026-09-07", publishedAt: date(9, 21, 21), frames: [frame()])
+        let newer = week("2026-09-14", publishedAt: date(9, 21, 22), frames: [frame()])
+        let slots = SpotlightSlot.snapshot(previous: [:], weeks: [newer, older], units: pageOne, seam: .after(seamUnit),
+                                           hasMoreFeed: true, seen: [], growOnly: false)
+        #expect(slots[newer.weekKey] == .top)
+        #expect(slots[older.weekKey] == .aboveCaughtUpBlock(afterUnit: seamUnit))
+        #expect(SpotlightSlot.pinnedWeekKey(weeks: [newer, older], seen: [newer.weekKey]) == older.weekKey)
+        #expect(SpotlightSlot.pinnedWeekKey(weeks: [newer, older], seen: [newer.weekKey, older.weekKey]) == nil)
+    }
+
+    @Test("a pinned week sits at the top even when its own place is on a page not loaded yet")
+    func pinnedBeatsNotYet() {
+        #expect(SpotlightSlot.slot(placement: .notYet, seam: .after("a"), unitIds: ["a"], unseen: true, pinned: true) == .top)
     }
 
     @Test("a grow-only pass re-places a strip whose anchor unit left, at its own place")
@@ -220,6 +245,92 @@ struct SpotlightTests {
         let next = SpotlightSlot.snapshot(previous: previous, weeks: [strip], units: pageOne, seam: .top,
                                           hasMoreFeed: true, seen: [], growOnly: true)
         #expect(next[strip.weekKey] == .beforeUnit(pageOne[1].id))
+    }
+
+    // MARK: - The closing row
+
+    @Test("the closing row is due from Thursday 04:00 until the close, only while a frame can go up and none is")
+    func closingRowDue() {
+        #expect(!SpotlightClosingRow.isDue(entry: entry(), now: date(9, 23, 12)))
+        #expect(SpotlightClosingRow.isDue(entry: entry(), now: date(9, 24, 4)))
+        #expect(SpotlightClosingRow.isDue(entry: entry(), now: date(9, 27, 23)))
+        #expect(SpotlightClosingRow.isDue(entry: entry(), now: date(9, 28, 3, 59)))
+        #expect(!SpotlightClosingRow.isDue(entry: entry(), now: date(9, 28, 4)))
+        #expect(!SpotlightClosingRow.isDue(entry: entry(postId: UUID()), now: date(9, 25, 12)))
+        #expect(!SpotlightClosingRow.isDue(entry: entry(canPutUp: false), now: date(9, 25, 12)))
+        #expect(!SpotlightClosingRow.isDue(entry: nil, now: date(9, 25, 12)))
+    }
+
+    @Test("New York: Sunday night all week, then the last day says tonight, past midnight too")
+    func closingRowCopyNewYork() {
+        let close = date(9, 28, 4)
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 4, now: date(9, 24, 10), calendar: newYork)
+                == .init(title: "Spotlight closes Sunday night", subtitle: "You have 4 frames from this week", isLastDay: false))
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 1, now: date(9, 26, 22), calendar: newYork).subtitle
+                == "You have 1 frame from this week")
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 4, now: date(9, 27, 9), calendar: newYork)
+                == .init(title: "Last day for Spotlight", subtitle: "Closes tonight", isLastDay: true))
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 4, now: date(9, 28, 1), calendar: newYork).isLastDay)
+    }
+
+    @Test("Los Angeles closes at 1 AM Monday: still Sunday night")
+    func closingRowCopyLosAngeles() {
+        let la = SpotlightTests.calendar("America/Los_Angeles")
+        let close = date(9, 28, 4)
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 2, now: date(9, 24, 10), calendar: la).title
+                == "Spotlight closes Sunday night")
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 2, now: date(9, 27, 20), calendar: la).subtitle
+                == "Closes tonight")
+    }
+
+    @Test("a zone where the close lands in daylight names the day and the time instead of night")
+    func closingRowCopyDaylightZone() {
+        let london = SpotlightTests.calendar("Europe/London")
+        let close = date(9, 28, 4)   // 09:00 Monday in London
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 3, now: date(9, 24, 10), calendar: london).title
+                == "Spotlight closes Monday at 9:00 AM")
+        #expect(!SpotlightClosingRow.copy(closesAt: close, frameCount: 3, now: date(9, 27, 15), calendar: london).isLastDay)
+        #expect(SpotlightClosingRow.copy(closesAt: close, frameCount: 3, now: date(9, 28, 2), calendar: london)
+                == .init(title: "Last day for Spotlight", subtitle: "Closes at 9:00 AM", isLastDay: true))
+    }
+
+    @Test("dismissing the closing row holds for that week and that account only")
+    func closingRowDismissal() {
+        let suite = "SpotlightClosingDismissalTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            Issue.record("no defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let previous = SpotlightClosingDismissal.store
+        SpotlightClosingDismissal.store = defaults
+        defer { SpotlightClosingDismissal.store = previous }
+        let a = UUID(), b = UUID()
+        SpotlightClosingDismissal.dismiss("2026-09-21", userId: a)
+        #expect(SpotlightClosingDismissal.isDismissed("2026-09-21", userId: a))
+        #expect(!SpotlightClosingDismissal.isDismissed("2026-09-28", userId: a))
+        #expect(!SpotlightClosingDismissal.isDismissed("2026-09-21", userId: b))
+        #expect(!SpotlightClosingDismissal.isDismissed("2026-09-21", userId: nil))
+    }
+
+    // MARK: - The share card
+
+    @Test("the share message names the week, with the invite link when given and the site when not")
+    func shareMessage() {
+        #expect(SpotlightShareCopy.message(weekKey: "2026-10-05", inviteCode: "ABC123")
+                == "My shot is in the FLIM Spotlight for the week of October 5. Come shoot with me: https://flim-app.com/i/ABC123")
+        #expect(SpotlightShareCopy.message(weekKey: "2026-10-05", inviteCode: nil)
+                == "My shot is in the FLIM Spotlight for the week of October 5. flim-app.com")
+    }
+
+    @Test("the Spotlight story is the 9:16 story canvas")
+    func spotlightStoryCanvas() {
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400)).image { ctx in
+            UIColor.gray.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+        }
+        let story = BrandedExport.spotlightStory(print: BrandedExport.print(photo), weekPhrase: "The week of October 5")
+        #expect(story.size == BrandedExport.storyCanvas)
     }
 
     // MARK: - Menu eligibility
@@ -859,6 +970,15 @@ struct SpotlightTests {
         #expect(SpotlightSeenMark.seen(userId: a) == ["2026-09-14"])
         #expect(SpotlightSeenMark.seen(userId: b).isEmpty)
         #expect(SpotlightSeenMark.seen(userId: nil).isEmpty)
+
+        // On screen, unopened: three different days lets go; the same day twice is one day.
+        #expect(!SpotlightSeenMark.noteShown("2026-10-05", day: "2026-10-12", userId: a))
+        #expect(!SpotlightSeenMark.noteShown("2026-10-05", day: "2026-10-12", userId: a))
+        #expect(!SpotlightSeenMark.noteShown("2026-10-05", day: "2026-10-13", userId: a))
+        #expect(!SpotlightSeenMark.noteShown("2026-10-05", day: "2026-10-12", userId: b))
+        #expect(SpotlightSeenMark.noteShown("2026-10-05", day: "2026-10-14", userId: a))
+        #expect(!SpotlightSeenMark.noteShown("2026-10-05", day: "2026-10-14", userId: nil))
+        #expect(SpotlightSeenMark.dayKey(date(10, 13, 23, 30), calendar: newYork) == "2026-10-13")
     }
 
     @Test("the day word files through 04:00 on both sides, with a pinned calendar")

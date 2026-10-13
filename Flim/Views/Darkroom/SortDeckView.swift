@@ -581,11 +581,7 @@ struct SortDeckView: View {
 
     /// This week's entry, when it belongs to this account and its week has not closed; nil
     /// means unknown, and nothing is offered on an unknown week.
-    private var currentSpotlightEntry: OwnSpotlightEntry? {
-        guard feed.ownSpotlightEntryIsCurrent, let entry = feed.ownSpotlightEntry,
-              Date.now < entry.weekClosesAt else { return nil }
-        return entry
-    }
+    private var currentSpotlightEntry: OwnSpotlightEntry? { feed.currentSpotlightEntry }
 
     /// How long the end of a sort waits for an unknown week before closing with no sheet.
     private static let entryWait: Duration = .milliseconds(1500)
@@ -676,33 +672,8 @@ struct SortDeckView: View {
     /// it said, so nothing is sent: the entry is read again and the sheet's title, Up now row
     /// and button move to what a tap does now, for a fresh tap.
     private func putUpFromSession(_ post: Post, offer: SpotlightSessionOffer) async -> SpotlightPutUpOutcome {
-        let shownSwap = { if case .swap = session.kind(offer) { return true } else { return false } }()
-        if currentSpotlightEntry.map({ ($0.postId != nil) != shownSwap }) ?? true {
-            await feed.refreshOwnSpotlightEntry()
-            guard let fresh = currentSpotlightEntry else {
-                Haptics.error()
-                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
-            }
-            // An account that can no longer put up (a covered window began) is not a connection
-            // problem: end the sheet the way the server's own "covered" refusal would.
-            guard fresh.canPutUp else {
-                Haptics.error()
-                return .refused(message: SpotlightRefusal.message(refusal: "covered", action: .putUp)
-                                    ?? SpotlightRefusal.cantGoUp, refusal: "covered")
-            }
-            guard let kind = SpotlightSessionOffer.kind(for: fresh) else {
-                Haptics.error()
-                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
-            }
-            let freshSwap = { if case .swap = kind { return true } else { return false } }()
-            if freshSwap != shownSwap {
-                Haptics.warning()
-                session.kindOverride = kind
-                return .frameUpChanged
-            }
-        }
-        if offer.firstTime, let uid = auth.currentUser?.id { SpotlightFirstTime.markSeen(userId: uid) }
-        let outcome = await feed.putUpForSpotlightOutcome(post)
+        let outcome = await feed.putUpFromSessionSheet(post, offer: offer, session: session,
+                                                       userId: auth.currentUser?.id)
         if case .up = outcome { sessionPutUp = true }
         return outcome
     }

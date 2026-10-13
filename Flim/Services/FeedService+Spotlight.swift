@@ -18,6 +18,43 @@ extension FeedService {
 
     // MARK: - Reads (no state)
 
+    /// This week's own frames, loaded as the sort deck's session holds them, for the feed's
+    /// closing row and the picker it opens (`SpotlightSessionSheet`). Posts on the viewer's page
+    /// shot since a day before the week began (the offer's own rule, `SpotlightMenuItem.resolve`,
+    /// decides which can go up, so a frame shot late Sunday that developed this week is weighed
+    /// the same way the menu weighs it), with their photos, tags and signed pictures. Newest
+    /// shot first. nil on any failed read: the row shows nothing rather than a wrong count.
+    func spotlightWeekSession(entry: OwnSpotlightEntry, userId: UUID) async -> SortDeckSession? {
+        let since = entry.weekStartsAt.addingTimeInterval(-86_400)
+        guard let posts: [Post] = try? await supabase.from("posts").select()
+            .eq("user_id", value: userId.uuidString)
+            .eq("hidden", value: false)
+            .gte("taken_at", value: ISO8601DateFormatter().string(from: since))
+            .order("taken_at", ascending: false)
+            .limit(40)
+            .execute().value else { return nil }
+        let session = SortDeckSession()
+        guard !posts.isEmpty else { return session }
+        let photoIds = posts.map(\.photoId.uuidString)
+        let postIds = posts.map(\.id.uuidString)
+        struct TagRow: Decodable { let post_id: UUID }
+        guard let photos: [Photo] = try? await supabase.from("photos").select()
+                .in("id", values: photoIds).execute().value,
+              let tags: [TagRow] = try? await supabase.from("post_tags").select("post_id")
+                .in("post_id", values: postIds).execute().value else { return nil }
+        let tagged = Set(tags.map(\.post_id))
+        let photoById = Dictionary(photos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Oldest first, as a deck's swipes arrive, so the sheet reads left to right through the week.
+        for post in posts.reversed() {
+            guard let photo = photoById[post.photoId] else { continue }
+            session.published(photo, isTagged: tagged.contains(post.id))
+            session.landed(photoId: photo.id, post: post)
+        }
+        let urls = await signedURLs(for: photos.map(\.viewPath))
+        for photo in photos { session.urls[photo.id] = urls[photo.viewPath] }
+        return session
+    }
+
     /// One page of published weeks, newest first: everyone's (`userId` nil, the strip and the
     /// sheet) or one person's chosen frames (a shelf, Activity). nil on failure, distinct from
     /// an empty page, so a dropped request never reads as "nothing chosen".
@@ -377,6 +414,49 @@ extension FeedService {
     /// otherwise land behind the sheet or after the deck closed.
     func putUpForSpotlightOutcome(_ post: Post) async -> SpotlightPutUpOutcome {
         await performPutUp(post) { _ in }
+    }
+
+    /// This week's entry, when it belongs to this account and its week has not closed; nil
+    /// means unknown, and nothing is offered on an unknown week.
+    var currentSpotlightEntry: OwnSpotlightEntry? {
+        guard ownSpotlightEntryIsCurrent, let entry = ownSpotlightEntry,
+              Date.now < entry.weekClosesAt else { return nil }
+        return entry
+    }
+
+    /// A put-up from `SpotlightSessionSheet`, wherever it is hosted (the sort deck at the end
+    /// of a sort, the feed's closing row). The sheet's button says put up or swap; when the
+    /// frame up this week has changed since it was offered, nothing is sent, the session is
+    /// told what the button should now say, and the sheet waits for a fresh tap.
+    func putUpFromSessionSheet(_ post: Post, offer: SpotlightSessionOffer, session: SortDeckSession,
+                               userId: UUID?) async -> SpotlightPutUpOutcome {
+        let shownSwap = { if case .swap = session.kind(offer) { return true } else { return false } }()
+        if currentSpotlightEntry.map({ ($0.postId != nil) != shownSwap }) ?? true {
+            await refreshOwnSpotlightEntry()
+            guard let fresh = currentSpotlightEntry else {
+                Haptics.error()
+                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
+            }
+            // An account that can no longer put up (a covered window began) is not a connection
+            // problem: end the sheet the way the server's own "covered" refusal would.
+            guard fresh.canPutUp else {
+                Haptics.error()
+                return .refused(message: SpotlightRefusal.message(refusal: "covered", action: .putUp)
+                                    ?? SpotlightRefusal.cantGoUp, refusal: "covered")
+            }
+            guard let kind = SpotlightSessionOffer.kind(for: fresh) else {
+                Haptics.error()
+                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
+            }
+            let freshSwap = { if case .swap = kind { return true } else { return false } }()
+            if freshSwap != shownSwap {
+                Haptics.warning()
+                session.kindOverride = kind
+                return .frameUpChanged
+            }
+        }
+        if offer.firstTime, let userId { SpotlightFirstTime.markSeen(userId: userId) }
+        return await putUpForSpotlightOutcome(post)
     }
 
     /// The one put-up. `announce` runs exactly where the capsule used to be told, before the

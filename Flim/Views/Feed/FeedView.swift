@@ -118,7 +118,8 @@ struct FeedView: View {
     // Paging only fills in a place that was waiting on an unloaded page, and a slot whose
     // anchor unit left (a delete, a block) is re-placed rather than dropped.
     @State private var spotlightSlots: [String: SpotlightSlot] = [:]
-    /// Weeks this account has seen in the feed (the "new" pill). Marked by scroll visibility.
+    /// Weeks this account has opened in the feed (the "new" pill and the pinned top). See
+    /// `SpotlightSeenMark`.
     @State private var seenSpotlight: Set<String> = []
     @State private var spotlightSheet: SpotlightSheetRoute?
     @State private var spotlightRoute: SpotlightPostRoute?
@@ -129,6 +130,11 @@ struct FeedView: View {
     /// left is hidden.
     private var visibleSpotlightWeeks: [SpotlightWeek] {
         SpotlightWeek.visible(feed.spotlightStripWeeks, blocked: feed.blockedIds)
+    }
+
+    /// A week nobody here has opened yet is pinned at the top of the feed.
+    private var spotlightStripHoldsTop: Bool {
+        visibleSpotlightWeeks.contains { spotlightSlots[$0.weekKey] == .top && !seenSpotlight.contains($0.weekKey) }
     }
 
     // RETENTION CLEARING WAS REMOVED HERE (2026-08-28). The feed no longer takes anything away.
@@ -678,6 +684,9 @@ struct FeedView: View {
                     if !followsNobody {
                         PeopleYouKnowRow { showDiscover = true }
                     }
+                    // Spotlight closing this week, for someone who can still put a frame up.
+                    // Gives way to a strip holding the top: one Spotlight element there at a time.
+                    SpotlightClosingHost(isHidden: spotlightStripHoldsTop)
 
                     // A Spotlight strip placed above everything (an unseen one lifted over a
                     // caught-up block at the top, or the only thing when no unit is older).
@@ -1121,22 +1130,32 @@ struct FeedView: View {
     }
 
     private func spotlightStrip(_ week: SpotlightWeek) -> some View {
-        SpotlightStrip(
+        let isNew = !seenSpotlight.contains(week.weekKey)
+        return SpotlightStrip(
             week: week,
-            isNew: !seenSpotlight.contains(week.weekKey),
+            isNew: isNew,
+            // Lit while it holds the top: the strip is in the Spotlight, and so is its place.
+            isPinned: isNew && spotlightSlots[week.weekKey] == .top,
             openingId: openingSpotlightFrame,
             onOpenWeeks: {
                 Usage.log(.spotlightWeeksOpen)
+                markSpotlightSeen(week.weekKey)
                 spotlightSheet = SpotlightSheetRoute(focusWeek: week.weekKey)
             },
-            onOpenFrame: { openSpotlightFrame($0, weekKey: week.weekKey) }
+            onOpenFrame: {
+                markSpotlightSeen(week.weekKey)
+                openSpotlightFrame($0, weekKey: week.weekKey)
+            }
         )
-        // Seen by VISIBILITY, never `onAppear`: the LazyVStack builds rows ahead of the
-        // viewport, and a strip nobody scrolled to must keep its pill. Marking never moves it;
-        // its slot was snapshotted.
+        // Seen means OPENED (see `SpotlightSeenMark`). Being on screen only counts the day, by
+        // VISIBILITY, never `onAppear`: the LazyVStack builds rows ahead of the viewport. On
+        // screen on enough different days, unopened, it counts as seen and lets go of the top
+        // at the next reload. Marking never moves it; its slot was snapshotted.
         .onScrollVisibilityChange(threshold: 0.5) { visible in
-            guard visible else { return }
-            markSpotlightSeen(week.weekKey)
+            guard visible, !seenSpotlight.contains(week.weekKey) else { return }
+            if SpotlightSeenMark.noteShown(week.weekKey, day: SpotlightSeenMark.dayKey(), userId: auth.currentUser?.id) {
+                markSpotlightSeen(week.weekKey)
+            }
         }
     }
 

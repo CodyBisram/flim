@@ -943,8 +943,12 @@ enum SpotlightSlot: Equatable {
     case afterLast
     case hidden
 
+    /// - Parameter pinned: the newest week nobody has opened yet. It holds the top of the feed
+    ///   above everything, wherever its own place falls, until it is opened (or seen on enough
+    ///   days, see `SpotlightSeenMark.shownDaysLimit`); then the next reload settles it.
     static func slot(placement: SpotlightPlacement, seam: SpotlightSeam,
-                     unitIds: [String], unseen: Bool) -> SpotlightSlot {
+                     unitIds: [String], unseen: Bool, pinned: Bool = false) -> SpotlightSlot {
+        if pinned { return .top }
         // Before anything that could hide it: an unseen strip over a caught-up feed is new
         // wherever its own place falls, so it shows at this reload instead of waiting on a page
         // and later dropping in above someone who is already reading.
@@ -987,14 +991,23 @@ enum SpotlightSlot: Equatable {
                          growOnly: Bool) -> [String: SpotlightSlot] {
         let unitIds = units.map(\.id)
         var next = growOnly ? previous : [:]
+        // Only a full snapshot pins, and only one week: the newest unopened. Two strips stacked
+        // at the top would be the heavy Spotlight the owner already turned down.
+        let pinnedKey = growOnly ? nil : pinnedWeekKey(weeks: weeks, seen: seen)
         for week in weeks {
             if growOnly, let existing = next[week.weekKey], isAnchored(existing, unitIds: unitIds) { continue }
             let placement = SpotlightPlacement.place(units: units, publishedAt: week.publishedAt,
                                                      hasMoreFeed: hasMoreFeed)
             next[week.weekKey] = slot(placement: placement, seam: seam, unitIds: unitIds,
-                                      unseen: !growOnly && !seen.contains(week.weekKey))
+                                      unseen: !growOnly && !seen.contains(week.weekKey),
+                                      pinned: week.weekKey == pinnedKey)
         }
         return next
+    }
+
+    /// The week that holds the top: the most recently published one not yet seen.
+    static func pinnedWeekKey(weeks: [SpotlightWeek], seen: Set<String>) -> String? {
+        weeks.filter { !seen.contains($0.weekKey) }.max { $0.publishedAt < $1.publishedAt }?.weekKey
     }
 
     /// Whether a held slot still points at something that renders. `.hidden` is never kept by
@@ -1039,13 +1052,44 @@ enum SpotlightFirstTime {
     static func markSeen(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
 }
 
-/// Which published weeks this account has seen in the feed, for the strip's "new" pill.
+/// Which published weeks this account has seen in the feed, for the strip's "new" pill and
+/// for which week holds the top of the feed.
+///
+/// Seen means opened: the band (the week's sheet) or any frame. Until 1.6.3 it meant half the
+/// strip had scrolled into view once, so one glance on Monday sent the strip back into the
+/// timeline at the next reload and by midweek it was screens down (16 opens, by 11 people,
+/// across the first three weeks). A strip on screen on `shownDaysLimit` different days without
+/// being opened counts as seen too, so someone who is not interested gets the top back.
 enum SpotlightSeenMark {
     static var store: UserDefaults = .standard
     /// A year of weeks is plenty; older keys age out of the list.
     static let cap = 60
+    /// Days on screen, unopened, before a strip lets go of the top.
+    static let shownDaysLimit = 3
 
     static func key(userId: UUID) -> String { "spotlightSeenWeeks.\(userId.uuidString)" }
+    static func shownKey(userId: UUID) -> String { "spotlightShownDays.\(userId.uuidString)" }
+
+    /// Records that `weekKey`'s strip was on screen on `day` (the viewer's own calendar day,
+    /// "yyyy-MM-dd"), and says whether that makes `shownDaysLimit` distinct days.
+    @discardableResult
+    static func noteShown(_ weekKey: String, day: String, userId: UUID?) -> Bool {
+        guard let userId else { return false }
+        var byWeek = (store.dictionary(forKey: shownKey(userId: userId)) as? [String: [String]]) ?? [:]
+        var days = byWeek[weekKey] ?? []
+        if !days.contains(day) { days.append(day) }
+        byWeek[weekKey] = days
+        // Only the weeks the feed can still show matter; keep the newest few.
+        let kept = byWeek.keys.sorted().suffix(8)
+        store.set(byWeek.filter { kept.contains($0.key) }, forKey: shownKey(userId: userId))
+        return days.count >= shownDaysLimit
+    }
+
+    /// The viewer's calendar day, as `noteShown` files it.
+    static func dayKey(_ date: Date = .now, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 
     static func seen(userId: UUID?) -> Set<String> {
         guard let userId else { return [] }
@@ -1058,5 +1102,78 @@ enum SpotlightSeenMark {
         guard !list.contains(weekKey) else { return }
         list.append(weekKey)
         store.set(Array(list.sorted().suffix(cap)), forKey: key(userId: userId))
+    }
+}
+
+// MARK: - The closing row
+
+/// The feed's row for someone who can still put a frame up this week and has not: "Spotlight
+/// closes Sunday night / You have 4 frames from this week", and on the last day "Last day for
+/// Spotlight / Closes tonight". Until 1.6.3 the only nudge was the Friday push, and nearly every
+/// frame went up the day of it or the day after.
+enum SpotlightClosingRow {
+    /// How long before the close the row appears: from Thursday 04:00 New York.
+    static let leadTime: TimeInterval = 4 * 86_400
+
+    struct Copy: Equatable {
+        let title: String
+        let subtitle: String
+        let isLastDay: Bool
+    }
+
+    /// Whether the row is wanted at all: a frame can go up, none is up, and the week is in its
+    /// last days. The frames themselves decide the rest (none eligible, no row).
+    static func isDue(entry: OwnSpotlightEntry?, now: Date = .now) -> Bool {
+        guard let entry, entry.canPutUp, entry.postId == nil, now < entry.weekClosesAt else { return false }
+        return entry.weekClosesAt.timeIntervalSince(now) <= leadTime
+    }
+
+    /// The row's words. The week closes at 04:00 Monday New York, which is Sunday night across
+    /// the Americas, where everyone on FLIM is today: the row says so in the reader's own zone,
+    /// "Sunday night" and on the day "tonight". A zone where the close lands in daylight gets
+    /// the day and the time instead, so the row never says something untrue.
+    static func copy(closesAt: Date, frameCount: Int, now: Date = .now, calendar: Calendar = .current) -> Copy {
+        let hour = calendar.component(.hour, from: closesAt)
+        let isNight = hour < 6 || hour >= 18
+        // The night a 04:00 close belongs to is the evening before it.
+        let nightOf = closesAt.addingTimeInterval(-6 * 3600)
+        let isLastDay = now >= calendar.startOfDay(for: nightOf)
+        let weekday = formatted(nightOf, "EEEE", calendar: calendar)
+        let time = formatted(closesAt, "h:mm a", calendar: calendar)
+        if isLastDay {
+            return Copy(title: "Last day for Spotlight",
+                        subtitle: isNight ? "Closes tonight" : "Closes at \(time)",
+                        isLastDay: true)
+        }
+        return Copy(title: isNight ? "Spotlight closes \(weekday) night" : "Spotlight closes \(weekday) at \(time)",
+                    subtitle: frameCount == 1 ? "You have 1 frame from this week" : "You have \(frameCount) frames from this week",
+                    isLastDay: false)
+    }
+
+    private static func formatted(_ date: Date, _ format: String, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+}
+
+/// The week the closing row was dismissed for, per account. One week at a time: the next week's
+/// row comes back on its own.
+enum SpotlightClosingDismissal {
+    static var store: UserDefaults = .standard
+
+    static func key(userId: UUID) -> String { "spotlightClosingDismissed.\(userId.uuidString)" }
+
+    static func isDismissed(_ weekKey: String, userId: UUID?) -> Bool {
+        guard let userId else { return false }
+        return store.string(forKey: key(userId: userId)) == weekKey
+    }
+
+    static func dismiss(_ weekKey: String, userId: UUID?) {
+        guard let userId else { return }
+        store.set(weekKey, forKey: key(userId: userId))
     }
 }
