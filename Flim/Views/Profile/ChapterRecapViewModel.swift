@@ -208,10 +208,14 @@ final class ChapterRecapViewModel {
         } else {
             // ONE batched sign for every candidate's thumb path, rather than curation resolving
             // one at a time: this is what made a 60-shot month sixty sequential round trips.
-            // Only the photos curation will actually have to look at: anything carrying its
-            // capture-time score and hash is scored from those columns and never downloaded, so
-            // a month shot entirely after 2026-09-08 signs nothing here at all.
-            let thumbPaths = Array(Set(photos.filter { $0.quality == nil || $0.phash == nil }.map(\.displayPath)))
+            // Only when curation will actually look at pixels: a month whose every candidate carries
+            // its capture-time score and hash is curated from those columns and signs nothing (any
+            // month shot entirely after 2026-09-08). Otherwise every candidate is signed, stored
+            // score or not, because that path's duplicate check needs each one's feature print.
+            let candidates = photos.filter { !$0.isDeadFrame }
+            let needsPixels = candidates.count > Self.curationLimit
+                && candidates.contains { $0.quality == nil || $0.phash == nil }
+            let thumbPaths = needsPixels ? Array(Set(candidates.map(\.displayPath))) : []
             let thumbURLs = thumbPaths.isEmpty ? [:] : await feed.signedURLs(for: thumbPaths)
             for (path, url) in thumbURLs { urls[path] = url }
             signElapsed = signStart.duration(to: clock.now)
@@ -234,7 +238,9 @@ final class ChapterRecapViewModel {
         pickedSet.formUnion(highlightIds)
         // `photos` is already `taken_at` ascending, so filtering it (rather than reassembling
         // from `pickedIds`' own order) is what keeps the deck chronological.
-        let curatedDeck = photos.filter { pickedSet.contains($0.id) }
+        // Dead frames stay out even as a highlight: curation already dropped them, and a stat line
+        // (the longest gap, say) can land on one.
+        let curatedDeck = photos.filter { pickedSet.contains($0.id) && !$0.isDeadFrame }
 
         // Never swap the backing array out from under a pager that's already mid-flight on the
         // provisional pick; `setPlayerMounted(false)` adopts it once the pager closes instead.

@@ -1572,11 +1572,14 @@
         return;
       }
 
-      /* The newest day is today here or the newest day the server sent, whichever
+      /* The newest day is today or the newest day the server sent, whichever
          is later, so a kind that went quiet still shows its empty days rather
-         than the table quietly ending on its last send. */
-      var now = new Date();
-      var newest = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+         than the table quietly ending on its last send. "Today" in New York,
+         the day admin_push_health buckets by, not the browser's: viewed from a
+         zone ahead of New York, the browser's date was a day early. en-CA
+         formats as YYYY-MM-DD. */
+      var newest = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
+        year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
       var kinds = {};
       var order = [];
       h.rows.forEach(function (r) {

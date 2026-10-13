@@ -215,11 +215,18 @@ struct SortDeckView: View {
         }
         // The session sheet's "Up now" row shows the frame up this week: read on open, and
         // again whenever the frame up changes (a put-up from here, or from another phone).
-        // Nothing up clears it without a request.
-        .task(id: feed.ownSpotlightEntry?.photoId) {
-            guard let uid = auth.currentUser?.id else { return }
+        // Nothing up clears it without a request. Not while a put-up is sending: its optimistic
+        // entry already names the incoming frame, and the row would show that frame's picture
+        // over the outgoing frame's day. It reads again once the send settles either way.
+        .task(id: UpNowThumbKey(photoId: feed.ownSpotlightEntry?.photoId, sending: feed.spotlightWriteInFlight)) {
+            guard let uid = auth.currentUser?.id, !feed.spotlightWriteInFlight else { return }
             await feed.refreshOwnSpotlightThumb(userId: uid)
         }
+    }
+
+    private struct UpNowThumbKey: Equatable {
+        let photoId: UUID?
+        let sending: Bool
     }
 
     /// The pill under the top card: both the hint that a caption/tags are possible and, along
@@ -839,11 +846,11 @@ struct SortDeckView: View {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
         // The session sheet needs this week's bounds and whether a frame is up. A cold launch
         // straight into the deck has not visited the Feed that reads them, and one read before
-        // the week turned would ask about the wrong week, so it is read beside the cards when
-        // unknown or past its close, the same condition `loadSpotlightMenuInputs` uses.
-        if currentSpotlightEntry == nil {
-            entryRead = Task { await feed.refreshOwnSpotlightEntry() }
-        }
+        // the week turned would ask about the wrong week, so it is read beside the cards on
+        // every open, not only when unknown: a cached entry can be a frame another phone has
+        // since swapped, and `putUpFromSession`'s swap check compares against whatever this read
+        // leaves behind. A cached entry still offers the sheet at once if this hasn't landed.
+        entryRead = Task { await feed.refreshOwnSpotlightEntry() }
         // A failed read is not an empty one: nil says so, and gets the failure state with Try
         // again rather than `finishSession` closing the deck as though nothing were left.
         // `loaded` stays false through a failure, so a retry that lands runs exactly as a first

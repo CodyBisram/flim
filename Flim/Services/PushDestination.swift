@@ -205,17 +205,24 @@ enum PendingPushDestination {
     /// search list, and a planted value is readable but not removable.
     static var store: UserDefaults = .standard
 
+    /// The held tap `take()` last handed out, with when it was first held, so a retry that fails
+    /// again and puts it back keeps counting down from that first hold instead of starting over.
+    /// In memory only: a relaunch reads the stamp off disk before `take()` clears it.
+    private static var lastTaken: (destination: PushDestination, heldAt: Double)?
+
     static func store(_ destination: PushDestination) {
         guard let data = try? JSONEncoder().encode(destination) else { return }
         store.set(data, forKey: key)
         store.removeObject(forKey: heldAtKey)
+        lastTaken = nil
     }
 
     /// Puts a tap back because its lookup could not reach the server (`PushLookupOutcome.hold`),
     /// stamped so it lapses after `heldTapLifetime`.
     static func hold(_ destination: PushDestination, now: Date = .now) {
+        let firstHeld = lastTaken.flatMap { $0.destination == destination ? $0.heldAt : nil }
         store(destination)
-        store.set(now.timeIntervalSince1970, forKey: heldAtKey)
+        store.set(firstHeld ?? now.timeIntervalSince1970, forKey: heldAtKey)
     }
 
     /// Reads and clears in one step, so a destination is acted on once, never replayed on a later
@@ -225,16 +232,19 @@ enum PendingPushDestination {
     static func take(now: Date = .now) -> PushDestination? {
         let heldAt = store.object(forKey: heldAtKey) as? Double
         store.removeObject(forKey: heldAtKey)
+        lastTaken = nil
         guard let data = store.data(forKey: key) else { return nil }
         store.removeObject(forKey: key)
         if let heldAt, now.timeIntervalSince1970 - heldAt > heldTapLifetime { return nil }
-        return try? JSONDecoder().decode(PushDestination.self, from: data)
+        guard let destination = try? JSONDecoder().decode(PushDestination.self, from: data) else { return nil }
+        if let heldAt { lastTaken = (destination, heldAt) }
+        return destination
     }
 
     /// Drops a held destination without using it, for the handler that got there first via the
     /// live broadcast. Without this a destination already routed once would route again on the
     /// next cold launch.
-    static func clear() { _ = take() }
+    static func clear() { _ = take(); lastTaken = nil }
 
     /// Bumped by every tap as `MainTabView.route(to:)` starts on it, the way `AccountEpoch` is
     /// bumped by every account change. A lookup that could not reach the server holds its tap

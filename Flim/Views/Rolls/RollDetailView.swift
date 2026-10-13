@@ -956,6 +956,11 @@ struct RollDetailView: View {
             found = photoArrived(photoId, in: pagerPhotos)
             attempts += 1
         }
+        // A second push for this roll replaced the target mid-poll: that push's own call opens its
+        // photo, with its own comments flag, so this one stands down rather than taking either.
+        guard awaitingPhotoId == photoId else { return }
+        // The reveal started mid-poll: keep the intent, `onChange(of: showReveal)` opens it after.
+        guard !showReveal else { return }
         let comments = awaitingPhotoComments
         awaitingPhotoId = nil
         awaitingPhotoComments = false

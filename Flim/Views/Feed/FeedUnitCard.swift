@@ -29,6 +29,9 @@ struct FeedUnitCard: View {
     /// of the snapshot would place the caught-up block above a day that was new at load.
     /// Deterministic order, not a race: snapshot first, then marks.
     let markingEnabled: Bool
+    /// The Feed tab is the one in front. Its own input, apart from `markingEnabled` (which it
+    /// also closes), because leaving the tab ends a look and a reload closing the gate does not.
+    let isFrontmost: Bool
     /// Bumped by explicit catch-ups (see FeedView): a unit already alive on screen re-opens
     /// on its first unseen shot, matching what a fresh launch would show. `@State` survives
     /// re-renders by design, so without this a friend's shot arriving into a visible unit
@@ -94,6 +97,7 @@ struct FeedUnitCard: View {
     @State private var captionFailedToast = false
     /// A reaction `reactToPost` rolled back: the chip is already back, the toast says why.
     @State private var reactionFailedToast = false
+    @State private var reactionToastGeneration = 0
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
     @State private var shareItem: ShareImage?
@@ -135,11 +139,13 @@ struct FeedUnitCard: View {
     @State private var seenWhileGated: Set<UUID> = []
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
-         markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
+         markingEnabled: Bool, isFrontmost: Bool = true, catchUpGeneration: Int,
+         onAuthorBlocked: @escaping () -> Void) {
         self.unit = unit
         self.width = width
         self.seenStore = seenStore
         self.markingEnabled = markingEnabled
+        self.isFrontmost = isFrontmost
         self.catchUpGeneration = catchUpGeneration
         self.onAuthorBlocked = onAuthorBlocked
         _selection = State(initialValue: min(opening, max(0, unit.items.count - 1)))
@@ -243,6 +249,9 @@ struct FeedUnitCard: View {
         // lands under a seam already placed from what was unseen at load.
         .onChange(of: markingEnabled) {
             guard markingEnabled else { return }
+            // Coming back to the tab reopens the gate in the same update that starts the new look
+            // (below); whichever handler runs first, the look starts before anything is marked.
+            if isVisible, lookStartedAt == nil { lookStartedAt = .now }
             if !seenWhileGated.isEmpty, !isVisible { seenStore.markSeen(Array(seenWhileGated)) }
             seenWhileGated = []
             maybeMarkReached()
@@ -253,6 +262,15 @@ struct FeedUnitCard: View {
         // new look, so the shots it marked last time read as seen.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                if isVisible, lookStartedAt == nil { lookStartedAt = .now }
+            } else {
+                newThisLook = []; arrivedThisLook = []; lookStartedAt = nil
+            }
+        }
+        // Another tab in front ends a look the same way: the card keeps its visibility through a
+        // tab switch, so without this, coming back still lit the shots marked last time as new.
+        .onChange(of: isFrontmost) { _, frontmost in
+            if frontmost {
                 if isVisible, lookStartedAt == nil { lookStartedAt = .now }
             } else {
                 newThisLook = []; arrivedThisLook = []; lookStartedAt = nil
@@ -858,8 +876,12 @@ struct FeedUnitCard: View {
     /// The write, then the card's toast if `reactToPost` rolled it back.
     private func react(_ emoji: String, userId: UUID) async {
         guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId, authorId: post.userId) else { return }
+        // Keyed: an earlier failure's timer must not take down a later one's toast early.
+        reactionToastGeneration += 1
+        let generation = reactionToastGeneration
         withAnimation { reactionFailedToast = true }
         try? await Task.sleep(for: .seconds(2))
+        guard generation == reactionToastGeneration else { return }
         withAnimation { reactionFailedToast = false }
     }
 

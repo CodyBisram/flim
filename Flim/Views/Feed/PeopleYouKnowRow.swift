@@ -19,6 +19,11 @@ struct PeopleYouKnowRow: View {
     @State private var people: [(profile: UserProfile, reason: String)] = []
     @State private var loaded = false
 
+    /// The last pick, per account, for this launch. The row sits in the feed's LazyVStack, which
+    /// drops its state when it scrolls off and back, and every return reran both reads and
+    /// faded the row in again.
+    @MainActor private static var picked: [UUID: [(profile: UserProfile, reason: String)]] = [:]
+
     static let followThreshold = 3
     static let shownCount = 3
 
@@ -99,9 +104,15 @@ struct PeopleYouKnowRow: View {
         }
         .task {
             guard let uid = auth.currentUser?.id, feed.followingIds.count < Self.followThreshold else { loaded = true; return }
+            if let cached = Self.picked[uid] {
+                people = cached
+                loaded = true
+                return
+            }
             await feed.loadFollowers(userId: uid)
             let sections = await feed.discoverSections(excluding: uid)
             people = Self.pick(sections)
+            Self.picked[uid] = people
             loaded = true
         }
         .animation(.easeOut(duration: 0.3), value: visible)

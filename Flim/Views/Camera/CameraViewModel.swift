@@ -900,8 +900,12 @@ extension CameraViewModel {
             // The tab was left mid-interruption. AVFoundation resumes an interrupted session by
             // itself, which would run the camera behind whatever screen is showing now.
             let session = self.session
-            Task.detached(priority: .userInitiated) {
-                if session.isRunning { session.stopRunning() }
+            Task.detached(priority: .userInitiated) { [weak self] in
+                guard session.isRunning else { return }
+                session.stopRunning()
+                // The tab came back before this ran: its start saw a running session and did
+                // nothing, so start it again rather than leave the shutter over a stopped camera.
+                await self?.restartIfWantedAgain()
             }
         }
     }

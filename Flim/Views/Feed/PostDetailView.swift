@@ -90,6 +90,7 @@ struct PostDetailView: View {
     /// A reaction that didn't land (the bar has already rolled it back): the toast this screen
     /// uses for every other failed action.
     @State private var reactionFailedToast = false
+    @State private var reactionToastGeneration = 0
     /// Swipe-down-to-go-back state: only armed at the top of the scroll.
     @State private var atTop = true
     @State private var dragY: CGFloat = 0
@@ -529,8 +530,12 @@ struct PostDetailView: View {
     /// The write, then the toast if `reactToPost` rolled it back.
     private func react(_ emoji: String, userId: UUID) async {
         guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId, authorId: post.userId) else { return }
+        // Keyed: an earlier failure's timer must not take down a later one's toast early.
+        reactionToastGeneration += 1
+        let generation = reactionToastGeneration
         withAnimation { reactionFailedToast = true }
         try? await Task.sleep(for: .seconds(2))
+        guard generation == reactionToastGeneration else { return }
         withAnimation { reactionFailedToast = false }
     }
 
@@ -710,7 +715,8 @@ struct PostDetailView: View {
             // The Bool-returning wrapper, same as `CommentsSheet.send()`: `addComment` alone
             // returns nil on failure with nothing here checking it, which is how a comment
             // that never reached the server still cleared the draft as if it had.
-            let ok = await feed.commentOnPost(post.id, body: body, userId: uid, authorId: post.userId)
+            let ok = await feed.commentOnPost(post.id, body: body, userId: uid, authorId: post.userId,
+                                              commenter: auth.currentUser)
             await reloadComments()
             sending = false
             if !ok {

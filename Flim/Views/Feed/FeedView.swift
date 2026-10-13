@@ -706,6 +706,7 @@ struct FeedView: View {
                             opening: unit.openingIndex(isSeen: { seenStore.isSeen($0) }),
                             seenStore: seenStore,
                             markingEnabled: ledgerSnapshotted && reloadsInFlight == 0 && isFrontmost,
+                            isFrontmost: isFrontmost,
                             catchUpGeneration: catchUpGeneration,
                             // growOnly: blocking an author must not re-place the seam or the
                             // strips, the same ratchet paging already obeys.
@@ -955,6 +956,16 @@ struct FeedView: View {
         // on a genuine failure, so `feed.feed` staying non-empty can't by itself say whether
         // this refresh worked.
         let hadContent = !feed.feed.isEmpty
+        // The empty state's invite button reads this, and it was only ever fetched on appear: an
+        // invite spent since (from the sheet, another phone) kept offering a dead code. Alongside
+        // the reload, not ahead of it.
+        if !hadContent {
+            Task {
+                let quota = await auth.ownInviteQuota()
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                inviteQuota = quota
+            }
+        }
         // The account's copy of the seen-marks goes up first, so the tab dot's server check
         // on the next foreground agrees with what this phone has already read.
         await seenStore.flushPending()

@@ -76,19 +76,15 @@ enum ReviewPrompt {
         return true
     }
 
+    /// Whether this post is the tenth. Exact, because the ordinal is per post (see
+    /// `FeedService.ownPostOrdinal`): posts landing together each get their own number, so one of
+    /// them is the tenth however their reads land. Someone long past it never sees a ten again,
+    /// short of deleting posts, and `shouldAsk` still gates on the version and the gap.
+    static func isTenthPost(ordinal: Int) -> Bool { ordinal == postMilestone }
+
     /// True only on the open that first sees the count at or past five after an open that saw
     /// it below. `previous == nil` is the first open ever measured, which only sets the baseline:
     /// an account that already had fifty reactions before this shipped has no fifth to notice.
-    /// Whether a post count just reached the tenth post. Crossing, not equality: two posts landing
-    /// back to back can both read 11 and would skip an exact match of 10. With no count seen yet
-    /// (first post since updating), only 10 or 11 counts, so someone long past it is not asked.
-    static func postMilestoneCrossed(previous: Int?, current: Int) -> Bool {
-        guard let previous else { return (postMilestone...(postMilestone + 1)).contains(current) }
-        return previous < postMilestone && current >= postMilestone
-    }
-
-    static func postsKey(userId: UUID) -> String { "reviewAsk.postsSeen.\(userId.uuidString)" }
-
     static func reactionMilestoneCrossed(previous: Int?, current: Int) -> Bool {
         guard let previous else { return false }
         return previous < reactionMilestone && current >= reactionMilestone
@@ -240,15 +236,9 @@ final class ReviewPromptCenter {
         }
     }
 
-    /// The tenth-post moment, checked after each post lands. Stores the count it saw, so the
-    /// crossing is found even when two posts land back to back.
-    func checkPostMilestone(count: Int, userId: UUID, defaults: UserDefaults = .standard) {
-        let key = ReviewPrompt.postsKey(userId: userId)
-        let previous = defaults.object(forKey: key) as? Int
-        defaults.set(max(count, previous ?? 0), forKey: key)
-        if ReviewPrompt.postMilestoneCrossed(previous: previous, current: count) {
-            arm(.tenthPost, userId: userId)
-        }
+    /// The tenth-post moment, checked after each post lands with that post's ordinal.
+    func checkPostMilestone(ordinal: Int, userId: UUID) {
+        if ReviewPrompt.isTenthPost(ordinal: ordinal) { arm(.tenthPost, userId: userId) }
     }
 
     /// A moment that could not be asked about within this long is dropped: by then it is no

@@ -111,18 +111,12 @@ struct ReviewPromptTests {
         #expect(!ReviewPrompt.reactionMilestoneCrossed(previous: 5, current: 6))
     }
 
-    @Test("the tenth post is found by crossing, not by an exact ten")
+    @Test("the tenth post is the post whose ordinal is ten")
     func postMilestone() {
-        // Two posts landing back to back can both read 11.
-        #expect(ReviewPrompt.postMilestoneCrossed(previous: 9, current: 11))
-        #expect(ReviewPrompt.postMilestoneCrossed(previous: 9, current: 10))
-        #expect(!ReviewPrompt.postMilestoneCrossed(previous: 10, current: 11))
-        #expect(!ReviewPrompt.postMilestoneCrossed(previous: 7, current: 8))
-        // No count seen yet: only a count right at the milestone, never someone long past it.
-        #expect(ReviewPrompt.postMilestoneCrossed(previous: nil, current: 10))
-        #expect(ReviewPrompt.postMilestoneCrossed(previous: nil, current: 11))
-        #expect(!ReviewPrompt.postMilestoneCrossed(previous: nil, current: 40))
-        #expect(!ReviewPrompt.postMilestoneCrossed(previous: nil, current: 9))
+        #expect(ReviewPrompt.isTenthPost(ordinal: 10))
+        #expect(!ReviewPrompt.isTenthPost(ordinal: 9))
+        #expect(!ReviewPrompt.isTenthPost(ordinal: 11))
+        #expect(!ReviewPrompt.isTenthPost(ordinal: 40))
     }
 
     @Test("each moment logs its own usage event")

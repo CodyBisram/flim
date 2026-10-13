@@ -247,14 +247,22 @@ final class FeedService {
             .execute().count
     }
 
-    /// Server-side COUNT of every post this account has made, for the rating prompt's tenth-post
-    /// moment. `nil` when the read failed, so a flaky network can never pass for a count.
-    func ownPostCount(userId: UUID) async -> Int? {
-        try? await supabase
+    /// Which of this account's posts `post` is (1 for the first), for the rating prompt's
+    /// tenth-post moment, counted on the server from the posts made before it. `nil` when the read
+    /// failed, so a flaky network can never pass for a count. Unlike the running total, this does not depend on when the read
+    /// lands: three posts sent together all read a total of 12 once they have landed, and the
+    /// tenth was never seen. Half a millisecond under its own timestamp, so the filter's
+    /// millisecond rounding can't count the post itself.
+    func ownPostOrdinal(of post: Post) async -> Int? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let before = try? await supabase
             .from("posts")
             .select("id", head: true, count: .exact)
-            .eq("user_id", value: userId.uuidString)
-            .execute().count
+            .eq("user_id", value: post.userId.uuidString)
+            .lt("created_at", value: formatter.string(from: post.createdAt.addingTimeInterval(-0.0005)))
+            .execute().count else { return nil }
+        return before + 1
     }
 
     /// Server-side COUNT of reactions other people have left on this account's work: its posts
@@ -1266,6 +1274,7 @@ final class FeedService {
 
         // Batch reactions + comments + tags for this page's posts in one pass.
         let postIds = items.map(\.post.id)
+        let tagReadStart = tagWriteClock
         async let reactions = batchReactions(postIds: postIds)
         async let comments = batchComments(postIds: postIds, currentUserId: currentUserId)
         async let tags = batchTags(postIds: postIds)
@@ -1288,14 +1297,17 @@ final class FeedService {
             if let fetchedReactions { reactionsByPost = fetchedReactions }
             if let fetchedComments { commentsByPost = fetchedComments }
             if let tagRead {
-                tagsByPost = tagRead.tags
-                tagProfiles = tagRead.profiles
+                // A post whose tags were edited while this read was out keeps the edit.
+                let edited = tagsByPost.filter { tagWrittenAfter($0.key, readStartedAt: tagReadStart) }
+                tagsByPost = tagRead.tags.merging(edited) { _, edit in edit }
+                tagProfiles = edited.isEmpty ? tagRead.profiles
+                    : tagRead.profiles.merging(tagProfiles) { read, _ in read }
             }
             feed = items
         } else {
             if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
             if let fetchedComments { commentsByPost.merge(fetchedComments) { _, new in new } }
-            applyTagRead(tagRead, requested: postIds)
+            applyTagRead(tagRead, requested: postIds, readStartedAt: tagReadStart)
             // Re-deduped against the live feed, not only `existingIds`: that snapshot
             // predates this function's awaits, and a straddle completion landing during them
             // holds rows this page can also contain (they sit below the old cursor, which is
@@ -1409,6 +1421,7 @@ final class FeedService {
         // Same batch pass a page gets, so a completed shot has its reactions the moment it
         // can be swiped to.
         let postIds = completions.map(\.post.id)
+        let tagReadStart = tagWriteClock
         async let reactions = batchReactions(postIds: postIds)
         async let comments = batchComments(postIds: postIds, currentUserId: currentUserId)
         async let tags = batchTags(postIds: postIds)
@@ -1419,7 +1432,7 @@ final class FeedService {
 
         if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
         if let fetchedComments { commentsByPost.merge(fetchedComments) { _, new in new } }
-        applyTagRead(tagRead, requested: postIds)
+        applyTagRead(tagRead, requested: postIds, readStartedAt: tagReadStart)
         // Deduped against the feed AS IT IS NOW, not the snapshot from before this
         // function's awaits: anything else that appended while those were in flight would
         // otherwise be appended a second time here. The guard above should make this
@@ -1435,12 +1448,13 @@ final class FeedService {
     func loadTags(for postIds: [UUID]) async {
         guard !postIds.isEmpty else { return }
         let epoch = AccountEpoch.current
+        let tagReadStart = tagWriteClock
         var reads: [(read: TagRead?, requested: [UUID])] = []
         for chunk in postIds.chunked(into: QueryBatch.inListLimit) {
             reads.append((await batchTags(postIds: chunk), chunk))
         }
         guard AccountEpoch.isCurrent(epoch) else { return }
-        for (read, requested) in reads { applyTagRead(read, requested: requested) }
+        for (read, requested) in reads { applyTagRead(read, requested: requested, readStartedAt: tagReadStart) }
     }
 
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
@@ -1450,9 +1464,10 @@ final class FeedService {
         // Reached by simply opening a post, not by a user action on it, so it is a passive read
         // path rather than one of the accepted id-keyed mutations.
         let epoch = AccountEpoch.current
+        let tagReadStart = tagWriteClock
         let read = await batchTags(postIds: [postId])
         guard AccountEpoch.isCurrent(epoch) else { return }
-        applyTagRead(read, requested: [postId])
+        applyTagRead(read, requested: [postId], readStartedAt: tagReadStart)
     }
 
     /// Replaces a post's tags with `tags`, as a diff: only rows that actually changed are written.
@@ -1476,6 +1491,7 @@ final class FeedService {
 
     @discardableResult
     func setTags(_ tags: [PendingTag], on postId: UUID) async -> TagEditOutcome {
+        markTagWrite(postId)
         let existing = tagsByPost[postId] ?? []
         let existingIds = Set(existing.map(\.taggedUserId))
         let desiredIds = Set(tags.map(\.user.id))
@@ -1509,6 +1525,8 @@ final class FeedService {
             _ = try? await supabase.from("post_tags").update(Move(x: tag.x, y: tag.y))
                 .eq("id", value: row.id.uuidString).execute()
         }
+        // Again once the rows have landed, so only a read that starts after them can apply.
+        markTagWrite(postId)
         await loadTags(for: postId)
         return outcome
     }
@@ -1519,10 +1537,12 @@ final class FeedService {
     /// supabase/migrations/2026-08-01_tag_self_removal.sql). Scoped by `tagged_user_id` as well as
     /// post so it can never take anyone else's tag down, even if called wrongly.
     func removeMyTag(from postId: UUID, userId: UUID) async {
+        markTagWrite(postId)
         _ = try? await supabase.from("post_tags").delete()
             .eq("post_id", value: postId.uuidString)
             .eq("tagged_user_id", value: userId.uuidString)
             .execute()
+        markTagWrite(postId)
         await loadTags(for: postId)
     }
 
@@ -1555,10 +1575,30 @@ final class FeedService {
     /// ever adds, so removing a post's only tag left its chip up, and Spotlight's "Put it up"
     /// stayed disabled as tagged until the next full reload (audit A-3, 1.6.1). A failed read
     /// (`nil`) changes nothing, so a flaky connection can't strip every chip either.
-    func applyTagRead(_ read: TagRead?, requested postIds: [UUID]) {
+    ///
+    /// `readStartedAt` is `tagWriteClock` as the read was sent. A post whose tags were written
+    /// after that keeps what it has: a batch read that left before a tag edit could otherwise
+    /// land after it and erase the tag just added, until the next full reload.
+    func applyTagRead(_ read: TagRead?, requested postIds: [UUID], readStartedAt: Int? = nil) {
         guard let read else { return }
-        for id in postIds { tagsByPost[id] = read.tags[id] ?? [] }
+        for id in postIds where !tagWrittenAfter(id, readStartedAt: readStartedAt) {
+            tagsByPost[id] = read.tags[id] ?? []
+        }
         tagProfiles.merge(read.profiles) { _, new in new }
+    }
+
+    /// Ticks as a tag write starts and again once its rows have landed (see `applyTagRead`).
+    @ObservationIgnored private(set) var tagWriteClock = 0
+    @ObservationIgnored private var tagWrittenAt: [UUID: Int] = [:]
+
+    func markTagWrite(_ postId: UUID) {
+        tagWriteClock += 1
+        tagWrittenAt[postId] = tagWriteClock
+    }
+
+    private func tagWrittenAfter(_ postId: UUID, readStartedAt: Int?) -> Bool {
+        guard let readStartedAt, let written = tagWrittenAt[postId] else { return false }
+        return written > readStartedAt
     }
 
     /// `nil` when the read failed, so a poll that couldn't reach the server leaves the bars as
@@ -1720,7 +1760,8 @@ final class FeedService {
     /// composer can restore the draft instead of silently losing what was typed.
     /// `authorId` is the post's author, when the caller has it; see `reactToPost`.
     @discardableResult
-    func commentOnPost(_ postId: UUID, body: String, userId: UUID, authorId: UUID? = nil) async -> Bool {
+    func commentOnPost(_ postId: UUID, body: String, userId: UUID, authorId: UUID? = nil,
+                       commenter: AppUser? = nil) async -> Bool {
         // Captured before the first await: a comment sent just before an account switch must
         // not land the old account's comment list (with its likedByMe) in the new one's cache.
         let epoch = AccountEpoch.current
@@ -1737,10 +1778,17 @@ final class FeedService {
         } else if let created {
             // The comment landed but the thread could not be read back. Kept as it would have
             // read, or the person sees it vanish and types it again, posting it twice. The
-            // author comes from any comment of theirs already on screen; the next good read
-            // fills in the rest.
+            // author comes from any comment of theirs already on screen, then a profile this
+            // session holds, then the signed-in account itself, so a first-ever comment still
+            // carries its own handle rather than "@someone"; the next good read fills in the rest.
             let author = commentsByPost.values.lazy.flatMap { $0 }
                 .first { $0.comment.userId == userId }?.author
+                ?? knownProfile(id: userId)
+                ?? commenter.flatMap { me in
+                    me.id == userId ? UserProfile(id: me.id, username: me.username, avatarPath: me.avatarPath,
+                                                  bio: me.bio, displayName: me.displayName,
+                                                  coverPath: me.coverPath, createdAt: me.createdAt) : nil
+                }
             var list = commentsByPost[postId] ?? []
             if !list.contains(where: { $0.id == created.id }) {
                 list.append(CommentInfo(comment: created, author: author, likeCount: 0, likedByMe: false))
@@ -1854,9 +1902,9 @@ final class FeedService {
         // this (the sort deck, the share sheet, the pager) has gone.
         if !ReviewPrompt.askedThisVersion(userId: userId) {
             Task { [weak self] in
-                guard let self, let count = await self.ownPostCount(userId: userId),
+                guard let self, let ordinal = await self.ownPostOrdinal(of: created),
                       AccountEpoch.isCurrent(epoch) else { return }
-                ReviewPromptCenter.shared.checkPostMilestone(count: count, userId: userId)
+                ReviewPromptCenter.shared.checkPostMilestone(ordinal: ordinal, userId: userId)
             }
         }
 

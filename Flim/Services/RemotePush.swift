@@ -32,6 +32,10 @@ enum RemotePush {
     /// firing a delete in the second case would take down a DIFFERENT account's live push
     /// registration.
     private static let pendingDetachOwnerKey = "apnsPendingDetachOwner"
+    /// A token `detachAfterSessionLoss()` couldn't confirm was detached. No owner key: that path
+    /// has no session to name, and `detach_device_token` needs none. Retried while signed out,
+    /// dropped the moment anyone signs in (their claim moves the token, see `claim(_:)`).
+    private static let pendingSessionLossDetachKey = "apnsPendingSessionLossDetach"
 
     /// Background plumbing, not a user-facing failure: nothing here ever surfaces an error to the
     /// signed-in person, but a claim that silently never happens is exactly how one account's push
@@ -138,6 +142,9 @@ enum RemotePush {
                 detachAfterSessionLoss()
                 return
             }
+            // The token belongs to this account now; a session-loss detach still queued for the
+            // departed one would delete this claim.
+            UserDefaults.standard.removeObject(forKey: pendingSessionLossDetachKey)
             // Push can now reach this device for this account. A fresh capture may have already
             // scheduled a local develop reminder before this round trip landed (`isTokenRegistered`
             // reads false until it does), and if the roll is never reopened nothing else would
@@ -187,10 +194,12 @@ enum RemotePush {
     /// authenticate with. Goes through `detach_device_token`, which deletes by token and needs no
     /// session; holding the token is the proof, since only this device was ever handed it.
     ///
-    /// Best effort and fire-and-forget: a failure is logged, not retried, because a later sign-in
-    /// on this device reassigns the token through `register_device_token` anyway. The claim
-    /// state is reset unconditionally so that sign-in re-registers rather than trusting a claim
-    /// made for the departed account.
+    /// A failure is persisted and retried by `retrySessionLossDetach()` on later launches and
+    /// foregrounds while nobody is signed in: a phone that is never signed into again would
+    /// otherwise keep the departed account's pushes for good. A later sign-in on this device
+    /// reassigns the token through `register_device_token` and drops the retry. The claim state is
+    /// reset unconditionally so that sign-in re-registers rather than trusting a claim made for
+    /// the departed account.
     static func detachAfterSessionLoss() {
         guard let hex = UserDefaults.standard.string(forKey: tokenKey), !hex.isEmpty else {
             state.withLock {
@@ -199,21 +208,44 @@ enum RemotePush {
             }
             return
         }
-        let detach = Task {
-            do {
-                try await supabase
-                    .rpc("detach_device_token", params: ["p_token": hex])
-                    .execute()
-                // A marker for this same token is moot now that the row is gone.
-                if UserDefaults.standard.string(forKey: pendingDetachTokenKey) == hex { clearPendingDetach() }
-            } catch {
-                log.error("detachAfterSessionLoss: detach_device_token failed: \(String(describing: error), privacy: .public)")
-            }
-        }
+        let detach = Task { await sessionLossDetach(hex) }
         state.withLock {
             $0.registeredAccountId = nil
             $0.sessionLossDetach = detach
             $0.sessionLossGeneration += 1
+        }
+    }
+
+    /// Retries a session-loss detach that failed, while nobody is signed in. Called on launch and
+    /// on every foreground. Registered as `sessionLossDetach` before it touches the network, so a
+    /// sign-in that lands meanwhile has `claim` wait for it rather than be deleted by it.
+    static func retrySessionLossDetach() {
+        guard let hex = UserDefaults.standard.string(forKey: pendingSessionLossDetachKey) else { return }
+        let detach = Task {
+            // The local session only, never a refresh: an offline refresh fails, and reading that
+            // as "signed out" would detach a phone someone is signed into.
+            if supabase.auth.currentSession != nil {
+                UserDefaults.standard.removeObject(forKey: pendingSessionLossDetachKey)
+                return
+            }
+            await sessionLossDetach(hex)
+        }
+        state.withLock { $0.sessionLossDetach = detach }
+    }
+
+    private static func sessionLossDetach(_ hex: String) async {
+        do {
+            try await supabase
+                .rpc("detach_device_token", params: ["p_token": hex])
+                .execute()
+            // A marker for this same token is moot now that the row is gone.
+            if UserDefaults.standard.string(forKey: pendingDetachTokenKey) == hex { clearPendingDetach() }
+            if UserDefaults.standard.string(forKey: pendingSessionLossDetachKey) == hex {
+                UserDefaults.standard.removeObject(forKey: pendingSessionLossDetachKey)
+            }
+        } catch {
+            log.error("sessionLossDetach: detach_device_token failed: \(String(describing: error), privacy: .public)")
+            UserDefaults.standard.set(hex, forKey: pendingSessionLossDetachKey)
         }
     }
 

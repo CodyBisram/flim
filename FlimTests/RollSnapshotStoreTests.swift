@@ -41,6 +41,24 @@ struct RollSnapshotStoreTests {
         #expect(restored?.coverPaths[b.id] == "cover/b.jpg")
     }
 
+    @Test("saves land in the order they were made: the last one is what stays on disk")
+    func savesStayOrdered() {
+        let root = makeRoot(); defer { cleanUp(root) }
+        let user = UUID()
+        for i in 0..<20 {
+            RollSnapshotStore.save(.init(rolls: [roll(name: "v\(i)")], coverPaths: [:]), for: user, root: root)
+        }
+        var name: String?
+        for _ in 0..<100 {
+            name = RollSnapshotStore.load(for: user, root: root)?.rolls.first?.name
+            if name == "v19" { break }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        // Settled, not passing through: nothing older lands after the newest.
+        Thread.sleep(forTimeInterval: 0.2)
+        #expect(RollSnapshotStore.load(for: user, root: root)?.rolls.first?.name == "v19")
+    }
+
     @Test("no snapshot yet reads as nil, not as an error")
     func missingSnapshotIsNil() {
         let root = makeRoot(); defer { cleanUp(root) }

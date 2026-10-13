@@ -656,6 +656,11 @@ struct SpotlightSessionOffer: Identifiable, Equatable {
         var kind: Kind?
         var offered: [UUID] = []
         var shotBefore = 0
+        // The line names the week before this one, so only that week's frames count toward it:
+        // a roll shot a month ago is left out the same way, but "the week of" would name the
+        // wrong week for it.
+        let previousWeekStarts = SpotlightWeekLabel.gregorian(in: calendar.timeZone)
+            .date(byAdding: .day, value: -7, to: entry.weekStartsAt) ?? entry.weekStartsAt
         for frame in frames where !frame.failed {
             if let postId = frame.post?.id, ledger.offeredPostIds.contains(postId) { continue }
             switch item(for: frame, entry: entry, viewerId: viewerId, now: now, calendar: calendar) {
@@ -668,7 +673,8 @@ struct SpotlightSessionOffer: Identifiable, Equatable {
             case .disabled(let reason) where reason == SpotlightMenuItem.notThisWeekReason:
                 // Only for being shot before the week: not a clock running ahead, and nothing
                 // else (a tag, another photographer) that would keep it out anyway.
-                if frame.photo.takenAt < entry.weekStartsAt, !frame.isTagged, frame.photo.userId == viewerId {
+                if frame.photo.takenAt < entry.weekStartsAt, frame.photo.takenAt >= previousWeekStarts,
+                   !frame.isTagged, frame.photo.userId == viewerId {
                     shotBefore += 1
                 }
             default:

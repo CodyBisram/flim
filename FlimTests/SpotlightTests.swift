@@ -1120,6 +1120,8 @@ struct SpotlightTests {
             sessionFrame(takenAt: date(9, 19, 18), failed: true),
             // Stamped past the close (a clock ahead) is not "before this week".
             sessionFrame(takenAt: date(9, 28, 5)),
+            // Older than the week the line names: left out, but not counted under that week.
+            sessionFrame(takenAt: date(9, 10, 12)),
         ]
         let result = try #require(offer(frames))
         #expect(result.shotBeforeThisWeek == 2)

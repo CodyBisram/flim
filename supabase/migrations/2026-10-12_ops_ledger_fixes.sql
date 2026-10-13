@@ -12,6 +12,9 @@
 --    hourly one ('0 14-23,0-1 * * *'); production has run once a day at 16:00 UTC since
 --    2026-10-10. A bootstrap would have quietly gone back to hourly. Aligned here; production
 --    already has this schedule, so applying it there changes nothing.
+--    Since 2026-10-13 it only moves the job off that old window schedule: 2026-10-12_digest_hourly.sql
+--    sorts before this file, and an unguarded alter replayed in filename order would set the
+--    hourly local-noon schedule back to once a day (nightly review, 2026-10-13).
 
 CREATE OR REPLACE FUNCTION public.copy_edge_failures()
 RETURNS INT
@@ -35,7 +38,8 @@ REVOKE ALL ON FUNCTION public.copy_edge_failures() FROM PUBLIC, anon, authentica
 
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-daily-digest') THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-daily-digest'
+               AND schedule = '0 14-23,0-1 * * *') THEN
         PERFORM cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-daily-digest'),
                                schedule := '0 16 * * *');
     END IF;

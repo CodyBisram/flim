@@ -150,8 +150,9 @@ actor ChapterCuration {
     private func qualityScore(for photo: ChapterPhoto, displayScale: CGFloat,
                                thumbURL: URL?) async -> Double {
         if let cached = qualityScores[photo.id] { return cached }
-        // A stored score wins over a download, even on the mixed path.
-        if let stored = photo.quality { qualityScores[photo.id] = stored; return stored }
+        // A stored score is used as is, but the photo is still fetched for its feature print: this
+        // path's duplicate check compares prints, and a photo without one reads as alike to
+        // nothing, so a stored-score frame and its near-twin could both make the deck.
         guard let url = thumbURL,
               // The THUMB rendition, never the full image: curation runs over an entire month,
               // and this is a scoring pass, not a viewing one.
@@ -159,12 +160,13 @@ actor ChapterCuration {
                                                   cacheKey: photo.displayPath),
               let cgImage = image.cgImage
         else {
-            qualityScores[photo.id] = 0.5
-            return 0.5
+            let quality = photo.quality ?? 0.5
+            qualityScores[photo.id] = quality
+            return quality
         }
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        let quality = Self.visionQuality(of: cgImage, handler: handler)
+        let quality = photo.quality ?? Self.visionQuality(of: cgImage, handler: handler)
 
         let featurePrintRequest = VNGenerateImageFeaturePrintRequest()
         if (try? handler.perform([featurePrintRequest])) != nil,

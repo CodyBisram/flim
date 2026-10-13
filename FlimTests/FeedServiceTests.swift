@@ -84,6 +84,28 @@ import XCTest
         #expect(service.tagsByPost[asked]?.isEmpty == true)
         #expect(service.tagsByPost[other]?.map(\.id) == [otherTag.id])
     }
+
+    /// A batch read that left before a tag edit must not land after it and erase the new tag.
+    @Test func tagsReadOlderThanAnEditLeavesThatPost() {
+        let service = FeedService()
+        let edited = UUID()
+        let untouched = UUID()
+        let readStart = service.tagWriteClock
+        service.markTagWrite(edited)
+        let added = tag(on: edited)
+        service.tagsByPost = [edited: [added], untouched: [tag(on: untouched)]]
+
+        service.applyTagRead(FeedService.TagRead(tags: [:], profiles: [:]),
+                             requested: [edited, untouched], readStartedAt: readStart)
+
+        #expect(service.tagsByPost[edited]?.map(\.id) == [added.id])
+        #expect(service.tagsByPost[untouched]?.isEmpty == true)
+
+        // A read sent after the edit applies as usual.
+        service.applyTagRead(FeedService.TagRead(tags: [:], profiles: [:]),
+                             requested: [edited], readStartedAt: service.tagWriteClock)
+        #expect(service.tagsByPost[edited]?.isEmpty == true)
+    }
 }
 
 /// `FeedService`'s pure cache-maintenance helpers. `FeedService` is `@MainActor`, so these tests

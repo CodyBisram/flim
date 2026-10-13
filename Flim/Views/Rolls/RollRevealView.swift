@@ -89,6 +89,9 @@ struct RollRevealView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
         }
+        // Its own capsule: a full-screen cover hides the tab view's, and the report flag stages
+        // an undoable action whose Undo would otherwise be out of reach. Same inset as the pager.
+        .undoCapsuleHost(bottomPadding: 44)
     }
 
     private var revealBody: some View {

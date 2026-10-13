@@ -52,13 +52,18 @@ enum RollSnapshotStore {
     /// never awaited by the caller. `snapshot` is a value type captured at the call
     /// site, so this never reaches back into `RollService`'s `@MainActor` state from the
     /// background task.
+    ///
+    /// One serial queue, not a detached task per call: two saves in a row (a fetch, then a
+    /// `forget`) could finish in either order as separate tasks, leaving the older list on disk.
     static func save(_ snapshot: Snapshot, for userId: UUID, root: URL = defaultRoot()) {
-        Task.detached(priority: .utility) {
+        writeQueue.async {
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
             try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try? data.write(to: fileURL(for: userId, root: root), options: .atomic)
         }
     }
+
+    private static let writeQueue = DispatchQueue(label: "com.flim.app.roll-snapshot", qos: .utility)
 
     /// Deletes one account's snapshot outright. Not currently wired to any purge path: neither
     /// `signOut()` nor `deleteAccount()` clears per-account on-disk caches today (see

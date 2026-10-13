@@ -470,6 +470,8 @@ struct ChapterRecapView: View {
                 profileRoute = ProfileRoute(id: userId)
             },
             onPlayAgain: {
+                // From the start, not from whichever stat-line photo was opened last.
+                selection = 0
                 isPlayerPresented = true
             },
             onClose: { dismiss() }

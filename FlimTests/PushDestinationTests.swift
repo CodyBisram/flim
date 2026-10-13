@@ -219,6 +219,25 @@ struct PendingPushDestinationTests {
         #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(86_400)) == .feed)
     }
 
+    @Test("a held tap that fails again and is put back keeps its first hold's clock")
+    func reheldTapKeepsItsClock() {
+        isolate()
+        let destination = PushDestination.post(postId: UUID(), comments: true)
+        let firstHeld = Date(timeIntervalSince1970: 1_790_000_000)
+        PendingPushDestination.hold(destination, now: firstHeld)
+        let retry = firstHeld.addingTimeInterval(20 * 60)
+        #expect(PendingPushDestination.take(now: retry) == destination)
+        PendingPushDestination.hold(destination, now: retry)
+        let later = firstHeld.addingTimeInterval(PendingPushDestination.heldTapLifetime + 60)
+        #expect(PendingPushDestination.take(now: later) == nil, "30 minutes from the first hold, not the retry")
+
+        // A different tap held after a take starts its own clock.
+        PendingPushDestination.hold(destination, now: firstHeld)
+        _ = PendingPushDestination.take(now: retry)
+        PendingPushDestination.hold(.feed, now: retry)
+        #expect(PendingPushDestination.take(now: later) == .feed)
+    }
+
     @Test("a destination survives to be collected later")
     func heldUntilCollected() {
         isolate()

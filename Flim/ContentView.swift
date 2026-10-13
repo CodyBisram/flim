@@ -267,7 +267,11 @@ struct ContentView: View {
         }) {
             VersionGateNudgeSheet(message: versionGate.message)
         }
-        .task { await refreshVersionGate() }
+        .task {
+            // Launch: the foreground handler below never sees the first `.active`.
+            RemotePush.retrySessionLossDetach()
+            await refreshVersionGate()
+        }
         // Mirrors ProfileView's notification-status re-check: cheap, side-effect-free, and the
         // one moment a stale "you're on the latest version" is actually noticeable.
         .onChange(of: scenePhase) { _, phase in
@@ -290,6 +294,8 @@ struct ContentView: View {
                 return
             }
             Task { await refreshVersionGate() }
+            // A signed-out phone still attached to a departed account's pushes; see its doc.
+            RemotePush.retrySessionLossDetach()
             // The foreground is the other moment the network most likely came back; free when
             // the launch already finished, see `resyncIfNeeded`.
             Task { await auth.resyncIfNeeded() }
