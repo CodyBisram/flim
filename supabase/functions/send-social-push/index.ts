@@ -215,6 +215,8 @@ async function sendPush(
   body?: string,
   flim?: FlimRoute,
   sound = "default",
+  category?: string,
+  toId?: string,
 ): Promise<boolean> {
   const jwt = await apnsAuthToken();
   // `body` is omitted from `alert` entirely when absent/empty, never sent as `body: ""`. APNs's
@@ -225,8 +227,14 @@ async function sendPush(
   // title.
   const alert: Record<string, string> = { title };
   if (body) alert.body = body;
-  const payload: Record<string, unknown> = { aps: { alert, sound } };
+  const aps: Record<string, unknown> = { alert, sound };
+  // A category gives the notification buttons the app registered under that name
+  // (NotificationActions.swift); a build without it shows the plain notification. `to` names the
+  // recipient so the app acts on a button only for the account the push was meant for.
+  if (category) aps.category = category;
+  const payload: Record<string, unknown> = { aps };
   if (flim) payload.flim = flim;
+  if (category && toId) payload.to = toId;
   let res: Response;
   let reason: string | undefined;
   try {
@@ -270,6 +278,44 @@ async function sendPush(
 async function handle(userId: string): Promise<string> {
   const { data } = await supabase.from("profiles").select("username").eq("id", userId).single();
   return data?.username ? `@${data.username}` : "Someone";
+}
+
+// The category NotificationActions.swift registers with one "Follow back" button.
+const FOLLOW_BACK_CATEGORY = "FLIM_FOLLOW_BACK";
+// How new the follower's account must be for its follow to count as the sign-up follow of its
+// inviter. That follow lands minutes after sign-up; a re-follow weeks later is an ordinary one.
+const INVITE_JOIN_WINDOW_MS = 72 * 3600_000;
+
+// Whether `followerId`'s follow of `followingId` is the follow a new account makes of whoever
+// invited it (UsernameView.save): the account is under INVITE_JOIN_WINDOW_MS old and was let in
+// by `followingId`'s personal code, which redeem_invite records on its allowed_emails row as
+// 'invited_by:<uuid>'. A cohort or roll code names no person and never matches. With the answer
+// comes whether the inviter already follows them back, which decides if there is anything to
+// offer. false is "an ordinary follow"; null is "a read failed", never read as either.
+async function inviteJoin(followerId: string, followingId: string): Promise<{ followsBack: boolean } | false | null> {
+  const { data: user, error: userErr } = await supabase
+    .from("users").select("email, created_at").eq("id", followerId).maybeSingle();
+  if (userErr) {
+    console.warn(JSON.stringify({ at: "invite_join_user_read_failed", error: userErr.message }));
+    return null;
+  }
+  const u = user as { email: string | null; created_at: string | null } | null;
+  if (!u?.email || !u.created_at) return false;
+  if (Date.now() - new Date(u.created_at).getTime() > INVITE_JOIN_WINDOW_MS) return false;
+  const { data: admitted, error: admittedErr } = await supabase
+    .from("allowed_emails").select("note").eq("email", u.email.toLowerCase()).maybeSingle();
+  if (admittedErr) {
+    console.warn(JSON.stringify({ at: "invite_join_note_read_failed", error: admittedErr.message }));
+    return null;
+  }
+  if ((admitted as { note: string | null } | null)?.note !== `invited_by:${followingId}`) return false;
+  const { data: back, error: backErr } = await supabase
+    .from("follows").select("follower_id").eq("follower_id", followingId).eq("following_id", followerId).maybeSingle();
+  if (backErr) {
+    console.warn(JSON.stringify({ at: "invite_join_follow_back_read_failed", error: backErr.message }));
+    return null;
+  }
+  return { followsBack: back !== null };
 }
 
 // null when the read failed. An unreadable device list is not "this person has no phone": the
@@ -373,6 +419,7 @@ async function notify(
   flim?: FlimRoute,
   sourceKey?: string,
   sound: string = SOUND_SOCIAL,
+  category?: string,
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
   if (outOfTime()) { if (sourceKey) pendingRetry.add(sourceKey); return 0; }   // leave it for the next run
@@ -400,7 +447,7 @@ async function notify(
   }
   let sent = 0;
   for (const token of tokens) {
-    if (await sendPush(token, title, body, flim, sound)) sent++;
+    if (await sendPush(token, title, body, flim, sound, category, toId)) sent++;
   }
   if (sourceKey) {
     const [kind, ...rest] = sourceKey.split(":");
@@ -1389,6 +1436,22 @@ Deno.serve(async (req: Request) => {
 
   for (const f of follows ?? []) {
     const name = await handle(f.follower_id);
+    const followKey = `follow:${f.follower_id}:${f.following_id}`;
+    // The new account's own follow of whoever invited it, made the moment it picks a username,
+    // says so, and offers the follow back in one press while the inviter isn't following yet
+    // (owner, 2026-10-13). New accounts that never paired with anyone were the leak, and the
+    // inviter is the person most likely to react to them on day one.
+    const join = await inviteJoin(f.follower_id, f.following_id);
+    if (join === null) { pendingRetry.add(followKey); continue; }   // unreadable: ask again next run
+    if (join) {
+      sent += await notify(f.following_id, f.follower_id, `${name} joined ${APP_NAME} with your invite`,
+        join.followsBack ? undefined : "Follow back so you see each other's shots.",
+        { t: "profile", id: f.follower_id }, followKey, SOUND_SOCIAL,
+        join.followsBack ? undefined : FOLLOW_BACK_CATEGORY);
+      if (settled(followKey)) await supabase.from("follows").update({ push_sent: true })
+        .eq("follower_id", f.follower_id).eq("following_id", f.following_id);
+      continue;
+    }
     // Title-only: matches the house shape every other push in this file uses, the actor's name +
     // verb in the title ("{name} commented", "{name} tagged you", "{name} liked your comment"),
     // rather than the inverted "New follower" title / "{name} started following you" body this
@@ -1396,7 +1459,6 @@ Deno.serve(async (req: Request) => {
     // in the title, and `sendPush` omits the `body` key entirely when none is given (see above
     // its definition), so this renders as a clean single-line banner, never a blank second line.
     // Still routes to the follower's profile.
-    const followKey = `follow:${f.follower_id}:${f.following_id}`;
     sent += await notify(f.following_id, f.follower_id, `${name} started following you`, undefined, {
       t: "profile",
       id: f.follower_id,

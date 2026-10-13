@@ -323,6 +323,7 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        NotificationActions.register()
         return true
     }
 
@@ -358,6 +359,19 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
+        // A button pressed, not the notification tapped: act on it where it was pressed and open
+        // nothing. See `NotificationActions`.
+        if response.actionIdentifier == NotificationActions.followBackAction {
+            guard let action = NotificationActions.followBack(userInfo: userInfo) else {
+                completionHandler()
+                return
+            }
+            Task { @MainActor in
+                await NotificationActions.performFollowBack(action)
+                completionHandler()
+            }
+            return
+        }
         guard let destination = PushDestination.parse(userInfo: userInfo) else {
             NotificationCenter.default.post(name: .openDarkroom, object: nil)
             completionHandler()

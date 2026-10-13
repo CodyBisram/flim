@@ -341,6 +341,14 @@ final class FeedService {
         }
     }
 
+    /// A follow written outside this service (a notification's "Follow back" button, which runs
+    /// with no views alive), folded in as if `follow` had made it. Only for the account it was
+    /// made by; the caller checks.
+    func noteFollowMadeElsewhere(_ targetId: UUID) {
+        followingIds.insert(targetId)
+        confirmedFollowingIds.insert(targetId)
+    }
+
     /// Same contract as `follow`: whether the unfollow holds server-side.
     @discardableResult
     func unfollow(_ targetId: UUID, from userId: UUID) async -> Bool {

@@ -311,6 +311,7 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
             selected = 1
         }
+        .modifier(FollowBackListener())
         .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
             selected = 0
         }
@@ -779,5 +780,22 @@ private struct HeldTapRetry: ViewModifier {
                 guard phase == .active, network.isConnected else { return }
                 retry()
             }
+    }
+}
+
+/// Folds a notification's "Follow back" (`NotificationActions`) into the feed's follow sets when
+/// the app is running, for the account that pressed it. Its own modifier because one more
+/// closure in `MainTabView`'s chain is past what the type checker finishes.
+private struct FollowBackListener: ViewModifier {
+    @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .followedFromNotification)) { note in
+            if let action = note.object as? NotificationActions.FollowBack,
+               action.recipient == auth.currentUser?.id {
+                feed.noteFollowMadeElsewhere(action.target)
+            }
+        }
     }
 }
