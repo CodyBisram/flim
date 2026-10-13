@@ -1,6 +1,6 @@
 # FLIM: Privacy Policy
 
-_Last updated: July 2026_
+_Last updated: October 2026_
 
 FLIM ("the app," "we," "us") is a disposable-camera app for sharing photos with friends in
 private rolls and on a following-based feed. This policy explains what we collect, why, and the
@@ -33,6 +33,11 @@ control you have. We keep it short because we collect very little.
   to your account, kept in our own database. It exists so we can tell which parts of FLIM people
   actually reach, rather than guessing. It records that a thing happened once, never how often, and
   never what was in the photograph. No analytics company is involved and nothing is shared with one.
+- **Your app version and your phone's time zone setting**, updated each time you open FLIM, so we
+  know which versions are still in use and roughly which parts of the world FLIM is used in, and so
+  the daily roundup of your friends' posts arrives around noon your time. This is the time zone your
+  phone is set to, the same one it uses for its clock. It is not your location: FLIM does not use
+  location services or GPS, and does not look up where you are from your internet connection.
 - **Crash and performance diagnostics**: if the app crashes, hangs, or overuses the processor, iOS
   gives us a technical report (app version and a stack trace of where it happened) so we can fix
   it. These contain no photos and no message content, and are tied to your account only so a
