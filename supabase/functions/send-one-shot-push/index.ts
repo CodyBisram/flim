@@ -939,8 +939,9 @@ async function fetchAllPages<T>(
 /// preference column, so nobody else is reachable and nobody else should be considered.
 // ------------------------------------------------------------
 // 2026-10-14, three nudges sent together, copy picked by the owner. Nobody gets two: a person
-// with frames still in the deck hears about the deck, and the never-posted push only reaches
-// people who have sorted every frame and kept them all. The owner and App Review are left out.
+// who has never posted and has kept a frame hears "Nice photos. Probably." even with frames in the
+// deck; the deck push is for everyone else whose deck has sat two days. The owner and App Review
+// are left out.
 
 const NOT_NUDGED = new Set(["cody", "applereview"]);
 
@@ -963,35 +964,52 @@ async function alreadyDownloadedCohort(): Promise<Recipient[]> {
   }));
 }
 
-/// Per person, the unsorted count and whether the oldest unsorted frame is past the stale floor.
-/// Counted one request per person, as `waitingToSortCohort` does, so the 1000-row cap never
-/// shortens a deck. An error leaves the person out rather than guessing.
-async function deckStates(ids: string[]): Promise<Map<string, { count: number; stale: boolean }>> {
+/// Per person: frames shot, frames still unsorted, whether the oldest unsorted one is past the
+/// stale floor, and posts. Counted one request at a time, as `waitingToSortCohort` does, so the
+/// 1000-row cap never shortens anything. Any failed count leaves the person out rather than
+/// guessing: an error is never a zero.
+type Habits = { shots: number; unsorted: number; stale: boolean; posts: number };
+
+async function habitsOf(ids: string[]): Promise<Map<string, Habits>> {
   const cutoff = Date.now() - STALE_DECK_HOURS * 3600_000;
-  const out = new Map<string, { count: number; stale: boolean }>();
+  const out = new Map<string, Habits>();
   for (const id of ids) {
-    const { data, count, error } = await supabase
+    const { data, count: unsorted, error: e1 } = await supabase
       .from("photos").select("taken_at", { count: "exact" })
       .eq("user_id", id).eq("is_sorted", false)
       .order("taken_at", { ascending: true }).limit(1);
-    if (error || count === null) continue;
+    if (e1 || unsorted === null) continue;
+    const { count: shots, error: e2 } = await supabase
+      .from("photos").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (e2 || shots === null) continue;
+    const { count: posts, error: e3 } = await supabase
+      .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (e3 || posts === null) continue;
     const oldest = data?.length ? new Date((data[0] as { taken_at: string }).taken_at).getTime() : null;
-    out.set(id, { count, stale: count > 0 && oldest !== null && oldest <= cutoff });
+    out.set(id, { shots, unsorted, stale: unsorted > 0 && oldest !== null && oldest <= cutoff, posts });
   }
   return out;
 }
 
-/// Everyone whose deck has sat for two days or more, posters included.
+/// Never posted, and has kept at least one frame: the Darkroom holds photos nobody has seen.
+/// This wins over the deck push, so someone with nine kept frames and one unsorted hears about
+/// the nine. Someone whose every frame is still unsorted has kept nothing yet, and is left to
+/// the deck push.
+function keepsToThemselves(h: Habits): boolean {
+  return h.posts === 0 && h.shots > h.unsorted;
+}
+
+/// Everyone whose deck has sat for two days or more, posters included, except the people the
+/// never-posted push is for.
 async function deckProbablyGoodCohort(): Promise<Recipient[]> {
-  const ids = await nudgeable(await reachableUsers());
-  const decks = await deckStates(ids);
+  const habits = await habitsOf(await nudgeable(await reachableUsers()));
   const out: Recipient[] = [];
-  for (const [userId, deck] of decks) {
-    if (!deck.stale) continue;
-    const one = deck.count === 1;
+  for (const [userId, h] of habits) {
+    if (!h.stale || keepsToThemselves(h)) continue;
+    const one = h.unsorted === 1;
     out.push({
       userId,
-      title: one ? "1 frame is waiting on you." : `${deck.count} frames are waiting on you.`,
+      title: one ? "1 frame is waiting on you." : `${h.unsorted} frames are waiting on you.`,
       body: one
         ? "It developed days ago. It's probably good. Go see."
         : "They developed days ago. Some of them are probably good. Go see.",
@@ -1001,33 +1019,36 @@ async function deckProbablyGoodCohort(): Promise<Recipient[]> {
   return out;
 }
 
-/// Shot, sorted everything, never posted. Anyone with unsorted frames is left to the deck push
-/// (stale) or left alone (still shooting), so the push never names a step they have not reached.
+/// Shot, kept at least one frame, never posted. Lands in the Darkroom, where the kept frames are.
 async function keptToYourselfCohort(): Promise<Recipient[]> {
-  const ids = await nudgeable(await reachableUsers());
-  const decks = await deckStates(ids);
+  const habits = await habitsOf(await nudgeable(await reachableUsers()));
   const out: Recipient[] = [];
-  for (const id of ids) {
-    const deck = decks.get(id);
-    if (!deck || deck.count > 0) continue;
-    const { count: shots, error: e1 } = await supabase
-      .from("photos").select("id", { count: "exact", head: true }).eq("user_id", id);
-    if (e1 || !shots) continue;
-    const { count: posts, error: e2 } = await supabase
-      .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
-    // An error is not a zero: a failed count must never turn into "never posted".
-    if (e2 || posts === null || posts > 0) continue;
-    const kept = shots === 1
+  for (const [userId, h] of habits) {
+    if (!keepsToThemselves(h)) continue;
+    const kept = h.shots === 1
       ? "You've kept it to yourself. Post it, only your followers see it."
-      : `You've kept ${shots === 2 ? "both" : `all ${shots}`} to yourself. Post one, only your followers see it.`;
+      : `You've kept ${h.shots === 2 ? "both" : `all ${h.shots}`} to yourself. Post one, only your followers see it.`;
     out.push({
-      userId: id,
+      userId,
       title: "Nice photos. Probably.",
       body: `We wouldn't know. ${kept}`,
       route: { t: "darkroom" },
     });
   }
   return out;
+}
+
+/// The dry run's preview, with each person's username so the owner can read who it reaches.
+async function withUsernames(recipients: Recipient[]) {
+  const names = new Map<string, string>();
+  const ids = recipients.map((r) => r.userId);
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabase.from("users").select("id, username").in("id", ids.slice(i, i + 200));
+    for (const u of (data ?? []) as { id: string; username: string }[]) names.set(u.id, u.username);
+  }
+  return recipients.map((r) => ({
+    userId: r.userId, username: names.get(r.userId) ?? null, title: r.title, body: r.body,
+  }));
 }
 
 async function reachableUsers(): Promise<string[]> {
@@ -1208,7 +1229,7 @@ Deno.serve(async (req) => {
   if (!send) {
     return Response.json({
       dryRun: true, campaign: name, ledger, wouldSend: recipients.length, ...schedule,
-      preview: recipients.map((r) => ({ userId: r.userId, title: r.title, body: r.body })),
+      preview: await withUsernames(recipients),
       note: "Nothing was sent. Re-invoke with &send=true to actually send.",
     });
   }
