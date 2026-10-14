@@ -232,7 +232,7 @@ def cmd_assemble(a):
         if not code or not re.fullmatch(r"[A-Z0-9]{6}", code):
             continue
         body = "\n\n".join([f"Hi {g['first_name']},", g["note"], INVITE_LINE.format(code=code), SIGN_OFF,
-                             OPT_OUT_LINE + "\n" + postal])
+                             OPT_OUT_LINE, postal])
         subject = ("DRY RUN, not sent: " + SUBJECT) if a.dry else SUBJECT
         send.append({"n": g["n"], "to": g["email"], "subject": subject, "body": body})
     Path(a.out).write_text(json.dumps(send, indent=1), encoding="utf-8")
