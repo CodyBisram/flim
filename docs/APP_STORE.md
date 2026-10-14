@@ -136,6 +136,33 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.6.3), build 437, 2026-10-14
+
+Leads with the invite wall, since it is the first thing a new person meets, then Spotlight.
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    No code yet? Ask a friend for one right from the sign-in screen, or join the waitlist and we'll write to you when there's a spot.
+
+    When someone joins with your invite, you'll hear about it, and you can follow them back straight from the notification.
+
+    Spotlight is easier to keep up with. Each week's picks stay at the top of your feed until you've had a look, you get a reminder before the week closes, and if your frame is chosen you can share it to your story.
+
+    New here? FLIM nudges you to say hi to the friend who invited you.
+
+    The daily roundup of your friends' posts now arrives at noon your time, wherever you are.
+
+    New notification sound.
+
+    Fixes. Posting from the sort deck always posts the photo you picked. Signing out warns you if shots are still waiting to upload. A sign-in code you've typed survives losing signal. Plus smaller fixes across rolls, recaps, the camera and the feed.
+
+### Ship notes (internal, do NOT paste)
+
+Submit build 437 (c6a8309). Before submitting: add Name to the App Privacy label (the waitlist
+asks for a first name) and sign in once with the review account on 437. After submitting, start
+the review watch: `gh workflow run asc-watch.yml -f version=1.6.3`. When it is live:
+`update app_release_gate set latest_version = '1.6.3';`
+
 ## What's New (version 1.6.2), draft 2026-09-30, build TBD (421 expected)
 
 Submit after 1.6.1 is live. Leads with what a person can see (badges, offline, the iOS 26 look);
