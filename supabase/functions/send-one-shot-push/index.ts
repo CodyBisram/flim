@@ -113,6 +113,9 @@ const CAMPAIGNS: Record<string, Resolver> = {
   "waiting-to-sort": waitingToSortCohort,
   "first-post": firstPostCohort,
   "first-photo": firstPhotoCohort,
+  "already-downloaded": alreadyDownloadedCohort,
+  "deck-probably-good": deckProbablyGoodCohort,
+  "kept-to-yourself": keptToYourselfCohort,
   "invites-left": invitesLeftCohort,
   "invites-left-preview-a": invitesLeftPreviewA,
   "invites-left-preview-b": invitesLeftPreviewB,
@@ -934,6 +937,99 @@ async function fetchAllPages<T>(
 
 /// Everyone with a registered device. Registering a token is the opt-in: there is no separate
 /// preference column, so nobody else is reachable and nobody else should be considered.
+// ------------------------------------------------------------
+// 2026-10-14, three nudges sent together, copy picked by the owner. Nobody gets two: a person
+// with frames still in the deck hears about the deck, and the never-posted push only reaches
+// people who have sorted every frame and kept them all. The owner and App Review are left out.
+
+const NOT_NUDGED = new Set(["cody", "applereview"]);
+
+async function nudgeable(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from("users").select("id, username").in("id", ids);
+  if (error) throw new Error(`users lookup failed: ${error.message}`);
+  return (data as { id: string; username: string }[])
+    .filter((u) => !NOT_NUDGED.has(u.username)).map((u) => u.id);
+}
+
+/// The fourth touch for the never-shot cohort. The owner turned down every joke that asked why
+/// they have the app ("intrusive") and gave the direction: you already downloaded it, use it.
+async function alreadyDownloadedCohort(): Promise<Recipient[]> {
+  return (await nudgeable(await neverShot())).map((userId) => ({
+    userId,
+    title: "You already downloaded FLIM.",
+    body: "Might as well use it. Your first shot develops right away, and only you see it.",
+    route: { t: "camera" },
+  }));
+}
+
+/// Per person, the unsorted count and whether the oldest unsorted frame is past the stale floor.
+/// Counted one request per person, as `waitingToSortCohort` does, so the 1000-row cap never
+/// shortens a deck. An error leaves the person out rather than guessing.
+async function deckStates(ids: string[]): Promise<Map<string, { count: number; stale: boolean }>> {
+  const cutoff = Date.now() - STALE_DECK_HOURS * 3600_000;
+  const out = new Map<string, { count: number; stale: boolean }>();
+  for (const id of ids) {
+    const { data, count, error } = await supabase
+      .from("photos").select("taken_at", { count: "exact" })
+      .eq("user_id", id).eq("is_sorted", false)
+      .order("taken_at", { ascending: true }).limit(1);
+    if (error || count === null) continue;
+    const oldest = data?.length ? new Date((data[0] as { taken_at: string }).taken_at).getTime() : null;
+    out.set(id, { count, stale: count > 0 && oldest !== null && oldest <= cutoff });
+  }
+  return out;
+}
+
+/// Everyone whose deck has sat for two days or more, posters included.
+async function deckProbablyGoodCohort(): Promise<Recipient[]> {
+  const ids = await nudgeable(await reachableUsers());
+  const decks = await deckStates(ids);
+  const out: Recipient[] = [];
+  for (const [userId, deck] of decks) {
+    if (!deck.stale) continue;
+    const one = deck.count === 1;
+    out.push({
+      userId,
+      title: one ? "1 frame is waiting on you." : `${deck.count} frames are waiting on you.`,
+      body: one
+        ? "It developed days ago. It's probably good. Go see."
+        : "They developed days ago. Some of them are probably good. Go see.",
+      route: { t: "sortdeck" },
+    });
+  }
+  return out;
+}
+
+/// Shot, sorted everything, never posted. Anyone with unsorted frames is left to the deck push
+/// (stale) or left alone (still shooting), so the push never names a step they have not reached.
+async function keptToYourselfCohort(): Promise<Recipient[]> {
+  const ids = await nudgeable(await reachableUsers());
+  const decks = await deckStates(ids);
+  const out: Recipient[] = [];
+  for (const id of ids) {
+    const deck = decks.get(id);
+    if (!deck || deck.count > 0) continue;
+    const { count: shots, error: e1 } = await supabase
+      .from("photos").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (e1 || !shots) continue;
+    const { count: posts, error: e2 } = await supabase
+      .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
+    // An error is not a zero: a failed count must never turn into "never posted".
+    if (e2 || posts === null || posts > 0) continue;
+    const kept = shots === 1
+      ? "You've kept it to yourself. Post it, only your followers see it."
+      : `You've kept ${shots === 2 ? "both" : `all ${shots}`} to yourself. Post one, only your followers see it.`;
+    out.push({
+      userId: id,
+      title: "Nice photos. Probably.",
+      body: `We wouldn't know. ${kept}`,
+      route: { t: "darkroom" },
+    });
+  }
+  return out;
+}
+
 async function reachableUsers(): Promise<string[]> {
   const rows = await fetchAllPages<{ user_id: string }>(
     (from, to) =>
