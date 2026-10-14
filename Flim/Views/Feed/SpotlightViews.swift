@@ -552,6 +552,8 @@ struct SpotlightWeeksSheet: View {
                     .flimType(.sectionRule)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .lineLimit(1)
+                    // The rule line takes what the words leave, never half the row.
+                    .layoutPriority(1)
                 LinearGradient(colors: [FlimTheme.stroke, .clear], startPoint: .leading, endPoint: .trailing)
                     .frame(height: 1)
             }
@@ -656,7 +658,7 @@ struct SpotlightChosenCallout: View {
                     Haptics.tap()
                     onShare()
                 } label: {
-                    Label("Share it", systemImage: "square.and.arrow.up")
+                    Label("Share", systemImage: "square.and.arrow.up")
                         .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(Color.black)
                         .padding(.horizontal, 14)

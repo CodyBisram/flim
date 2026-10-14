@@ -57,4 +57,15 @@ final class ChromeScreenshotUITests: XCTestCase {
         sleep(2)
         keep("pager-night-header")
     }
+
+    /// The weeks sheet: every week's rule should read in full ("THE WEEK OF SEPTEMBER 28").
+    func testSpotlightWeeksSheet() {
+        let app = launch(["-spotlightPreviewDemo"])
+        let strip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Spotlight, the week of")).firstMatch
+        XCTAssertTrue(strip.waitForExistence(timeout: 15), "the Spotlight strip never appeared")
+        strip.tap()
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10), "the weeks sheet never opened")
+        sleep(2)
+        keep("spotlight-weeks-sheet")
+    }
 }
