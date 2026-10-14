@@ -1,8 +1,8 @@
 [Unit]
-Description=FLIM creator outreach Monday 08:00 ET
+Description=FLIM creator outreach daily 08:00 ET
 
 [Timer]
-OnCalendar=Mon *-*-* 08:00:00 America/New_York
+OnCalendar=*-*-* 08:00:00 America/New_York
 Persistent=true
 
 [Install]

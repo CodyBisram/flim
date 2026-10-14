@@ -17,7 +17,7 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 | 02:07 daily | Nightly review (the prompt below); on a night with no commits it deep-audits one module in rotation instead | Raspberry Pi | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
 | 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` (GitHub's cron is best-effort; it has run up to five hours late) | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
 | Mon 07:30 | Product memo | Raspberry Pi | `docs/memos/<date>.md`, committed to main. A "What the database says" section reads `public.memo_snapshot()` through the read-only role (below) |
-| Mon 08:00 | Creator outreach (below): five to ten people who published an email address, each note through the send gate twice, one email per passing person from the owner's Gmail with its own one-use invite code | Raspberry Pi (`flim-outreach.timer`) | `<date>.md` with every entry's Status, kept in the Pi's private archive `~/work/flim-ops/outreach/archive` (never committed: the repo is public and the file names people and their addresses); one push, "Outreach: N sent, M held, K earlier codes used." Added 2026-09-26, not installed until the owner steps below are done |
+| daily 08:00 | Creator outreach (below): up to three people who published an email address, each note through the send gate twice, one email per passing person from the owner's Gmail with its own one-use invite code | Raspberry Pi (`flim-outreach.timer`) | `<date>.md` with every entry's Status, kept in the Pi's private archive `~/work/flim-ops/outreach/archive` (never committed: the repo is public and the file names people and their addresses); one push, "Outreach: N sent, M held, K earlier codes used." Added 2026-09-26, not installed until the owner steps below are done |
 | Sun 06:00 | Ledger burn (the prompt below): up to five small open ledger rows a person can hit, fixed one commit each on `burn/<date>`, one pull request | Raspberry Pi | PR "Ledger burn, week of <Mon DD>"; CI verifies, the owner merges; `OPEN.md` is left for the nightly review to update once the merge lands. Never main. Added 2026-09-21 |
 | every 30 min | TestFlight build checklist: a green `ios-testflight` run on main plus ninety minutes is a processed build (the App Store Connect key on the Pi is Sales and Reports only, so `/v1/builds` is closed to it); the build number is read from the run's log | Raspberry Pi | one push per build, never repeated, with the "On device:" list from the newest done block in `docs/PENDING.md` that names the build's train, or "nothing owed on device for this build". Added 2026-09-21 |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
@@ -99,9 +99,9 @@ into a push to the owner within two minutes. A quiet day raises nothing. To run 
 FLIM_SERVICE_KEY=... bash scripts/nightly_numbers.sh
 ```
 
-## Weekly outreach (Monday 08:00, `flim-outreach.timer`)
+## Daily outreach (08:00, `flim-outreach.timer`)
 
-Decided by the owner 2026-09-25: every Monday the Pi researches five to ten new people, writes
+Decided by the owner 2026-09-25, made daily 2026-10-14: every day the Pi researches up to three new people, writes
 each a personal note, and sends it from the owner's Gmail with a one-use invite code, as long as
 the note passes the send gate. Email only, never a DM or a contact form. Unlike the retired social
 drafts, this ends in sent mail, so nothing waits on a person; the flip side is that a bad email
@@ -109,7 +109,7 @@ goes out unread, and the gate is the whole safety. The gate is written out, for 
 in `.claude/skills/creator-shortlist/SKILL.md` ("THE SEND GATE").
 
 `scripts/pi/outreach-weekly.sh` runs the repo's own copy (so a change pushed to main is what the
-next Monday runs) in five steps, each with only the tools it needs:
+next run uses) in five steps, each with only the tools it needs:
 
 1. **Preflight.** The database: `SET ROLE flim_outreach` and `outreach_codes_status()`, plus a
    check that the role can execute `mint_outreach_code`. Gmail: an SMTP login with the app
@@ -122,7 +122,7 @@ next Monday runs) in five steps, each with only the tools it needs:
    exclamation marks, emoji, sentence and word counts, the banned phrases, claims, first person and
    contractions, the address not in any earlier file, the links present in the batch file) and
    re-reads the page cited as publishing each address; the address has to be on it. Anything that
-   fails is held. Ten sends a week at most.
+   fails is held. Three sends a day at most.
 4. **Send.** One code per passing person, minted in shell through `mint_outreach_code(name)` (the
    name goes in as a psql variable), then `scripts/pi/outreach_send.py` hands the exact emails
    (each ends with the opt-out line and the postal address, which the law asks for) to Gmail's
@@ -185,7 +185,7 @@ connect as the same login, still cannot mint.
    `cp ~/work/flim/scripts/pi/flim-outreach.service ~/work/flim/scripts/pi/flim-outreach.timer ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now flim-outreach.timer && systemctl --user list-timers --no-pager | grep outreach`
 
 To stop it: `systemctl --user disable --now flim-outreach.timer`. The log for a run is
-`~/work/flim-ops/logs/outreach-<date>.log`; the Monday memo at 07:30 holds the clone first, and
+`~/work/flim-ops/logs/outreach-<date>.log`; on Mondays the memo at 07:30 holds the clone first, and
 this job waits up to fifteen minutes for it.
 
 ## Routine prompts

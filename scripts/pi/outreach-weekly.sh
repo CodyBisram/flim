@@ -1,11 +1,11 @@
 #!/bin/bash
-# Weekly creator outreach, Mondays 08:00 New York, on the Pi (flim-outreach.timer).
+# Daily creator outreach, 08:00 New York, on the Pi (flim-outreach.timer).
 #
 #   outreach-weekly.sh             research, gate, mint one code per person, draft, send, archive
 #   outreach-weekly.sh --dry-run   research, gate, every email sent to the owner only, subject
 #                                  starting DRY RUN; no code minted, nothing archived
 #
-# Five steps, each with only what it needs (docs/ROUTINES.md, "Weekly outreach"):
+# Five steps, each with only what it needs (docs/ROUTINES.md, "Daily outreach"):
 #   1. Preflight: the database (SET ROLE flim_outreach, outreach_codes_status) and Gmail (an
 #      SMTP login with the app password, nothing sent). Either failing stops the run before any
 #      research, any code or any email.
@@ -161,7 +161,7 @@ main() {
     | python3 "$HERE/outreach_gate.py" leakcheck --file "$FILE" \
     || LEAK=" The batch file carried an invite code or link; it is archived on the Pi only, check $ARCHIVE/$DATE.md."
   cp "$FILE" "$ARCHIVE/$DATE.md" \
-    || { alert "FLIM outreach: NOT archived" "Outreach: $SENT sent, $HELD held. Archiving the batch failed, so next week could list these people again; copy it by hand from $REPO/$FILE before the next job runs.$UNREAD" "warning"; OWN_CLONE=0; return 1; }
+    || { alert "FLIM outreach: NOT archived" "Outreach: $SENT sent, $HELD held. Archiving the batch failed, so the next run could list these people again; copy it by hand from $REPO/$FILE before the next job runs.$UNREAD" "warning"; OWN_CLONE=0; return 1; }
   alert "FLIM outreach" "Outreach: $SENT sent, $HELD held, $EARLIER_USED earlier codes used.$UNREAD$LEAK" "$([ -z "$UNREAD$LEAK" ] && echo email || echo warning)"
 }
 

@@ -1,6 +1,6 @@
 ---
 name: creator-shortlist
-description: Research a short list of film photographers, disposable-camera creators and small photo newsletters who might genuinely like FLIM, and write a personal note to each, as a markdown file. Run weekly by the Pi's outreach job, which emails only the entries that pass the send gate below; run by hand, it only writes the file. The skill itself never contacts anyone.
+description: Research a short list of film photographers, disposable-camera creators and small photo newsletters who might genuinely like FLIM, and write a personal note to each, as a markdown file. Run daily by the Pi's outreach job, which emails only the entries that pass the send gate below; run by hand, it only writes the file. The skill itself never contacts anyone.
 ---
 
 # FLIM creator and press shortlist
@@ -10,8 +10,8 @@ genuine reason to care about FLIM, and a personal note written for each. The ski
 file and nothing else. It never sends, never submits a form, never messages, never follows,
 never scrapes.
 
-Sending happens in exactly one place: the weekly outreach job on the Pi
-(`scripts/pi/outreach-weekly.sh`, docs/ROUTINES.md), every Monday at 08:00 New York. That job
+Sending happens in exactly one place: the daily outreach job on the Pi
+(`scripts/pi/outreach-weekly.sh`, docs/ROUTINES.md), every day at 08:00 New York. That job
 emails an entry only after the note passes THE SEND GATE below, twice (once as written here, once
 by a program that re-checks every rule a program can check), only to the email address the person
 published, one message per person, never a follow-up. Run by hand, this skill writes the file and
@@ -19,7 +19,7 @@ stops; the owner sends anything he wants to by hand.
 
 It exists because personalisation at human volume works and automation at spam volume does not.
 FLIM is invite-only and its whole brand is "no strangers". A note from the person who built it,
-to someone whose work he actually looked at, is on brand. A thousand of them is not. Ten a week
+to someone whose work he actually looked at, is on brand. A thousand of them is not. Three a day
 is the ceiling, and a bad email goes out unread: the gate is the whole safety.
 
 ## Where the list goes
@@ -27,17 +27,17 @@ is the ceiling, and a bad email goes out unread: the gate is the whole safety.
 `social/outreach/YYYY-MM-DD.md`, dated the day it is written (New York). Read every earlier file
 in `social/outreach/` first: anyone already listed in any of them, under any status, is never
 listed again. That covers "contacted", "replied", "declined", "no", "held" and "not contacted"
-alike: someone the owner chose not to write to last week is not re-offered this week.
+alike: someone the owner chose not to write to on an earlier day is not re-offered.
 
 The folder is git-ignored and the files are never committed: the repo is public and every entry
-names a person next to the address they published. The weekly job keeps them in the Pi's private
+names a person next to the address they published. The daily job keeps them in the Pi's private
 archive (`~/work/flim-ops/outreach/archive`) and copies them in here for the length of a run. Run
 by hand, the file stays on this machine.
 
 ## Who belongs on it
 
-Five to ten entries, no more. Quality over count; a batch of five good ones is a good batch, and
-a batch of three honest ones beats seven padded ones.
+One to three entries, no more. Quality over count; one good entry is a good day, none is a fine
+day, and one honest entry beats three padded ones.
 
 Look for, in roughly this order:
 
@@ -116,7 +116,7 @@ Cody, who makes FLIM
 ## THE SEND GATE
 
 Every note is checked against every rule here before anything is sent. A note that fails any
-one is held: it is not sent, and its entry's Status says "held: <reason>". The weekly job checks
+one is held: it is not sent, and its entry's Status says "held: <reason>". The daily job checks
 the rules marked (checked) again with a program (`scripts/pi/outreach_gate.py`), independently of
 whoever wrote the note; the rest are judgment and are the writer's to apply honestly.
 
@@ -191,13 +191,13 @@ next batch reads all of it.
 
 ## Hard rules
 
-- The skill writes the one file (and, in the weekly job, the plan the job reads) and nothing
+- The skill writes the one file (and, in the daily job, the plan the job reads) and nothing
   else. It never sends, drafts, messages, follows, likes, comments or submits a form.
-- Sending is done only by the weekly job, only after THE SEND GATE passes, only to the published
-  email, one message per person, never a follow-up, never more than ten a week.
+- Sending is done only by the daily job, only after THE SEND GATE passes, only to the published
+  email, one message per person, never a follow-up, never more than three a day.
 - No personal data beyond what the person published about themselves for contact.
 - No invite codes and no invite links in the file, ever. The repo is public. The job mints one
   code per person at send time and the name to code mapping lives only in that code's note in
   the database.
-- If asked to contact anyone by DM or contact form, or to send outside the weekly job, decline
+- If asked to contact anyone by DM or contact form, or to send outside the daily job, decline
   and point back to this file.

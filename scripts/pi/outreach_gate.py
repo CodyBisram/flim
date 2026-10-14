@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The weekly outreach job's mechanical gate (scripts/pi/outreach-weekly.sh).
+"""The daily outreach job's mechanical gate (scripts/pi/outreach-weekly.sh).
 
 The model writes the batch and judges its own notes first (the gate in
 .claude/skills/creator-shortlist/SKILL.md). This file re-checks every rule a program can check,
@@ -27,7 +27,7 @@ INVITE_LINE = "Here's yours if you want it: https://flim-app.com/i/{code} (code 
 # The two lines US law (CAN-SPAM) asks of every commercial email: a way to say no, and a postal
 # address. True as written: nobody already in an outreach file is ever emailed again.
 OPT_OUT_LINE = "If you'd rather not hear from me again, reply and say so. Either way, this is the only email I'll send you."
-MAX_SENDS = 10
+MAX_SENDS = 3  # per run, and the job runs once a day
 MAX_WORDS = 89  # "under 90 words"
 
 # Phrases that read as written by a model, or as a pitch. Matched case-insensitively on the
@@ -206,7 +206,7 @@ def cmd_gate(a):
             except Exception as ex:  # noqa: BLE001 - any fetch failure is a hold, never a send
                 reasons.append(f"could not re-read the page that publishes the address ({type(ex).__name__})")
         if not reasons and passing >= MAX_SENDS:
-            reasons.append("over the weekly cap of 10")
+            reasons.append(f"over the daily cap of {MAX_SENDS}")
         ok = not reasons
         passing += ok
         out.append({"n": e.get("n"), "name": name, "first_name": (e.get("first_name") or "").strip(),
@@ -218,7 +218,7 @@ def cmd_gate(a):
 
 def cmd_assemble(a):
     # The address comes from the Pi's own settings, never the repo (it is public). No address,
-    # no emails: the weekly script stops before minting, and this refuses as a second guard.
+    # no emails: the daily script stops before minting, and this refuses as a second guard.
     postal = " ".join((a.postal or "").split())
     if len(postal) < 10:
         sys.exit("assemble: no postal address (FLIM_OUTREACH_POSTAL on the Pi); nothing assembled")

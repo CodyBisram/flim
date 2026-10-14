@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sends the weekly outreach emails straight through Gmail's SMTP server.
+"""Sends the daily outreach emails straight through Gmail's SMTP server.
 
     outreach_send.py --check                                  log in and out, send nothing
     outreach_send.py --send send.json --out result.json       send each email once
