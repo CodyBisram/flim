@@ -964,11 +964,18 @@ async function alreadyDownloadedCohort(): Promise<Recipient[]> {
   }));
 }
 
-/// Per person: frames shot, frames still unsorted, whether the oldest unsorted one is past the
+/// Per person: frames kept, frames still unsorted, whether the oldest unsorted one is past the
 /// stale floor, and posts. Counted one request at a time, as `waitingToSortCohort` does, so the
 /// 1000-row cap never shortens anything. Any failed count leaves the person out rather than
 /// guessing: an error is never a zero.
-type Habits = { shots: number; unsorted: number; stale: boolean; posts: number };
+///
+/// `kept` is PERSONAL frames sorted out of the deck (`roll_id IS NULL AND is_sorted`), never every
+/// photo row. A roll contribution lands sorted without ever passing the deck, and its roll's
+/// members have already seen it, so it is not a frame anyone kept to themselves: counting it once
+/// told someone with nine roll frames and one unsorted personal frame "You've kept all 10", and
+/// kept them out of the deck push their one frame was waiting for. A trashed frame is deleted, so
+/// what is left sorted is exactly what was archived or posted.
+type Habits = { kept: number; unsorted: number; stale: boolean; posts: number };
 
 async function habitsOf(ids: string[]): Promise<Map<string, Habits>> {
   const cutoff = Date.now() - STALE_DECK_HOURS * 3600_000;
@@ -979,14 +986,15 @@ async function habitsOf(ids: string[]): Promise<Map<string, Habits>> {
       .eq("user_id", id).eq("is_sorted", false)
       .order("taken_at", { ascending: true }).limit(1);
     if (e1 || unsorted === null) continue;
-    const { count: shots, error: e2 } = await supabase
-      .from("photos").select("id", { count: "exact", head: true }).eq("user_id", id);
-    if (e2 || shots === null) continue;
+    const { count: kept, error: e2 } = await supabase
+      .from("photos").select("id", { count: "exact", head: true })
+      .eq("user_id", id).is("roll_id", null).eq("is_sorted", true);
+    if (e2 || kept === null) continue;
     const { count: posts, error: e3 } = await supabase
       .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
     if (e3 || posts === null) continue;
     const oldest = data?.length ? new Date((data[0] as { taken_at: string }).taken_at).getTime() : null;
-    out.set(id, { shots, unsorted, stale: unsorted > 0 && oldest !== null && oldest <= cutoff, posts });
+    out.set(id, { kept, unsorted, stale: unsorted > 0 && oldest !== null && oldest <= cutoff, posts });
   }
   return out;
 }
@@ -996,16 +1004,25 @@ async function habitsOf(ids: string[]): Promise<Map<string, Habits>> {
 /// the nine. Someone whose every frame is still unsorted has kept nothing yet, and is left to
 /// the deck push.
 function keepsToThemselves(h: Habits): boolean {
-  return h.posts === 0 && h.shots > h.unsorted;
+  return h.posts === 0 && h.kept > 0;
 }
+
+/// The two campaigns below are sent as separate runs with separate claim keys, and one person's
+/// habits can change between them (a frame sorted, a first post), which would move them to the
+/// other side of `keepsToThemselves` after they had already heard the first push. So each one also
+/// leaves out everyone the other has claimed: "nobody gets two" holds across runs, not only
+/// inside one reading of `habitsOf`.
+const DECK_PUSH = "deck-probably-good";
+const KEPT_PUSH = "kept-to-yourself";
 
 /// Everyone whose deck has sat for two days or more, posters included, except the people the
 /// never-posted push is for.
 async function deckProbablyGoodCohort(): Promise<Recipient[]> {
   const habits = await habitsOf(await nudgeable(await reachableUsers()));
+  const heardOther = await claimedIn(KEPT_PUSH);
   const out: Recipient[] = [];
   for (const [userId, h] of habits) {
-    if (!h.stale || keepsToThemselves(h)) continue;
+    if (!h.stale || keepsToThemselves(h) || heardOther.has(userId)) continue;
     const one = h.unsorted === 1;
     out.push({
       userId,
@@ -1022,12 +1039,13 @@ async function deckProbablyGoodCohort(): Promise<Recipient[]> {
 /// Shot, kept at least one frame, never posted. Lands in the Darkroom, where the kept frames are.
 async function keptToYourselfCohort(): Promise<Recipient[]> {
   const habits = await habitsOf(await nudgeable(await reachableUsers()));
+  const heardOther = await claimedIn(DECK_PUSH);
   const out: Recipient[] = [];
   for (const [userId, h] of habits) {
-    if (!keepsToThemselves(h)) continue;
-    const kept = h.shots === 1
+    if (!keepsToThemselves(h) || heardOther.has(userId)) continue;
+    const kept = h.kept === 1
       ? "You've kept it to yourself. Post it, only your followers see it."
-      : `You've kept ${h.shots === 2 ? "both" : `all ${h.shots}`} to yourself. Post one, only your followers see it.`;
+      : `You've kept ${h.kept === 2 ? "both" : `all ${h.kept}`} to yourself. Post one, only your followers see it.`;
     out.push({
       userId,
       title: "Nice photos. Probably.",
@@ -1063,14 +1081,20 @@ async function reachableUsers(): Promise<string[]> {
 /// Drops anyone this campaign has already claimed, on every run including the dry one, so the dry
 /// run's count is the number that would ACTUALLY be sent rather than the cohort size.
 async function unclaimed(campaign: string, people: Recipient[]): Promise<Recipient[]> {
+  const already = await claimedIn(campaign);
+  return people.filter((p) => !already.has(p.userId));
+}
+
+/// Everyone a campaign has claimed. Throws on a failed read, through `fetchAllPages`: an empty set
+/// here would read as "nobody has had it yet" and send again.
+async function claimedIn(campaign: string): Promise<Set<string>> {
   const rows = await fetchAllPages<{ user_id: string }>(
     (from, to) =>
       supabase.from("one_shot_push").select("user_id").eq("campaign", campaign)
         .order("user_id", { ascending: true }).range(from, to),
     "one_shot_push",
   );
-  const already = new Set(rows.map((r) => r.user_id));
-  return people.filter((p) => !already.has(p.userId));
+  return new Set(rows.map((r) => r.user_id));
 }
 
 // ------------------------------------------------------------
