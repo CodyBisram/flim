@@ -50,7 +50,9 @@ When the invite list opens, the pair below is worth revisiting. Its real gain is
 Both fields are metadata, editable on any submission, so this costs nothing to defer.
 
 ## Promotional text (170 char max, editable anytime without review)
-> Chapters: on the first of the month, the month you shared arrives on your page. It plays like a reveal and ends on the month in numbers. Every past month is there. (162 chars, for the 1.5.1 window)
+> Start a roll for the birthday, the trip, the night out. Everyone shoots into it, nobody sees a frame, and twelve hours later the whole roll reveals at once. (156 chars, from 2026-10-15)
+>
+> Superseded, 1.5.1 window: Chapters: on the first of the month, the month you shared arrives on your page. It plays like a reveal and ends on the month in numbers. Every past month is there. (162 chars, for the 1.5.1 window)
 >
 > Superseded, 1.5 window: The reveal lost its timer: page a developed roll at your own speed. Invites are finite now, three each, and you earn one back when the friend you brought in shoots theirs. (169 chars, for the 1.5 window)
 >
@@ -62,13 +64,15 @@ Both fields are metadata, editable on any submission, so this costs nothing to d
 
 ## Description
 
-Updated 2026-09-13 for 1.5.3 (two sentences on follow-up rolls and roll-code sign-up, one accessibility feature line). 4000 char max.
+Updated 2026-10-15 for 1.6.3: the opening now leads with shared rolls and says up front that FLIM is invite-only (see "Why the opening changed for 1.6.3" below). Previously updated 2026-09-13 for 1.5.3. 4000 char max.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.**
 
-    FLIM is a disposable camera for your closest friends.
+    FLIM is a disposable camera you share with your friends.
 
-    Point, shoot, and let it develop, just like the real thing. Personal shots land in your Darkroom right away. Shots into a shared roll stay hidden until the whole roll reveals at once, twelve hours after it started. Nobody sees them early, not even the person who took them. The waiting is what makes the reveal worth showing up for.
+    Start a roll for the birthday, the trip, the night out, and everyone shoots into it. Nobody sees a frame until the whole roll reveals at once, twelve hours after it started, not even the person who took it. The waiting is what makes the reveal worth showing up for. Shots you take for yourself land in your Darkroom right away.
+
+    FLIM is invite-only. You join with a code from a friend, so everyone you meet here is someone a friend chose to let in.
 
     Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, fine grain where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone. Share a photo and it goes out with the orange date stamp burned in, as a print, a story, or the full frame. Every roll you are in is yours to save, all of it.
 
@@ -94,6 +98,22 @@ Updated 2026-09-13 for 1.5.3 (two sentences on follow-up rolls and roll-code sig
     • Dynamic Type up to the largest accessibility sizes, VoiceOver labels throughout
 
     You need an invite to join. If you do not have a code yet, ask the friend who sent you here.
+
+### Why the opening changed for 1.6.3
+
+Two changes, made 2026-10-15 after an outside growth review (Superapp) read the listing the way a
+stranger does.
+
+The shared roll now opens the description. Before, the opening led with the personal Darkroom and
+the rolls paragraph came third, yet the roll is the thing no other camera app does, and it is the
+benefit the review found the App Store's written reviews support. Birthdays, trips and
+nights out name the occasions people start a roll for.
+
+Invite-only moved up from the bottom, which reverses the 1.2 cut below on purpose. That cut was about
+a call to action ("Grab an invite") taking the best spot on the page. This is different: App Store
+search brought 10 of 30 first-time downloads between 2026-09-14 and 2026-10-09 (docs/asc), and
+every one of those people needs an invite before they can sign in. Saying so before they tap Get is
+cheaper than losing them after. The closing line ("You need an invite to join") stays.
 
 ### Why this differs from the 1.2 description
 
