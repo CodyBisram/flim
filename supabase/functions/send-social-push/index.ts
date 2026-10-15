@@ -288,10 +288,15 @@ const INVITE_JOIN_WINDOW_MS = 72 * 3600_000;
 
 // Whether `followerId`'s follow of `followingId` is the follow a new account makes of whoever
 // invited it (UsernameView.save): the account is under INVITE_JOIN_WINDOW_MS old and was let in
-// by `followingId`'s personal code, which redeem_invite records on its allowed_emails row as
-// 'invited_by:<uuid>'. A cohort or roll code names no person and never matches. With the answer
-// comes whether the inviter already follows them back, which decides if there is anything to
-// offer. false is "an ordinary follow"; null is "a read failed", never read as either.
+// by `followingId`'s PERSONAL code. redeem_invite writes the same 'invited_by:<uuid>' note for a
+// personal, a campaign and a roll code (a campaign names the owner's account, a roll code its
+// creator), so the note alone cannot tell them apart; the row's `via` can. Only via 'personal'
+// counts. A NULL via (rows written before the 2026-09-29 migration added the column, the
+// owner's own rows, approved invite requests, anything allowlisted another way such as
+// 'open door') never matches, and neither does 'campaign' or 'roll': those signups follow their
+// inviter like anyone else and get the ordinary follow push. With the answer comes whether the
+// inviter already follows them back, which decides if there is anything to offer. false is "an
+// ordinary follow"; null is "a read failed", never read as either.
 async function inviteJoin(followerId: string, followingId: string): Promise<{ followsBack: boolean } | false | null> {
   const { data: user, error: userErr } = await supabase
     .from("users").select("email, created_at").eq("id", followerId).maybeSingle();
@@ -303,12 +308,13 @@ async function inviteJoin(followerId: string, followingId: string): Promise<{ fo
   if (!u?.email || !u.created_at) return false;
   if (Date.now() - new Date(u.created_at).getTime() > INVITE_JOIN_WINDOW_MS) return false;
   const { data: admitted, error: admittedErr } = await supabase
-    .from("allowed_emails").select("note").eq("email", u.email.toLowerCase()).maybeSingle();
+    .from("allowed_emails").select("note, via").eq("email", u.email.toLowerCase()).maybeSingle();
   if (admittedErr) {
     console.warn(JSON.stringify({ at: "invite_join_note_read_failed", error: admittedErr.message }));
     return null;
   }
-  if ((admitted as { note: string | null } | null)?.note !== `invited_by:${followingId}`) return false;
+  const row = admitted as { note: string | null; via: string | null } | null;
+  if (row?.via !== "personal" || row.note !== `invited_by:${followingId}`) return false;
   const { data: back, error: backErr } = await supabase
     .from("follows").select("follower_id").eq("follower_id", followingId).eq("following_id", followerId).maybeSingle();
   if (backErr) {
