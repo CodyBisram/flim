@@ -312,37 +312,44 @@ struct SpotlightClosingHost: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// A strip is holding the top of the feed: one Spotlight element at the top at a time.
     let isHidden: Bool
+    /// What this row loaded, held by the feed: this view's own state goes whenever the feed's
+    /// LazyVStack scrolls it out of range. See `SpotlightClosingStore`.
+    let store: SpotlightClosingStore
 
-    @State private var session: SortDeckSession?
-    @State private var prepared: SpotlightSessionOffer?
     @State private var presented: SpotlightSessionOffer?
     @State private var dismissedWeek: String?
 
     private var entry: OwnSpotlightEntry? { feed.currentSpotlightEntry }
 
     /// Reloads when the week, what is up, or whether the row is due changes (the day it starts,
-    /// a put-up from anywhere), and on an account switch.
+    /// a put-up from anywhere), on an account switch, when a strip stops holding the top, and
+    /// after an explicit feed reload. A row scrolled back into range has none of these change,
+    /// and reuses what the store holds.
     private struct LoadKey: Equatable {
         let userId: UUID?
         let weekKey: String?
         let postId: UUID?
         let isDue: Bool
+        let isHidden: Bool
+        let generation: Int
     }
 
     private var loadKey: LoadKey {
         LoadKey(userId: auth.currentUser?.id, weekKey: entry?.weekKey, postId: entry?.postId,
-                isDue: SpotlightClosingRow.isDue(entry: entry))
+                isDue: SpotlightClosingRow.isDue(entry: entry), isHidden: isHidden,
+                generation: store.generation)
     }
 
     /// The row, when it shows: due, not dismissed for this week, and at least one frame from
     /// this week that can go up. Nothing eligible shows nothing; the row never nags.
     private var row: (entry: OwnSpotlightEntry, session: SortDeckSession, offer: SpotlightSessionOffer,
                       frames: [SpotlightSessionFrame])? {
-        guard !isHidden, let entry, SpotlightClosingRow.isDue(entry: entry), dismissedWeek != entry.weekKey,
-              !SpotlightClosingDismissal.isDismissed(entry.weekKey, userId: auth.currentUser?.id),
-              let session, let prepared, prepared.weekKey == entry.weekKey else { return nil }
-        let frames = session.offered(prepared)
-        return frames.isEmpty ? nil : (entry, session, prepared, frames)
+        guard !isHidden, let uid = auth.currentUser?.id, let entry, SpotlightClosingRow.isDue(entry: entry),
+              dismissedWeek != entry.weekKey,
+              !SpotlightClosingDismissal.isDismissed(entry.weekKey, userId: uid),
+              let loaded = store.loaded(for: .init(userId: uid, weekKey: entry.weekKey)) else { return nil }
+        let frames = loaded.session.offered(loaded.offer)
+        return frames.isEmpty ? nil : (entry, loaded.session, loaded.offer, frames)
     }
 
     var body: some View {
@@ -366,7 +373,7 @@ struct SpotlightClosingHost: View {
         }
         .task(id: loadKey) { await load() }
         .sheet(item: $presented) { offer in
-            if let session {
+            if let session = store.session {
                 SpotlightSessionSheet(
                     offer: offer, session: session,
                     accessibilitySize: typeSize.isAccessibilitySize,
@@ -379,18 +386,32 @@ struct SpotlightClosingHost: View {
     }
 
     private func load() async {
-        guard let uid = auth.currentUser?.id, let entry, SpotlightClosingRow.isDue(entry: entry),
-              !SpotlightClosingDismissal.isDismissed(entry.weekKey, userId: uid) else {
-            if presented == nil { session = nil; prepared = nil }
+        // A strip holds the place: the row cannot show, so nothing is read for it. What the
+        // store holds stays, for when the strip gives the place back.
+        guard !isHidden else { return }
+        guard let uid = auth.currentUser?.id, let cached = entry, SpotlightClosingRow.isDue(entry: cached),
+              !SpotlightClosingDismissal.isDismissed(cached.weekKey, userId: uid) else {
+            if presented == nil { store.clear() }
             return
         }
+        let key = SpotlightClosingStore.Key(userId: uid, weekKey: cached.weekKey)
+        guard store.needsLoad(key) else { return }
+        let generation = store.generation
         let epoch = AccountEpoch.current
+        // Read again on every load, as the sort deck does on every open: the cached entry is
+        // only as fresh as the last feed reload, and a frame put up from another phone since
+        // means nothing is due here. A changed entry restarts this task through `loadKey`.
+        await feed.refreshOwnSpotlightEntry()
+        guard !Task.isCancelled, AccountEpoch.isCurrent(epoch), let entry,
+              SpotlightClosingRow.isDue(entry: entry), entry.weekKey == key.weekKey else { return }
         guard let loaded = await feed.spotlightWeekSession(entry: entry, userId: uid),
-              !Task.isCancelled, AccountEpoch.isCurrent(epoch) else { return }
+              AccountEpoch.isCurrent(epoch) else { return }
         // Never swapped under an open picker: it reads the session it was opened with.
         guard presented == nil else { return }
-        session = loaded
-        prepared = loaded.offer(entry: entry, viewerId: uid, ledger: SpotlightSessionLedger())
+        // Kept even if this task was cancelled meanwhile (the row scrolled out of range): it is
+        // filed under its account and week, so it is only ever shown for them.
+        store.keep(loaded, offer: loaded.offer(entry: entry, viewerId: uid, ledger: SpotlightSessionLedger()),
+                   for: key, generation: generation)
     }
 }
 

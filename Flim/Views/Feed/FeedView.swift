@@ -125,6 +125,9 @@ struct FeedView: View {
     @State private var spotlightRoute: SpotlightPostRoute?
     /// In-flight guard for a strip frame being fetched before it opens.
     @State private var openingSpotlightFrame: UUID?
+    /// The closing row's loaded week, held here because the row's own state goes whenever the
+    /// LazyVStack scrolls it out of range. See `SpotlightClosingStore`.
+    @State private var spotlightClosing = SpotlightClosingStore()
 
     /// The strip's weeks this viewer may see: blocks filter frames, and a week with nothing
     /// left is hidden.
@@ -686,7 +689,7 @@ struct FeedView: View {
                     }
                     // Spotlight closing this week, for someone who can still put a frame up.
                     // Gives way to a strip holding the top: one Spotlight element there at a time.
-                    SpotlightClosingHost(isHidden: spotlightStripHoldsTop)
+                    SpotlightClosingHost(isHidden: spotlightStripHoldsTop, store: spotlightClosing)
 
                     // A Spotlight strip placed above everything (an unseen one lifted over a
                     // caught-up block at the top, or the only thing when no unit is older).
@@ -994,7 +997,12 @@ struct FeedView: View {
         await feed.loadFeed(currentUserId: uid)
         await spotlightStrip
         await ownSpotlightEntry
-        if AccountEpoch.isCurrent(epoch) { seenSpotlight = SpotlightSeenMark.seen(userId: uid) }
+        if AccountEpoch.isCurrent(epoch) {
+            seenSpotlight = SpotlightSeenMark.seen(userId: uid)
+            // The closing row's frames are read again after an explicit reload, so a frame
+            // posted since can reach it; what it shows stays until the new read lands.
+            spotlightClosing.invalidate()
+        }
         // A stale reload (the account switched while `loadFeed` was in flight) must not write
         // the two flags that say the load finished: the reload for the new account that
         // follows would find `didLoad` already true and never restart its own loading state.

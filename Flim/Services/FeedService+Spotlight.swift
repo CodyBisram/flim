@@ -142,14 +142,24 @@ extension FeedService {
     /// still on the wire, nor with a read that began before a write did: the write owns the
     /// menu until it answers.
     func refreshOwnSpotlightEntry() async {
+        _ = await readOwnSpotlightEntry()
+    }
+
+    /// `refreshOwnSpotlightEntry`, handing back what the server said this time: the entry read,
+    /// whether or not the guards above let it land in the cache, or nil for a failed read or an
+    /// account that changed under it. For a check that must compare against the server, never
+    /// against the cache it is checking.
+    func readOwnSpotlightEntry() async -> OwnSpotlightEntry? {
         spotlightEntryGeneration += 1
         let generation = spotlightEntryGeneration
         let epoch = AccountEpoch.current
         let writeGeneration = spotlightWriteGeneration
-        guard let entry = await fetchOwnSpotlightEntry() else { return }
-        guard AccountEpoch.isCurrent(epoch), generation == spotlightEntryGeneration,
-              writeGeneration == spotlightWriteGeneration, !spotlightWriteInFlight else { return }
-        ownSpotlightEntry = entry
+        guard let entry = await fetchOwnSpotlightEntry(), AccountEpoch.isCurrent(epoch) else { return nil }
+        if generation == spotlightEntryGeneration, writeGeneration == spotlightWriteGeneration,
+           !spotlightWriteInFlight {
+            ownSpotlightEntry = entry
+        }
+        return entry
     }
 
     /// The entry and the account's own shelf (which is also what marks its published frames
@@ -428,32 +438,29 @@ extension FeedService {
     /// of a sort, the feed's closing row). The sheet's button says put up or swap; when the
     /// frame up this week has changed since it was offered, nothing is sent, the session is
     /// told what the button should now say, and the sheet waits for a fresh tap.
+    ///
+    /// Checked against a fresh read on every tap, never the cached entry: the offer was built
+    /// from that cache, so comparing against it could never disagree, and a frame put up from
+    /// another phone was swapped out with no swap ever shown.
     func putUpFromSessionSheet(_ post: Post, offer: SpotlightSessionOffer, session: SortDeckSession,
                                userId: UUID?) async -> SpotlightPutUpOutcome {
-        let shownSwap = { if case .swap = session.kind(offer) { return true } else { return false } }()
-        if currentSpotlightEntry.map({ ($0.postId != nil) != shownSwap }) ?? true {
-            await refreshOwnSpotlightEntry()
-            guard let fresh = currentSpotlightEntry else {
-                Haptics.error()
-                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
-            }
+        let fresh = await readOwnSpotlightEntry()
+        switch SpotlightSessionRecheck.decide(shown: session.kind(offer), fresh: fresh) {
+        case .send:
+            break
+        case .unknown:
+            Haptics.error()
+            return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
+        case .covered:
             // An account that can no longer put up (a covered window began) is not a connection
             // problem: end the sheet the way the server's own "covered" refusal would.
-            guard fresh.canPutUp else {
-                Haptics.error()
-                return .refused(message: SpotlightRefusal.message(refusal: "covered", action: .putUp)
-                                    ?? SpotlightRefusal.cantGoUp, refusal: "covered")
-            }
-            guard let kind = SpotlightSessionOffer.kind(for: fresh) else {
-                Haptics.error()
-                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
-            }
-            let freshSwap = { if case .swap = kind { return true } else { return false } }()
-            if freshSwap != shownSwap {
-                Haptics.warning()
-                session.kindOverride = kind
-                return .frameUpChanged
-            }
+            Haptics.error()
+            return .refused(message: SpotlightRefusal.message(refusal: "covered", action: .putUp)
+                                ?? SpotlightRefusal.cantGoUp, refusal: "covered")
+        case .changed(let kind):
+            Haptics.warning()
+            session.kindOverride = kind
+            return .frameUpChanged
         }
         if offer.firstTime, let userId { SpotlightFirstTime.markSeen(userId: userId) }
         return await putUpForSpotlightOutcome(post)

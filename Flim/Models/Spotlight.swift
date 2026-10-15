@@ -715,6 +715,32 @@ struct SpotlightSessionOffer: Identifiable, Equatable {
     }
 }
 
+/// What a session sheet's tap does, against this week's entry as the server tells it at the
+/// tap. Never decided against the cached entry: the offer was built from that cache, so the two
+/// always agreed, and a frame put up from another phone was swapped out with no swap shown.
+enum SpotlightSessionRecheck: Equatable {
+    /// The frame up is as the button said: send.
+    case send
+    /// Nothing known (a failed read, the week closed): nothing is sent, and the tap can be retried.
+    case unknown
+    /// The account can no longer put up (a covered window began).
+    case covered
+    /// The frame up changed since the offer: the button should now say this.
+    case changed(SpotlightSessionOffer.Kind)
+
+    static func decide(shown: SpotlightSessionOffer.Kind, fresh: OwnSpotlightEntry?, now: Date = .now,
+                       calendar: Calendar = .current) -> SpotlightSessionRecheck {
+        guard let fresh, now < fresh.weekClosesAt else { return .unknown }
+        guard fresh.canPutUp else { return .covered }
+        guard let kind = SpotlightSessionOffer.kind(for: fresh, now: now, calendar: calendar) else { return .unknown }
+        return isSwap(kind) == isSwap(shown) ? .send : .changed(kind)
+    }
+
+    private static func isSwap(_ kind: SpotlightSessionOffer.Kind) -> Bool {
+        if case .swap = kind { return true } else { return false }
+    }
+}
+
 /// What the session sheet has already asked this week, per account, so it never nags: which
 /// posts it showed (each is offered once) and how often "Not now" (or a pull down) answered it.
 /// Starts over when the week does. Injectable store, like `SpotlightFirstTime`. A ledger saved
@@ -1175,5 +1201,54 @@ enum SpotlightClosingDismissal {
     static func dismiss(_ weekKey: String, userId: UUID?) {
         guard let userId else { return }
         store.set(weekKey, forKey: key(userId: userId))
+    }
+}
+
+/// The feed's closing row's loaded week: this week's own frames and the offer made from them.
+/// Owned by the feed, not the row: the row sits in the feed's LazyVStack, which drops a child's
+/// state when it scrolls out of range, and every return re-ran three reads and the signing and
+/// popped the row back in. Keyed by account and week, so a row that comes back reuses what it
+/// loaded, and nothing loaded for one account or week is shown for another. An explicit feed
+/// reload marks it stale (`invalidate`) without dropping what shows until the next load lands.
+@Observable @MainActor
+final class SpotlightClosingStore {
+    struct Key: Equatable {
+        let userId: UUID
+        let weekKey: String
+    }
+
+    /// Bumped by `invalidate`; a load captures it as it starts and hands it back to `keep`.
+    private(set) var generation = 0
+    private(set) var key: Key?
+    private(set) var session: SortDeckSession?
+    /// nil with a session kept: loaded, and nothing this week can go up.
+    private(set) var offer: SpotlightSessionOffer?
+    private var keptGeneration = -1
+
+    /// Whether `key` has to be read: never loaded for it, or a reload has happened since.
+    func needsLoad(_ key: Key) -> Bool {
+        self.key != key || keptGeneration != generation
+    }
+
+    /// What was loaded for `key`, while there is an offer to show.
+    func loaded(for key: Key) -> (session: SortDeckSession, offer: SpotlightSessionOffer)? {
+        guard self.key == key, let session, let offer, offer.weekKey == key.weekKey else { return nil }
+        return (session, offer)
+    }
+
+    func keep(_ session: SortDeckSession, offer: SpotlightSessionOffer?, for key: Key, generation: Int) {
+        self.key = key
+        self.session = session
+        self.offer = offer
+        keptGeneration = generation
+    }
+
+    func invalidate() { generation += 1 }
+
+    func clear() {
+        key = nil
+        session = nil
+        offer = nil
+        keptGeneration = -1
     }
 }

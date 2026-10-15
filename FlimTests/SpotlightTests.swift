@@ -1450,4 +1450,92 @@ struct SpotlightTests {
         #expect(ContinuousClock.now - start < .seconds(2))
         slow.cancel()
     }
+
+    // MARK: - The tap's re-check, against the server's entry
+
+    @Test("a frame put up from another phone since the offer turns a put-up into a swap, never a silent send")
+    func recheckFrameUpElsewhere() {
+        let upElsewhere = entry(postId: UUID(), postCreatedAt: date(9, 22, 14))
+        #expect(SpotlightSessionRecheck.decide(shown: .putUp, fresh: upElsewhere, now: sessionNow, calendar: newYork)
+                == .changed(.swap(fromDay: "Tuesday")))
+    }
+
+    @Test("a frame taken down elsewhere turns a swap back into a put-up")
+    func recheckFrameTakenDownElsewhere() {
+        #expect(SpotlightSessionRecheck.decide(shown: .swap(fromDay: "Tuesday"), fresh: entry(),
+                                               now: sessionNow, calendar: newYork) == .changed(.putUp))
+    }
+
+    @Test("the server agrees with what the button said: send")
+    func recheckAgrees() {
+        #expect(SpotlightSessionRecheck.decide(shown: .putUp, fresh: entry(), now: sessionNow, calendar: newYork) == .send)
+        let up = entry(postId: UUID(), postCreatedAt: date(9, 22, 14))
+        #expect(SpotlightSessionRecheck.decide(shown: .swap(fromDay: "Tuesday"), fresh: up,
+                                               now: sessionNow, calendar: newYork) == .send)
+    }
+
+    @Test("no read, a closed week, a covered account, or an undated frame up: nothing is sent")
+    func recheckRefusals() {
+        #expect(SpotlightSessionRecheck.decide(shown: .putUp, fresh: nil, now: sessionNow, calendar: newYork) == .unknown)
+        #expect(SpotlightSessionRecheck.decide(shown: .putUp, fresh: entry(), now: date(9, 28, 4), calendar: newYork)
+                == .unknown)
+        #expect(SpotlightSessionRecheck.decide(shown: .putUp, fresh: entry(canPutUp: false),
+                                               now: sessionNow, calendar: newYork) == .covered)
+        #expect(SpotlightSessionRecheck.decide(shown: .swap(fromDay: "Tuesday"), fresh: entry(postId: UUID()),
+                                               now: sessionNow, calendar: newYork) == .unknown)
+    }
+
+    // MARK: - The closing row's store
+
+    @Test("the closing row's week is kept by account and week, so a row scrolled back reuses it")
+    func closingStoreReuse() {
+        let store = SpotlightClosingStore()
+        let key = SpotlightClosingStore.Key(userId: me, weekKey: "2026-09-21")
+        #expect(store.needsLoad(key))
+        #expect(store.loaded(for: key) == nil)
+        let session = SortDeckSession()
+        session.published(photo(owner: me, takenAt: date(9, 23, 12)), isTagged: false)
+        let offer = session.offer(entry: entry(), viewerId: me, ledger: SpotlightSessionLedger(),
+                                  now: sessionNow, calendar: newYork)
+        #expect(offer != nil)
+        store.keep(session, offer: offer, for: key, generation: store.generation)
+        #expect(!store.needsLoad(key))
+        #expect(store.loaded(for: key)?.offer.id == offer?.id)
+        // Another account, or another week, never sees it.
+        #expect(store.needsLoad(.init(userId: UUID(), weekKey: "2026-09-21")))
+        #expect(store.loaded(for: .init(userId: UUID(), weekKey: "2026-09-21")) == nil)
+        #expect(store.loaded(for: .init(userId: me, weekKey: "2026-09-28")) == nil)
+        store.clear()
+        #expect(store.needsLoad(key))
+        #expect(store.loaded(for: key) == nil)
+    }
+
+    @Test("a week with nothing to offer counts as loaded, and is not read again on every return")
+    func closingStoreNothingToOffer() {
+        let store = SpotlightClosingStore()
+        let key = SpotlightClosingStore.Key(userId: me, weekKey: "2026-09-21")
+        store.keep(SortDeckSession(), offer: nil, for: key, generation: store.generation)
+        #expect(!store.needsLoad(key))
+        #expect(store.loaded(for: key) == nil)
+    }
+
+    @Test("a feed reload marks the week stale without dropping it; a load begun before it stays stale")
+    func closingStoreInvalidate() {
+        let store = SpotlightClosingStore()
+        let key = SpotlightClosingStore.Key(userId: me, weekKey: "2026-09-21")
+        let session = SortDeckSession()
+        session.published(photo(owner: me, takenAt: date(9, 23, 12)), isTagged: false)
+        let offer = session.offer(entry: entry(), viewerId: me, ledger: SpotlightSessionLedger(),
+                                  now: sessionNow, calendar: newYork)
+        let before = store.generation
+        store.keep(session, offer: offer, for: key, generation: before)
+        store.invalidate()
+        #expect(store.needsLoad(key))
+        #expect(store.loaded(for: key) != nil)
+        // A load that started before the reload lands after it: still due a fresh read.
+        store.keep(session, offer: offer, for: key, generation: before)
+        #expect(store.needsLoad(key))
+        store.keep(session, offer: offer, for: key, generation: store.generation)
+        #expect(!store.needsLoad(key))
+    }
 }
