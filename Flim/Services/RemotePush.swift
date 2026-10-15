@@ -43,42 +43,106 @@ enum RemotePush {
     /// `reclaimForCurrentAccount()` and `claim(_:)`.
     private static let log = Logger(subsystem: "com.flim.app", category: "push")
 
-    /// The account `register_device_token` last confirmed a claim for, THIS session. `nil` until a
-    /// claim actually succeeds, never optimistically set just because a token is cached: a cached
-    /// token only proves iOS handed this device one at some point, not that the server has it
-    /// attached to whoever is signed in now.
-    ///
-    /// Scoped by account, not a bare flag, because `reclaimForCurrentAccount()` re-runs on every
-    /// sign-in on the same device: a success recorded for the PREVIOUS account must not be read as
-    /// "this account can receive push" the instant someone else signs in, that's exactly the gap
-    /// `NotificationService.scheduleRollDevelopNotification` exists to fall back into.
-    ///
-    /// Behind `state`'s lock rather than a bare static: it is written from `claim` and the
-    /// detach paths, which run in unstructured tasks off the main actor, and read on main.
-    private static var registeredAccountId: UUID? {
-        get { state.withLock { $0.registeredAccountId } }
-        set { state.withLock { $0.registeredAccountId = newValue } }
-    }
+    /// Claim and session-loss detach bookkeeping. See `ClaimState`.
+    private static let claimState = ClaimState()
 
-    /// Mutable state shared across tasks. One lock for both fields so a claim can never observe
-    /// a half-applied session-loss detach.
-    private struct State {
-        var registeredAccountId: UUID?
-        /// The in-flight `detach_device_token` call from `detachAfterSessionLoss()`. `claim`
-        /// waits on it first, so a quick sign-in after a forced sign-out can never have its fresh
-        /// registration deleted by a detach that was still on the wire.
-        var sessionLossDetach: Task<Void, Never>?
-        /// Bumped by every `detachAfterSessionLoss()`. `claim` reads it before its RPC and
-        /// compares after, so a session loss that lands mid-claim is never overwritten by it.
-        var sessionLossGeneration = 0
+    /// Shared across tasks: written from `claim` and the detach paths, which run in unstructured
+    /// tasks off the main actor, and read on main. One lock for all of it so a claim can never
+    /// observe a half-applied session-loss detach.
+    ///
+    /// Session-loss detaches run one at a time, each queued behind the last, and a retry joins one
+    /// already queued rather than starting another. Waiting until none is queued therefore waits on
+    /// every one ever started: none can be orphaned on the wire and land after a later claim's
+    /// `register_device_token`, deleting that fresh registration by token. Its own type so tests
+    /// can drive it without the network.
+    final class ClaimState: Sendable {
+        private struct State {
+            /// The account `register_device_token` last confirmed a claim for, THIS session. `nil`
+            /// until a claim actually succeeds, never optimistically set just because a token is
+            /// cached: a cached token only proves iOS handed this device one at some point, not
+            /// that the server has it attached to whoever is signed in now.
+            ///
+            /// Scoped by account, not a bare flag, because `reclaimForCurrentAccount()` re-runs on
+            /// every sign-in on the same device: a success recorded for the PREVIOUS account must
+            /// not be read as "this account can receive push" the instant someone else signs in,
+            /// that's exactly the gap `NotificationService.scheduleRollDevelopNotification` exists
+            /// to fall back into.
+            var registeredAccountId: UUID?
+            /// The newest queued session-loss detach, `nil` once it has finished.
+            var detachTail: Task<Void, Never>?
+            var detachSerial = 0
+            /// Bumped by every session loss. `claim` reads it before its RPC and compares after,
+            /// so a session loss that lands mid-claim is never overwritten by it.
+            var sessionLossGeneration = 0
+        }
+        private let lock = OSAllocatedUnfairLock(initialState: State())
+
+        var registeredAccountId: UUID? { lock.withLock { $0.registeredAccountId } }
+
+        /// Forgets a claim for `account`, leaving one recorded for anyone else alone.
+        func clearClaim(for account: UUID) {
+            lock.withLock { if $0.registeredAccountId == account { $0.registeredAccountId = nil } }
+        }
+
+        /// The session is gone: drops the claim, bumps the generation, and queues `detach`, if
+        /// any, behind every detach already queued.
+        func sessionLost(detach: (@Sendable () async -> Void)?) {
+            lock.withLock { s in
+                s.registeredAccountId = nil
+                s.sessionLossGeneration += 1
+                if let detach { enqueue(&s, detach) }
+            }
+        }
+
+        /// Queues `detach` unless one is already queued, which it joins instead: that one persists
+        /// its own failure for the next retry. Returns whether `detach` was queued.
+        @discardableResult
+        func retry(_ detach: @escaping @Sendable () async -> Void) -> Bool {
+            lock.withLock { s in
+                guard s.detachTail == nil else { return false }
+                enqueue(&s, detach)
+                return true
+            }
+        }
+
+        /// Returns once no detach is queued, including any queued while waiting, with the
+        /// generation `commitClaim` compares against.
+        func waitForDetaches() async -> Int {
+            while true {
+                let (tail, generation) = lock.withLock { ($0.detachTail, $0.sessionLossGeneration) }
+                guard let tail else { return generation }
+                await tail.value
+            }
+        }
+
+        /// Records the claim for `account` unless a session loss landed since `generation`.
+        func commitClaim(_ account: UUID, generation: Int) -> Bool {
+            lock.withLock { s in
+                guard s.sessionLossGeneration == generation else { return false }
+                s.registeredAccountId = account
+                return true
+            }
+        }
+
+        /// Installed under the same lock acquisition that decided to queue it, so `waitForDetaches`
+        /// can never read the slot between a detach starting and it being visible there.
+        private func enqueue(_ s: inout State, _ detach: @escaping @Sendable () async -> Void) {
+            let previous = s.detachTail
+            s.detachSerial += 1
+            let serial = s.detachSerial
+            s.detachTail = Task {
+                await previous?.value
+                await detach()
+                self.lock.withLock { if $0.detachSerial == serial { $0.detachTail = nil } }
+            }
+        }
     }
-    private static let state = OSAllocatedUnfairLock(initialState: State())
 
     /// Whether the server has confirmed this device's token is attached to `userId`, this
     /// session. Read by `NotificationService.scheduleRollDevelopNotification` to decide whether a
     /// local develop reminder is still needed as a fallback, now that the server-side develop push
     /// reaches every roll member directly.
-    static func isTokenRegistered(for userId: UUID) -> Bool { registeredAccountId == userId }
+    static func isTokenRegistered(for userId: UUID) -> Bool { claimState.registeredAccountId == userId }
 
     /// Ask iOS for an APNs device token. Safe to call repeatedly; iOS dedupes.
     @MainActor
@@ -123,8 +187,9 @@ enum RemotePush {
             log.notice("claim: no session, dropping device token claim")
             return
         }
-        if let detach = state.withLock({ $0.sessionLossDetach }) { await detach.value }
-        let generation = state.withLock { $0.sessionLossGeneration }
+        // Every session-loss detach still on the wire lands first, so none can delete the
+        // registration below.
+        let generation = await claimState.waitForDetaches()
         do {
             try await supabase
                 .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
@@ -132,12 +197,7 @@ enum RemotePush {
             // The session was lost while the RPC was on the wire: its detach may have landed
             // before this registration, leaving the device attached to a departed account. Skip
             // the claim and detach again, under the same lock read as the write.
-            let superseded = state.withLock { s -> Bool in
-                guard s.sessionLossGeneration == generation else { return true }
-                s.registeredAccountId = session.user.id
-                return false
-            }
-            if superseded {
+            if !claimState.commitClaim(session.user.id, generation: generation) {
                 log.notice("claim: session lost during register_device_token, detaching again")
                 detachAfterSessionLoss()
                 return
@@ -167,7 +227,7 @@ enum RemotePush {
         // retry; either path means push can no longer reach it for this account, so the develop
         // reminder's local fallback must be considered live again from this point.
         let departing = session.user.id
-        state.withLock { if $0.registeredAccountId == departing { $0.registeredAccountId = nil } }
+        claimState.clearClaim(for: departing)
         do {
             try await supabase
                 .from("device_tokens")
@@ -202,26 +262,21 @@ enum RemotePush {
     /// the departed account.
     static func detachAfterSessionLoss() {
         guard let hex = UserDefaults.standard.string(forKey: tokenKey), !hex.isEmpty else {
-            state.withLock {
-                $0.registeredAccountId = nil
-                $0.sessionLossGeneration += 1
-            }
+            claimState.sessionLost(detach: nil)
             return
         }
-        let detach = Task { await sessionLossDetach(hex) }
-        state.withLock {
-            $0.registeredAccountId = nil
-            $0.sessionLossDetach = detach
-            $0.sessionLossGeneration += 1
-        }
+        claimState.sessionLost(detach: { await sessionLossDetach(hex) })
     }
 
     /// Retries a session-loss detach that failed, while nobody is signed in. Called on launch and
-    /// on every foreground. Registered as `sessionLossDetach` before it touches the network, so a
-    /// sign-in that lands meanwhile has `claim` wait for it rather than be deleted by it.
+    /// on every foreground. Queued in `claimState` before it touches the network, so a sign-in
+    /// that lands meanwhile has `claim` wait for it rather than be deleted by it, and joins a
+    /// detach already queued rather than racing a second one alongside it.
     static func retrySessionLossDetach() {
-        guard let hex = UserDefaults.standard.string(forKey: pendingSessionLossDetachKey) else { return }
-        let detach = Task {
+        guard UserDefaults.standard.string(forKey: pendingSessionLossDetachKey) != nil else { return }
+        claimState.retry {
+            // Re-read: a detach or claim that finished first may have settled it.
+            guard let hex = UserDefaults.standard.string(forKey: pendingSessionLossDetachKey) else { return }
             // The local session only, never a refresh: an offline refresh fails, and reading that
             // as "signed out" would detach a phone someone is signed into.
             if supabase.auth.currentSession != nil {
@@ -230,7 +285,6 @@ enum RemotePush {
             }
             await sessionLossDetach(hex)
         }
-        state.withLock { $0.sessionLossDetach = detach }
     }
 
     private static func sessionLossDetach(_ hex: String) async {

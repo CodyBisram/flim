@@ -43,6 +43,7 @@
 		11D6DCD91D7DC79CBBAC87B9 /* ChapterContactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0064CEE2A4F981B87717A374 /* ChapterContactSheet.swift */; };
 		1248B9A183489756AF5CA9EB /* PhotoStoragePathsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */; };
 		126A90D9E5D9A9E72296B188 /* GlassIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A73CD00FB6380106FB577C3 /* GlassIconButton.swift */; };
+		13077C58922A8AD9BE4986CB /* RemotePushDetachOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8F5BB7B72FD846A7301FCB0 /* RemotePushDetachOrderTests.swift */; };
 		1327A206130E2B17775AFE56 /* EmojiCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2089CA6DE2924FA1349B5C0C /* EmojiCatalogTests.swift */; };
 		13B1556B0A335B6CA633379C /* ChapterCurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D39043413989E19EE820BEA /* ChapterCurator.swift */; };
 		1529DA83A8F81093027FE732 /* RollRevealCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3160152C151C46D58498F19D /* RollRevealCard.swift */; };
@@ -747,6 +748,7 @@
 		F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureIntent.swift; sourceTree = "<group>"; };
 		F633B062C33A01F1DEA380AC /* SpotlightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightTests.swift; sourceTree = "<group>"; };
 		F8BD88710129E95E109D5086 /* AnimatedHourglass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedHourglass.swift; sourceTree = "<group>"; };
+		F8F5BB7B72FD846A7301FCB0 /* RemotePushDetachOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePushDetachOrderTests.swift; sourceTree = "<group>"; };
 		F977C090101C77BA701726E0 /* PostDeleteOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDeleteOutcomeTests.swift; sourceTree = "<group>"; };
 		F9A012D0BAB9CB711302A0A8 /* RollActivityWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RollActivityWidget.entitlements; sourceTree = "<group>"; };
 		FA04DBB3261C344B5DD64806 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
@@ -1237,6 +1239,7 @@
 				C70C734A3C9E58C37BDA61F9 /* QuickTagChipsTests.swift */,
 				09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */,
 				0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */,
+				F8F5BB7B72FD846A7301FCB0 /* RemotePushDetachOrderTests.swift */,
 				8AF7A9B3928342965F5CD02F /* RemotePushReregistrationTests.swift */,
 				75C61E7AE94F80685E08BEDD /* RenderLookTool.swift */,
 				6F68633DB99EF94E78C8EB57 /* RenditionBudgetTests.swift */,
@@ -1546,6 +1549,7 @@
 				CE43EAA4C8AA517D557EB845 /* QuickTagChipsTests.swift in Sources */,
 				DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */,
 				9ACB6AA5B0C0568525DF6DBA /* ReactionGlyphTests.swift in Sources */,
+				13077C58922A8AD9BE4986CB /* RemotePushDetachOrderTests.swift in Sources */,
 				CE80175B66762489D6A11DE5 /* RemotePushReregistrationTests.swift in Sources */,
 				3CDB4AB529E03B6548245534 /* RenderLookTool.swift in Sources */,
 				539DA206E23BE57487C12F48 /* RenditionBudgetTests.swift in Sources */,
