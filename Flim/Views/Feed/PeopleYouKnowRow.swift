@@ -45,8 +45,15 @@ struct PeopleYouKnowRow: View {
         return out
     }
 
+    /// `people` minus anyone the viewer has since followed, including from this row's own Follow
+    /// button: the per-launch `picked` cache is not invalidated by a follow, so without this a
+    /// just-followed person stayed listed until the next cold launch.
+    private var visiblePeople: [(profile: UserProfile, reason: String)] {
+        people.filter { !feed.isFollowing($0.profile.id) }
+    }
+
     private var visible: Bool {
-        Self.shouldShow(followingCount: feed.followingIds.count, candidates: people.count)
+        Self.shouldShow(followingCount: feed.followingIds.count, candidates: visiblePeople.count)
     }
 
     var body: some View {
@@ -63,7 +70,7 @@ struct PeopleYouKnowRow: View {
                             .foregroundStyle(accent)
                             .frame(minHeight: 44)
                     }
-                    ForEach(people, id: \.profile.id) { entry in
+                    ForEach(visiblePeople, id: \.profile.id) { entry in
                         HStack(spacing: 12) {
                             // The person opens their page, the same as every other row of this
                             // shape in the app; only the pill follows (flow audit, 2026-09-18).
