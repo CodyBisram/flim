@@ -196,6 +196,23 @@ final class FeedServiceTests: XCTestCase {
         XCTAssertTrue(service.followerIds.isEmpty)
     }
 
+    /// Without this, a departing account's in-flight `markTagWrite` landing after the incoming
+    /// account signs in could still outrank a read started for the SAME post id under the new
+    /// account, since the clock itself never reset.
+    func testResetForAccountChangeClearsTagWriteHistorySoAStaleWriteCannotSuppressTheNextRead() {
+        let service = FeedService()
+        let postId = UUID()
+        let readStart = service.tagWriteClock
+        service.markTagWrite(postId)
+
+        service.resetForAccountChange()
+
+        let fresh = PostTag(id: UUID(), postId: postId, taggedUserId: UUID(), x: 0.5, y: 0.5)
+        service.applyTagRead(FeedService.TagRead(tags: [postId: [fresh]], profiles: [:]),
+                             requested: [postId], readStartedAt: readStart)
+        XCTAssertEqual(service.tagsByPost[postId]?.map(\.id), [fresh.id])
+    }
+
     // MARK: - myPostedPhotoIds (Darkroom "shared to your page" badge / pager share button)
 
     /// A photo already in the batched set reads as shared; one that isn't, doesn't. This is the
