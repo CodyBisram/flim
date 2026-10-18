@@ -71,7 +71,9 @@ enum NotificationActions {
             // Already following: the end state holds.
         } catch {
             log.error("follow back failed: \(error.localizedDescription, privacy: .public)")
-            PendingPushDestination.hold(.profile(userId: action.target))
+            if let current = try? await supabase.auth.session, current.user.id == action.recipient {
+                PendingPushDestination.hold(.profile(userId: action.target))
+            }
             return
         }
         NotificationCenter.default.post(name: .followedFromNotification, object: action)
