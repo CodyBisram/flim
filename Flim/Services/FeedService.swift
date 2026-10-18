@@ -1031,6 +1031,7 @@ final class FeedService {
         commentsByPost = [:]
         tagsByPost = [:]
         tagProfiles = [:]
+        tagWrittenAt = [:]
         feedError = nil
         activityError = nil
         hasMoreFeed = true
