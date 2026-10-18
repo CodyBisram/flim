@@ -238,6 +238,25 @@ struct PendingPushDestinationTests {
         #expect(PendingPushDestination.take(now: later) == .feed)
     }
 
+    /// An intervening `take()` that finds nothing stored (routine, a `scenePhase` foreground, or
+    /// `PendingPushDestination.clear()` can all call it between a real take and the failure that
+    /// re-holds it) must not wipe the clock the next `hold()` depends on.
+    @Test("an empty take() between a real take and a later hold does not reset its clock")
+    func emptyTakeDoesNotResetTheClock() {
+        isolate()
+        let destination = PushDestination.post(postId: UUID(), comments: true)
+        let firstHeld = Date(timeIntervalSince1970: 1_790_000_000)
+        PendingPushDestination.hold(destination, now: firstHeld)
+        let retry = firstHeld.addingTimeInterval(20 * 60)
+        #expect(PendingPushDestination.take(now: retry) == destination)
+
+        #expect(PendingPushDestination.take(now: retry) == nil, "nothing is stored right now")
+
+        PendingPushDestination.hold(destination, now: retry)
+        let later = firstHeld.addingTimeInterval(PendingPushDestination.heldTapLifetime + 60)
+        #expect(PendingPushDestination.take(now: later) == nil, "30 minutes from the first hold, not the empty take")
+    }
+
     @Test("a destination survives to be collected later")
     func heldUntilCollected() {
         isolate()
