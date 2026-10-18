@@ -73,9 +73,20 @@ final class ChapterRecapViewModel {
     private(set) var stats: ChapterStats = [:]
     /// The closing card's lines, in priority order, capped at five. Empty exactly when the
     /// closing card should not show at all: a private month for this viewer, or a month with
-    /// nothing worth calling out.
-    var closingLines: [ChapterStatLine] { ChapterStatsFormatting.lines(from: stats) }
+    /// nothing worth calling out. A line whose photo is a dead frame is dropped: `curatedDeck`
+    /// already excludes dead frames, so a highlight pointing at one could never be opened by the
+    /// tap its own thumbnail invites.
+    var closingLines: [ChapterStatLine] {
+        Self.closingLines(from: stats, deadFrameIds: Set(monthPhotos.filter(\.isDeadFrame).map(\.id)))
+    }
     var hasClosingCard: Bool { !closingLines.isEmpty }
+
+    static func closingLines(from stats: ChapterStats, deadFrameIds: Set<UUID>) -> [ChapterStatLine] {
+        ChapterStatsFormatting.lines(from: stats).filter { line in
+            guard let photoId = line.photoId else { return true }
+            return !deadFrameIds.contains(photoId)
+        }
+    }
 
     var isEmpty: Bool { loaded && deck.isEmpty }
 

@@ -175,4 +175,44 @@ struct ChapterRecapPagerMappingTests {
     func emptyMonthProducesEmptyProvisionalDeck() {
         #expect(ChapterRecapViewModel.provisionalDeck(from: [], limit: 15).isEmpty)
     }
+
+    // MARK: - closingLines (dropping a dead-frame highlight)
+    //
+    // `curatedDeck` already excludes dead frames; a closing-card line still pointing at one could
+    // never be opened by the tap its own thumbnail invites.
+
+    @Test("a stat line whose photo is a dead frame is dropped")
+    func statLineForADeadFrameIsDropped() {
+        let deadFrame = UUID()
+        let stats: ChapterStats = [
+            .longestGap: ChapterStatRow(statKey: "longest_gap", valueInt: 5, photoId: deadFrame, photoThumbPath: "t")
+        ]
+
+        let lines = ChapterRecapViewModel.closingLines(from: stats, deadFrameIds: [deadFrame])
+
+        #expect(lines.isEmpty)
+    }
+
+    @Test("a stat line whose photo is not a dead frame is kept")
+    func statLineForALivingFrameIsKept() {
+        let kept = UUID()
+        let stats: ChapterStats = [
+            .longestGap: ChapterStatRow(statKey: "longest_gap", valueInt: 5, photoId: kept, photoThumbPath: "t")
+        ]
+
+        let lines = ChapterRecapViewModel.closingLines(from: stats, deadFrameIds: [])
+
+        #expect(lines.map(\.photoId) == [kept])
+    }
+
+    @Test("a stat line with no photo at all is never dropped for this reason")
+    func statLineWithNoPhotoIsUnaffected() {
+        let stats: ChapterStats = [
+            .streakDays: ChapterStatRow(statKey: "streak_days", valueInt: 4)
+        ]
+
+        let lines = ChapterRecapViewModel.closingLines(from: stats, deadFrameIds: [UUID()])
+
+        #expect(lines.map(\.kind) == [.streak])
+    }
 }
