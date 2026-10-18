@@ -230,11 +230,11 @@ enum PendingPushDestination {
     /// content already tried and came up empty, see `MainTabView.route(to:)`). A held tap older
     /// than `heldTapLifetime` is dropped here rather than routed.
     static func take(now: Date = .now) -> PushDestination? {
+        guard let data = store.data(forKey: key) else { return nil }
         let heldAt = store.object(forKey: heldAtKey) as? Double
         store.removeObject(forKey: heldAtKey)
-        lastTaken = nil
-        guard let data = store.data(forKey: key) else { return nil }
         store.removeObject(forKey: key)
+        lastTaken = nil
         if let heldAt, now.timeIntervalSince1970 - heldAt > heldTapLifetime { return nil }
         guard let destination = try? JSONDecoder().decode(PushDestination.self, from: data) else { return nil }
         if let heldAt { lastTaken = (destination, heldAt) }
