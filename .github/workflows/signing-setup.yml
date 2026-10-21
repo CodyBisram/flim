@@ -32,6 +32,12 @@ jobs:
         with:
           ruby-version: "3.3"
           bundler-cache: true
+      # match commits the new profile to the certs repo; a runner has no git identity, and
+      # without one that commit fails (exit 128) while fastlane still reports success.
+      - name: Git identity for match's commit
+        run: |
+          git config --global user.name "FLIM signing"
+          git config --global user.email "signing@flim-app.com"
       - name: Register the App ID and make its profile
         run: bundle exec fastlane certificates app_identifier:"$APP_IDENTIFIER"
         env:
