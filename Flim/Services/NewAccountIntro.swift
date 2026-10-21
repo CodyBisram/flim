@@ -135,6 +135,35 @@ enum NewAccountIntro {
         return announcement.line
     }
 
+    // MARK: - Invites you have not sent
+
+    /// One tappable line at the top of the feed, once per account, for a member holding invites
+    /// they have never spent (1.6.3): on 2026-10-21, 76 of 86 accounts had all three. It opens the
+    /// invite sheet. Waits behind any other top line, so it never stacks under one.
+    enum InviteReminder {
+        static func shownKey(userId: UUID) -> String { "announce.invites.\(userId.uuidString)" }
+
+        static func hasSeen(userId: UUID) -> Bool { store.bool(forKey: shownKey(userId: userId)) }
+
+        static func markSeen(userId: UUID) { store.set(true, forKey: shownKey(userId: userId)) }
+
+        /// The lead (in the accent) and the rest, for this many invites left; nil for none. A
+        /// count the server could not give, and an unlimited one, say nothing: never a guess.
+        static func line(for quota: AuthService.InviteQuota) -> (headline: String, detail: String)? {
+            guard case .remaining(let n) = quota, n > 0 else { return nil }
+            let headline = n == 1 ? "You have 1 invite left." : "You have \(n) invites left."
+            return (headline, "Who should be here? Tap to send one.")
+        }
+
+        /// Whether to show it now. Shown for the rest of a launch once shown, the same as the
+        /// other lines, unless the invites ran out meanwhile.
+        static func shouldShow(userId: UUID?, quota: AuthService.InviteQuota, otherTopLineShowing: Bool) -> Bool {
+            guard let userId, line(for: quota) != nil else { return false }
+            if shownThisLaunch.contains(shownKey(userId: userId)) { return true }
+            return !hasSeen(userId: userId) && !otherTopLineShowing
+        }
+    }
+
     // MARK: - Who brought you
 
     struct Inviter: Equatable {

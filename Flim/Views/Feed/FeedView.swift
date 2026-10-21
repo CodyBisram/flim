@@ -35,6 +35,8 @@ struct FeedView: View {
     /// offered once the invites are spent. `.unknown` until read, which deliberately still offers
     /// the button: a failed lookup must never hide a code that works.
     @State private var inviteQuota: AuthService.InviteQuota = .unknown
+    /// Whose quota `inviteQuota` is, so the invite reminder never reads the previous account's.
+    @State private var inviteQuotaOwner: UUID?
     @State private var prefetchedThrough = 0
     @State private var showDiscover = false
     @State private var showActivity = false
@@ -370,10 +372,10 @@ struct FeedView: View {
                 try? await Task.sleep(for: .milliseconds(600))   // let the feed paint first
                 showDiscover = true
             }
-            // Only the empty state reads this, and it fails soft to `.unknown`, which still
-            // offers the invite. Cheap enough to ride the existing appear rather than earn a
-            // task of its own.
-            inviteQuota = await auth.ownInviteQuota()
+            // The empty state and the invite reminder read this. It fails soft to `.unknown`,
+            // which still offers the empty state's invite and keeps the reminder quiet. Cheap
+            // enough to ride the existing appear rather than earn a task of its own.
+            await refreshInviteQuota()
             if let path = auth.currentUser?.avatarPath { myAvatar = await SignedPath.sign(path) { await feed.signedURL(for: $0) } }
             // The account's seen-marks must be here before the first snapshot; see
             // `FeedSeenStore.awaitPull`.
@@ -645,6 +647,33 @@ struct FeedView: View {
         return (units[index].id, text, index == 0)
     }
 
+    // MARK: - Invites never sent
+
+    /// Reads the quota for the account signed in now and keeps it only if that is still who it
+    /// is for. Also after the reminder's invite sheet closes, so a line still up this launch
+    /// counts the invite just sent, and goes once none are left.
+    private func refreshInviteQuota() async {
+        let owner = auth.currentUser?.id
+        let quota = await auth.ownInviteQuota()
+        guard let owner, auth.currentUser?.id == owner else { return }
+        inviteQuota = quota
+        inviteQuotaOwner = owner
+    }
+
+    /// The invite reminder's words, for the account signed in now, or nil. Waits behind the
+    /// feed's first-visit line, the say-hi line and the Spotlight announcement.
+    private func inviteReminder(otherTopLineShowing: Bool) -> (userId: UUID, headline: String, detail: String)? {
+        guard let uid = auth.currentUser?.id, inviteQuotaOwner == uid else { return nil }
+        let spotlightUp = NewAccountIntro.announcementToShow(
+            .spotlight, userId: uid, usageKnown: feed.ownSpotlightEntryIsCurrent,
+            firstVisitLineShowing: otherTopLineShowing, alreadyUsed: spotlightAlreadyUsed) != nil
+        guard NewAccountIntro.InviteReminder.shouldShow(userId: uid, quota: inviteQuota,
+                                                        otherTopLineShowing: otherTopLineShowing || spotlightUp),
+              let line = NewAccountIntro.InviteReminder.line(for: inviteQuota)
+        else { return nil }
+        return (uid, line.headline, line.detail)
+    }
+
     // MARK: - The feed
 
     private var feedList: some View {
@@ -682,6 +711,11 @@ struct FeedView: View {
                         usageKnown: feed.ownSpotlightEntryIsCurrent,
                         firstVisitLineShowing: firstVisitUp || nudge != nil,
                         alreadyUsed: spotlightAlreadyUsed)
+                    // Invites never sent (1.6.3): once, after every line above has had its turn.
+                    if let reminder = inviteReminder(otherTopLineShowing: firstVisitUp || nudge != nil) {
+                        InviteReminderLine(userId: reminder.userId, headline: reminder.headline, detail: reminder.detail,
+                                           onSheetClosed: { Task { await refreshInviteQuota() } })
+                    }
                     // A thin feed (under three follows) gets three people it knows, with the
                     // reason, at the top; it goes away by itself once the feed has people in it.
                     if !followsNobody {
@@ -976,6 +1010,7 @@ struct FeedView: View {
                 let quota = await auth.ownInviteQuota()
                 guard AccountEpoch.isCurrent(epoch) else { return }
                 inviteQuota = quota
+                inviteQuotaOwner = uid
             }
         }
         // The account's copy of the seen-marks goes up first, so the tab dot's server check

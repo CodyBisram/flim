@@ -119,3 +119,42 @@ struct InviterNudgeLine: View {
             }
     }
 }
+
+/// Invites never sent, once per account: see `NewAccountIntro.InviteReminder`. The announcement's
+/// look, and a button: a tap opens the invite sheet. The caller decides whether it shows (it alone
+/// knows the quota and the other top lines); this records that it was shown and marks it seen
+/// after five seconds on screen.
+struct InviteReminderLine: View {
+    let userId: UUID
+    let headline: String
+    let detail: String
+    /// The invite sheet closed: the caller rereads the quota.
+    var onSheetClosed: () -> Void = {}
+    @Environment(AuthService.self) private var auth
+    @Environment(\.flimAccent) private var accent
+    @State private var showInvite = false
+
+    var body: some View {
+        Button { showInvite = true } label: {
+            (Text(headline).foregroundStyle(accent)
+             + Text(" " + detail).foregroundStyle(FlimTheme.textSecondary))
+                .flimFont(13, relativeTo: .footnote)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .transition(.opacity)
+        .accessibilityLabel("\(headline) \(detail)")
+        .accessibilityAddTraits(.isButton)
+        .onAppear { NewAccountIntro.shownThisLaunch.insert(NewAccountIntro.InviteReminder.shownKey(userId: userId)) }
+        .task(id: userId) {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, auth.currentUser?.id == userId else { return }
+            NewAccountIntro.InviteReminder.markSeen(userId: userId)
+        }
+        .sheet(isPresented: $showInvite, onDismiss: onSheetClosed) { InviteSheet() }
+    }
+}
