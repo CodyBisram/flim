@@ -1,0 +1,46 @@
+name: Signing setup
+
+# By hand only. Registers an App ID (through the App Store Connect API key, no website login) and
+# adds its App Store profile to the match repo, using the secrets the TestFlight build already
+# has, so nobody types a signing password on a laptop. Run it once per new target, before the
+# first push that embeds that target:
+#
+#   gh workflow run signing-setup.yml -f app_identifier=com.flim.app.NotificationService
+#
+# It never touches an existing profile (no force), so running it for an id that is already set
+# up changes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      app_identifier:
+        description: "Bundle id to register and make a profile for"
+        required: true
+        type: string
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  certificates:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Set up Ruby + fastlane
+        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Register the App ID and make its profile
+        run: bundle exec fastlane certificates app_identifier:"$APP_IDENTIFIER"
+        env:
+          APP_IDENTIFIER:                ${{ inputs.app_identifier }}
+          ASC_KEY_ID:                    ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID:                 ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8:                    ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID:                 ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_PASSWORD:                ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL:                 ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          FASTLANE_HIDE_CHANGELOG: "true"
