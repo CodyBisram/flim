@@ -5,15 +5,25 @@ import os
 
 /// Buttons on a notification, acted on without opening the app.
 ///
-/// One today: "Follow back", on the push an inviter gets when someone joins with their invite
-/// ("@maya joined FLIM with your invite", owner-approved 2026-10-13). The server names the
-/// category in `aps.category` (send-social-push, `FOLLOW_BACK_CATEGORY`) and the recipient's id in
-/// `to`; iOS shows the button on a long-press or a pull-down of the banner. A build that never
-/// registered the category shows the plain notification, and a tap on the body still opens the
-/// person's page through `PushDestination` as before.
+/// "Follow back", on the push an inviter gets when someone joins with their invite ("@maya joined
+/// FLIM with your invite", owner-approved 2026-10-13). And since 1.6.3, three reactions under a
+/// push that shows a friend's photo: the noon roundup (its newest post) and "tagged you". The
+/// server names the category in `aps.category` and the recipient's id in `to`; iOS shows the
+/// buttons on a long-press or a pull-down of the banner. A build that never registered a category
+/// shows the plain notification, and a tap on the body still routes through `PushDestination`.
 enum NotificationActions {
     static let followBackCategory = "FLIM_FOLLOW_BACK"
     static let followBackAction = "follow_back"
+    /// send-daily-digest's and send-social-push's `REACT_CATEGORY`.
+    static let reactCategory = "FLIM_REACT"
+
+    /// The three buttons, in order. The three most used reactions on posts (30 days to
+    /// 2026-10-21: 796, 329 and 78 of 1,330), so a button is nearly always what someone would
+    /// have picked in the app.
+    static let reactEmojis = ["❤️", "🔥", "😂"]
+    private static let reactActionPrefix = "react:"
+    static func reactAction(_ emoji: String) -> String { reactActionPrefix + emoji }
+    static func isReactAction(_ identifier: String) -> Bool { identifier.hasPrefix(reactActionPrefix) }
 
     private static let log = Logger(subsystem: "com.flim.app", category: "push")
 
@@ -32,7 +42,18 @@ enum NotificationActions {
             intentIdentifiers: [],
             options: []
         )
-        UNUserNotificationCenter.current().setNotificationCategories([category])
+        // Same `.authenticationRequired` reasoning: a reaction is written as the account.
+        let reactions = reactEmojis.map {
+            UNNotificationAction(identifier: reactAction($0), title: $0, options: [.authenticationRequired])
+        }
+        let react = UNNotificationCategory(
+            identifier: reactCategory,
+            actions: reactions,
+            intentIdentifiers: [],
+            options: []
+        )
+        // One call for every category: each call replaces the whole set.
+        UNUserNotificationCenter.current().setNotificationCategories([category, react])
     }
 
     /// Who to follow, and which account the push was for. Nil unless the payload carries both: a
@@ -80,7 +101,57 @@ enum NotificationActions {
     }
 }
 
+extension NotificationActions {
+    /// A reaction pressed under a push: which post, which emoji, and the account the push was for.
+    struct React: Equatable {
+        let postId: UUID
+        let emoji: String
+        let recipient: UUID
+    }
+
+    /// Reads a reaction press. Nil unless the action is one of the three, the payload names a
+    /// post under `flim.react`, and it names its recipient: an unnamed recipient cannot be checked
+    /// against the signed-in account.
+    static func react(actionIdentifier: String, userInfo: [AnyHashable: Any]) -> React? {
+        guard actionIdentifier.hasPrefix(reactActionPrefix) else { return nil }
+        let emoji = String(actionIdentifier.dropFirst(reactActionPrefix.count))
+        guard reactEmojis.contains(emoji),
+              let flim = userInfo["flim"] as? [String: Any],
+              let rawPost = flim["react"] as? String, let postId = UUID(uuidString: rawPost),
+              let rawTo = userInfo["to"] as? String, let recipient = UUID(uuidString: rawTo)
+        else { return nil }
+        return React(postId: postId, emoji: emoji, recipient: recipient)
+    }
+
+    /// The reaction, written straight to the server, the same way and for the same reasons as
+    /// `performFollowBack`. Already there is success (a second press, or a reaction made in the app
+    /// since). A write that fails puts the post in line for the next open, where the reaction is
+    /// one more tap.
+    @MainActor
+    static func performReact(_ action: React) async {
+        guard let session = try? await supabase.auth.session, session.user.id == action.recipient else { return }
+        struct R: Encodable { let post_id: UUID; let user_id: UUID; let emoji: String }
+        do {
+            try await supabase.from("post_reactions")
+                .insert(R(post_id: action.postId, user_id: action.recipient, emoji: action.emoji)).execute()
+        } catch let error as PostgrestError where error.code == "23505" {
+            // Already reacted with this emoji: the end state holds.
+        } catch {
+            log.error("react from notification failed: \(error.localizedDescription, privacy: .public)")
+            if let current = try? await supabase.auth.session, current.user.id == action.recipient {
+                PendingPushDestination.hold(.post(postId: action.postId, comments: false))
+            }
+            return
+        }
+        NotificationCenter.default.post(name: .reactedFromNotification, object: action)
+    }
+}
+
 extension Notification.Name {
+    /// Posted with a `NotificationActions.React` once a reaction pressed under a push has landed,
+    /// so a running app's `FeedService` shows it without a reload. `MainTabView` listens.
+    static let reactedFromNotification = Notification.Name("reactedFromNotification")
+
     /// Posted with a `NotificationActions.FollowBack` once a "Follow back" press has landed, so a
     /// running app's `FeedService` shows the follow without a reload. `MainTabView` listens.
     static let followedFromNotification = Notification.Name("followedFromNotification")

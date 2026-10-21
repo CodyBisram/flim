@@ -6,9 +6,10 @@ git_url(ENV["MATCH_GIT_URL"])       # e.g. https://github.com/<owner>/flim-certi
 storage_mode("git")
 
 type("appstore")                    # App Store distribution assets
-# Both the app and its embedded Live Activity widget extension — each needs its own
-# App ID + profile, and the archive can't sign without both present in the certs repo.
-app_identifier(["com.flim.app", "com.flim.app.RollActivityWidget"])
+# The app and its two embedded extensions (the Live Activity widget, and since 1.6.3 the
+# notification service that adds a friend's photo to a push). Each needs its own App ID +
+# profile, and the archive can't sign without all three present in the certs repo.
+app_identifier(["com.flim.app", "com.flim.app.RollActivityWidget", "com.flim.app.NotificationService"])
 
 # Never let CI try to create/regen certs — it only reads what was seeded locally.
 readonly(ENV["CI"] == "true")

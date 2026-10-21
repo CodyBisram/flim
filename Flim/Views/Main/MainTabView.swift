@@ -783,7 +783,7 @@ private struct HeldTapRetry: ViewModifier {
     }
 }
 
-/// Folds a notification's "Follow back" (`NotificationActions`) into the feed's follow sets when
+/// Folds a notification's "Follow back" or reaction (`NotificationActions`) into the feed when
 /// the app is running, for the account that pressed it. Its own modifier because one more
 /// closure in `MainTabView`'s chain is past what the type checker finishes.
 private struct FollowBackListener: ViewModifier {
@@ -795,6 +795,13 @@ private struct FollowBackListener: ViewModifier {
             if let action = note.object as? NotificationActions.FollowBack,
                action.recipient == auth.currentUser?.id {
                 feed.noteFollowMadeElsewhere(action.target)
+            }
+        }
+        // The same for a reaction pressed under a push.
+        .onReceive(NotificationCenter.default.publisher(for: .reactedFromNotification)) { note in
+            if let action = note.object as? NotificationActions.React,
+               action.recipient == auth.currentUser?.id {
+                feed.noteReactionMadeElsewhere(postId: action.postId, emoji: action.emoji, userId: action.recipient)
             }
         }
     }

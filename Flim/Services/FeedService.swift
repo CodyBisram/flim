@@ -349,6 +349,17 @@ final class FeedService {
         confirmedFollowingIds.insert(targetId)
     }
 
+    /// A reaction written outside this service (a reaction button under a notification), shown as
+    /// if `reactToPost` had made it, unless the cache already has it. A post never loaded has no
+    /// cache entry to add to; its next read brings the reaction in. Only for the account it was
+    /// made by; the caller checks.
+    func noteReactionMadeElsewhere(postId: UUID, emoji: String, userId: UUID) {
+        guard var current = reactionsByPost[postId],
+              !current.contains(where: { $0.emoji == emoji && $0.userId == userId }) else { return }
+        current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
+        reactionsByPost[postId] = current
+    }
+
     /// Same contract as `follow`: whether the unfollow holds server-side.
     @discardableResult
     func unfollow(_ targetId: UUID, from userId: UUID) async -> Bool {

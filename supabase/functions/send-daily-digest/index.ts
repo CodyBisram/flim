@@ -317,6 +317,34 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // destination list). The digest always opens the feed, and the feed destination carries no id.
 const FEED_ROUTE = { t: "feed" as const };
 
+/// The newest post a digest names, shown in the notification with three reactions under it
+/// (1.6.3+). `img` is a signed URL the app's notification service extension downloads and
+/// attaches; `postId` is what a reaction button writes to; `to` is the recipient, so the app
+/// reacts only as the account the push was meant for.
+export interface DigestReact {
+  postId: string;
+  img: string;
+  to: string;
+}
+
+/// Matches `NotificationActions.reactCategory` in the app. A build without it shows the plain
+/// notification: no photo (`mutable-content` with no extension is ignored) and no buttons.
+export const REACT_CATEGORY = "FLIM_REACT";
+
+/// The APNs body. Pure, so the shape is tested without a device. Without `react` it is exactly
+/// the payload every build before 1.6.3 has always had.
+export function digestPayload(title: string, body: string, react?: DigestReact): Record<string, unknown> {
+  const aps: Record<string, unknown> = { alert: { title, body }, sound: "flim_social.caf" };
+  if (!react) return { aps, flim: FEED_ROUTE };
+  aps["mutable-content"] = 1;
+  aps.category = REACT_CATEGORY;
+  return { aps, flim: { ...FEED_ROUTE, react: react.postId, img: react.img }, to: react.to };
+}
+
+/// How long the photo's signed URL lives. The extension fetches it the moment the push lands; an
+/// hour covers a phone that was off when APNs first tried and catches up later in the noon hour.
+const PUSH_IMAGE_TTL_SECONDS = 3600;
+
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
 // every future run. ONLY on 410 Unregistered: 400 BadDeviceToken is left alone on purpose,
 // because that status is also what a valid production TestFlight token gets back from the
@@ -357,7 +385,7 @@ async function deleteDeadToken(deviceToken: string, status: number, body: string
   }
 }
 
-async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
+async function sendPush(deviceToken: string, title: string, body: string, react?: DigestReact): Promise<boolean> {
   const jwt = await apnsAuthToken();
   let res: Response;
   let reason: string | undefined;
@@ -372,7 +400,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
         // device's own schedule is both better for battery and less likely to arrive mid-sentence.
         "apns-priority": "5",
       },
-      body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: FEED_ROUTE }),
+      body: JSON.stringify(digestPayload(title, body, react)),
       signal: AbortSignal.timeout(APNS_TIMEOUT_MS),
     });
     reason = res.ok ? undefined : await res.text();
@@ -504,10 +532,12 @@ Deno.serve(async (req: Request) => {
   // rather than a query per candidate. Paged the same way as the whole-table reads above: this
   // window is bounded by time, not row count, and a busy 48 hours can cross PostgREST's 1000-row
   // cap the same way the unfiltered tables can (scale audit, 2026-09-19).
-  const { rows: recentPosts, failed: recentPostsFailed } = await fetchAllPages<{ id: string; user_id: string; created_at: string }>(
+  const { rows: recentPosts, failed: recentPostsFailed } = await fetchAllPages<{
+    id: string; user_id: string; created_at: string; feed_path: string | null; thumb_path: string | null;
+  }>(
     (from, to) =>
       supabase.from("posts")
-        .select("id, user_id, created_at")
+        .select("id, user_id, created_at, feed_path, thumb_path")
         .eq("hidden", false)
         .gte("created_at", maxWindowStart.toISOString())
         .order("created_at", { ascending: false })
@@ -560,6 +590,23 @@ Deno.serve(async (req: Request) => {
 
   let sent = 0;
   let considered = 0;
+
+  // One signed URL per post per run: the same newest post heads many people's digests. A post
+  // whose URL could not be signed maps to null and is sent without a photo or buttons, never
+  // held back: the words alone are what every digest was before 1.6.3.
+  const imageByPost = new Map<string, string | null>();
+  async function imageFor(post: { id: string; feed_path: string | null; thumb_path: string | null }): Promise<string | null> {
+    if (imageByPost.has(post.id)) return imageByPost.get(post.id)!;
+    const path = post.feed_path ?? post.thumb_path;
+    let url: string | null = null;
+    if (path) {
+      const { data, error } = await supabase.storage.from("photos").createSignedUrl(path, PUSH_IMAGE_TTL_SECONDS);
+      if (error) console.warn(JSON.stringify({ at: "digest_image_sign_failed", error: error.message }));
+      url = data?.signedUrl ?? null;
+    }
+    imageByPost.set(post.id, url);
+    return url;
+  }
 
   // Stop taking new recipients before the 240 s lease can lapse under a live run (the same
   // budget the other two senders keep). Longest-waiting first: each person has one run a day, and
@@ -635,9 +682,14 @@ Deno.serve(async (req: Request) => {
     if (handles.length === 0) continue;
 
     const { title, body } = digestCopy(handles, theirs.length);
+    // The newest post is the one shown: `theirs` keeps `recentPosts`' newest-first order, and the
+    // first name in the title is that post's author.
+    const newest = theirs[0];
+    const img = await imageFor(newest);
+    const react: DigestReact | undefined = img ? { postId: newest.id, img, to: userId } : undefined;
     let delivered = false;
     for (const token of tokens) {
-      if (await sendPush(token, title, body)) delivered = true;
+      if (await sendPush(token, title, body, react)) delivered = true;
     }
 
     // Recorded even if APNs rejected every token: the alternative is retrying a dead device every

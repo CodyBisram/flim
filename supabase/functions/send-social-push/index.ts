@@ -162,6 +162,42 @@ interface FlimRoute {
   comments?: true;
   code?: string;   // "join": the roll's invite code; the app opens the join sheet with it filled in
   week?: string;   // "feed": a Spotlight week_key ("2026-09-21"); 1.6 opens that week's sheet over the Feed, older builds just open the Feed
+  react?: string;  // a post id: the three reaction buttons write to this post (1.6.3+, category FLIM_REACT)
+  img?: string;    // a signed URL of that post's photo, attached by the app's notification service extension
+}
+
+// Matches `NotificationActions.reactCategory` in the app: three reactions under a push that shows
+// a friend's photo. Older builds show the same push with no photo and no buttons.
+const REACT_CATEGORY = "FLIM_REACT";
+
+// How long a push photo's signed URL lives. The extension fetches it the moment the push lands;
+// an hour covers a phone that was off when APNs first tried.
+const PUSH_IMAGE_TTL_SECONDS = 3600;
+// Per post, for this run and the next few: a warm instance keeps module state between runs, so an
+// entry is reused only while it is far from expiring.
+const pushImageByPost = new Map<string, { url: string | null; at: number }>();
+const PUSH_IMAGE_REUSE_MS = 10 * 60_000;
+
+// A post's route with its photo and reaction rider, or the plain route when the photo cannot be
+// signed: a push without a picture is what every tag push was before 1.6.3, never a reason to
+// hold one back.
+async function reactRoute(
+  postId: string, feedPath: string | null | undefined, thumbPath: string | null | undefined,
+): Promise<FlimRoute> {
+  const route: FlimRoute = { t: "post", id: postId };
+  const cached = pushImageByPost.get(postId);
+  let img = cached && Date.now() - cached.at < PUSH_IMAGE_REUSE_MS ? cached.url : undefined;
+  if (img === undefined) {
+    const path = feedPath ?? thumbPath;
+    img = null;
+    if (path) {
+      const { data, error } = await supabase.storage.from("photos").createSignedUrl(path, PUSH_IMAGE_TTL_SECONDS);
+      if (error) console.warn(JSON.stringify({ at: "push_image_sign_failed", error: error.message }));
+      img = data?.signedUrl ?? null;
+    }
+    pushImageByPost.set(postId, { url: img, at: Date.now() });
+  }
+  return img ? { ...route, react: postId, img } : route;
 }
 
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
@@ -228,6 +264,9 @@ async function sendPush(
   const alert: Record<string, string> = { title };
   if (body) alert.body = body;
   const aps: Record<string, unknown> = { alert, sound };
+  // Lets the app's notification service extension attach the photo before it is shown. Only with
+  // a photo to fetch: an extension woken for nothing costs the phone and delays the banner.
+  if (flim?.img) aps["mutable-content"] = 1;
   // A category gives the notification buttons the app registered under that name
   // (NotificationActions.swift); a build without it shows the plain notification. `to` names the
   // recipient so the app acts on a button only for the account the push was meant for.
@@ -907,7 +946,7 @@ Deno.serve(async (req: Request) => {
   // as the comments block above; see its comment for why the owner is not exempted.
   const { data: newPosts } = await supabase
     .from("posts")
-    .select("id, user_id, caption, created_at, hidden")
+    .select("id, user_id, caption, created_at, hidden, feed_path, thumb_path")
     .eq("push_sent", false);
 
   for (const p of newPosts ?? []) {
@@ -935,7 +974,9 @@ Deno.serve(async (req: Request) => {
       notified.add(uid);
       // The same identity the later-tag route uses (`tag:<id>`), so a recipient delivered here
       // is never sent again by that route, and only the ones that failed are retried.
-      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id }, `tag:${t.id}`);
+      const route = await reactRoute(p.id, p.feed_path, p.thumb_path);
+      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", route, `tag:${t.id}`, SOUND_SOCIAL,
+        route.react ? REACT_CATEGORY : undefined);
     }
     if (tagRows && tagRows.length > 0) {
       const settledTags = tagRows.filter((t) => settled(`tag:${t.id}`)).map((t) => t.id);
@@ -980,11 +1021,13 @@ Deno.serve(async (req: Request) => {
   //      re-evaluated by a future poll.
   const { data: laterTags } = await supabase
     .from("post_tags")
-    .select("id, post_id, tagged_user_id, posts(user_id, hidden, created_at)")
+    .select("id, post_id, tagged_user_id, posts(user_id, hidden, created_at, feed_path, thumb_path)")
     .eq("push_sent", false);
 
   for (const t of laterTags ?? []) {
-    const postMeta = (t as { posts?: { user_id?: string; hidden?: boolean; created_at?: string } }).posts;
+    const postMeta = (t as {
+      posts?: { user_id?: string; hidden?: boolean; created_at?: string; feed_path?: string | null; thumb_path?: string | null };
+    }).posts;
     const ownerId = postMeta?.user_id;
     const taggedId = t.tagged_user_id as string;
     if (!ownerId || !postMeta?.created_at) continue; // fail-closed: no post metadata, no push
@@ -993,7 +1036,9 @@ Deno.serve(async (req: Request) => {
     if (!coveredPostVisibleTo(coveredCtx, taggedId, ownerId, postMeta.created_at)) continue;
 
     const name = await handle(ownerId);
-    sent += await notify(taggedId, ownerId, `${name} tagged you`, "in a photo", { t: "post", id: t.post_id }, `tag:${t.id}`);
+    const route = await reactRoute(t.post_id, postMeta.feed_path, postMeta.thumb_path);
+    sent += await notify(taggedId, ownerId, `${name} tagged you`, "in a photo", route, `tag:${t.id}`, SOUND_SOCIAL,
+      route.react ? REACT_CATEGORY : undefined);
   }
   if (laterTags && laterTags.length > 0) {
     await supabase.from("post_tags").update({ push_sent: true })

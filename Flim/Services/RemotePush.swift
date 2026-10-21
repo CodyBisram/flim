@@ -426,6 +426,17 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
             }
             return
         }
+        if NotificationActions.isReactAction(response.actionIdentifier) {
+            guard let react = NotificationActions.react(actionIdentifier: response.actionIdentifier, userInfo: userInfo) else {
+                completionHandler()
+                return
+            }
+            Task { @MainActor in
+                await NotificationActions.performReact(react)
+                completionHandler()
+            }
+            return
+        }
         guard let destination = PushDestination.parse(userInfo: userInfo) else {
             NotificationCenter.default.post(name: .openDarkroom, object: nil)
             completionHandler()

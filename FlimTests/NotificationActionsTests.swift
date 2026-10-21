@@ -42,4 +42,60 @@ struct NotificationActionsTests {
         ]
         #expect(NotificationActions.followBack(userInfo: userInfo) == nil)
     }
+
+    // MARK: Reactions under a push (1.6.3)
+
+    private func reactPayload(post: UUID = UUID(), to: UUID = UUID()) -> [AnyHashable: Any] {
+        [
+            "aps": ["category": NotificationActions.reactCategory],
+            "flim": ["t": "feed", "react": post.uuidString, "img": "https://example.invalid/x.jpg"],
+            "to": to.uuidString,
+        ]
+    }
+
+    @Test("each of the three buttons reads as its own reaction on the named post")
+    func readsEachReaction() {
+        let post = UUID()
+        let me = UUID()
+        for emoji in NotificationActions.reactEmojis {
+            let action = NotificationActions.reactAction(emoji)
+            #expect(NotificationActions.isReactAction(action))
+            #expect(NotificationActions.react(actionIdentifier: action, userInfo: reactPayload(post: post, to: me))
+                    == .init(postId: post, emoji: emoji, recipient: me))
+        }
+    }
+
+    @Test("the buttons are the three most used reactions, heart first")
+    func buttonOrder() {
+        #expect(NotificationActions.reactEmojis == ["❤️", "🔥", "😂"])
+    }
+
+    @Test("an emoji that is not one of the three is not a reaction")
+    func unknownEmoji() {
+        #expect(NotificationActions.react(actionIdentifier: "react:🍕", userInfo: reactPayload()) == nil)
+    }
+
+    @Test("no recipient, no reaction")
+    func reactMissingRecipient() {
+        var info = reactPayload()
+        info["to"] = nil
+        #expect(NotificationActions.react(actionIdentifier: NotificationActions.reactAction("❤️"), userInfo: info) == nil)
+    }
+
+    @Test("no post named, no reaction, even on a push that routes to a post")
+    func reactMissingPost() {
+        let info: [AnyHashable: Any] = [
+            "flim": ["t": "post", "id": UUID().uuidString],
+            "to": UUID().uuidString,
+        ]
+        #expect(NotificationActions.react(actionIdentifier: NotificationActions.reactAction("❤️"), userInfo: info) == nil)
+    }
+
+    @Test("Follow back and a tap on the body are not reactions")
+    func otherActionsAreNotReactions() {
+        #expect(!NotificationActions.isReactAction(NotificationActions.followBackAction))
+        #expect(!NotificationActions.isReactAction("com.apple.UNNotificationDefaultActionIdentifier"))
+        #expect(NotificationActions.react(actionIdentifier: NotificationActions.followBackAction,
+                                          userInfo: reactPayload()) == nil)
+    }
 }

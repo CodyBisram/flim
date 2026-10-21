@@ -92,6 +92,11 @@ targets:
       # is embedded and signed alongside the app on every Release archive.
       - target: RollActivityWidget
         embed: true
+      # Puts the friend's photo into a push that carries reaction buttons (1.6.3). Its own App ID
+      # and "match AppStore com.flim.app.NotificationService" profile, the same one-time setup the
+      # widget went through (docs/TESTFLIGHT_SETUP.md, "Adding a new target").
+      - target: FlimNotificationService
+        embed: true
 
   RollActivityWidget:
     type: app-extension
@@ -156,6 +161,44 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Apple Distribution"
           PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app.RollActivityWidget"
+
+  FlimNotificationService:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: FlimNotificationService
+      # Shared with the app target so its checks run in FlimTests.
+      - path: Flim/Models/PushImage.swift
+    info:
+      path: FlimNotificationService/Info.plist
+      properties:
+        CFBundleDisplayName: FLIM
+        # Must match the containing app's, the same as the widget's (see its note above).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app.NotificationService
+        SWIFT_VERSION: "5.9"
+        DEVELOPMENT_TEAM: DCU7GHRVUQ
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "1.6.3"
+        CURRENT_PROJECT_VERSION: "1"
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          # Needs "match AppStore com.flim.app.NotificationService" in the certs repo before CI
+          # can archive: `bundle exec fastlane certificates` registers the App ID and makes it.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app.NotificationService"
 
   FlimTests:
     type: bundle.unit-test
