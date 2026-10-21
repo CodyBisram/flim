@@ -181,6 +181,7 @@ struct ChapterRecapPagerMappingTests {
     // `curatedDeck` already excludes dead frames; a closing-card line still pointing at one could
     // never be opened by the tap its own thumbnail invites.
 
+    @MainActor
     @Test("a stat line whose photo is a dead frame is dropped")
     func statLineForADeadFrameIsDropped() {
         let deadFrame = UUID()
@@ -193,6 +194,7 @@ struct ChapterRecapPagerMappingTests {
         #expect(lines.isEmpty)
     }
 
+    @MainActor
     @Test("a stat line whose photo is not a dead frame is kept")
     func statLineForALivingFrameIsKept() {
         let kept = UUID()
@@ -205,6 +207,7 @@ struct ChapterRecapPagerMappingTests {
         #expect(lines.map(\.photoId) == [kept])
     }
 
+    @MainActor
     @Test("a stat line with no photo at all is never dropped for this reason")
     func statLineWithNoPhotoIsUnaffected() {
         let stats: ChapterStats = [
