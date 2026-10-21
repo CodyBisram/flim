@@ -2297,3 +2297,43 @@ On device:
    failed comment send says so in the composer; a failed reaction says so; the sort deck shows
    "Couldn't load your shots."; pull to refresh keeps what is on screen.
 5. Scroll the Darkroom and the feed after a cold launch: cached tiles appear with no flash.
+
+## 1.6.3, the second half (2026-10-21)
+
+The 2026-10-19 memo found friends reacting to each other less (reciprocal pairs 23 to 9) and no
+one new arriving (new accounts and redeemed invites zero for ten days). 1.6.3 as built through 438
+was mostly for new people. Two things added for the 85 already here, picked by the owner:
+
+- **React from the notification.** The noon roundup now shows its newest post's photo, and
+  "tagged you" shows the tagged photo; press and hold either for ❤️, 🔥 and 😂 (the three most
+  used, 90% of post reactions in the 30 days to 2026-10-21). The owner deferred this on 2026-10-13
+  and asked for it on 2026-10-21. Server: both functions sign the post's feed rendition for an
+  hour and send `mutable-content`, category `FLIM_REACT`, `flim.react` (post id), `flim.img` and
+  `to`; a post whose URL cannot be signed goes out exactly as before. App: a notification service
+  extension (FlimNotificationService, bundle com.flim.app.NotificationService) fetches only a
+  signed photos URL on the project's own host and attaches it; anything else shows the words
+  alone. The buttons write the reaction as the account the push was for
+  (`.authenticationRequired`, the same as Follow back); a failed write puts the post in line for
+  the next open. Builds before this one see the same pushes with no photo and no buttons.
+  Owner steps: `bundle exec fastlane certificates` once (registers the App ID through the API key
+  and makes its profile) BEFORE the first push of this build; deploy both functions
+  (`supabase functions deploy send-daily-digest --no-verify-jwt`, same for send-social-push).
+  The signed URL rides in the APNs payload, so Apple's push service carries a link that opens one
+  photo for an hour; nobody else sees it.
+- **Invites never sent.** 76 of 86 accounts had never spent one. One tappable line at the top of
+  the feed, once per account, after any other top line has had its turn: "You have 3 invites
+  left. Who should be here? Tap to send one." It opens the invite sheet, and the count is reread
+  when the sheet closes.
+- **The ledger burns.** PRs #17 and #18 were already fixed on main by the nightly review's batch 3
+  (one of #17's rows would have put a second undo host on the reveal); their branches are
+  superseded. #19's five fixes are in, with its three new tests made main-actor, which is what
+  failed its CI build.
+
+On device, once the build is up:
+1. Long-press the noon roundup on a day a friend posted: the newest photo shows, with three
+   buttons. Press ❤️ with the phone locked: Face ID first, then the reaction is on the post
+   (the poster gets their usual reaction push). Press it again: nothing doubles.
+2. A "tagged you" push shows the photo and the same buttons.
+3. Airplane mode, press a reaction: next open lands on that post.
+4. The feed's first launch on the new build: the invite line, once; tap it, send an invite,
+   close the sheet: the count drops by one. Next launch: gone.

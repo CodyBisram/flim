@@ -156,11 +156,15 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
-## What's New (version 1.6.3), build 437, 2026-10-14
+## What's New (version 1.6.3), build TBD, updated 2026-10-21
 
-Leads with the invite wall, since it is the first thing a new person meets, then Spotlight.
+Leads with reacting from a notification, since it is what every member will notice first (updated
+2026-10-21, DRAFT until the owner approves the new first paragraph); then the invite wall, the
+first thing a new person meets, then Spotlight.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    React without opening the app. Press and hold the noon roundup, or a notification that you've been tagged, to see the photo and send a ❤️, 🔥 or 😂 right from there.
 
     No code yet? Ask a friend for one right from the sign-in screen, or join the waitlist and we'll write to you when there's a spot.
 
@@ -178,7 +182,12 @@ Leads with the invite wall, since it is the first thing a new person meets, then
 
 ### Ship notes (internal, do NOT paste)
 
-Submit build 437 (c6a8309). Before submitting: add Name to the App Privacy label (the waitlist
+Submit the build that carries the notification service extension (not 437 or 438, which lack the
+reactions the first paragraph describes). Before the first push of it, run
+`bundle exec fastlane certificates` locally once: it registers the App ID
+com.flim.app.NotificationService and adds its profile to the certs repo; without that, CI's
+archive fails. Deploy send-daily-digest and send-social-push before or after, either order:
+a build without the extension shows the same pushes with no photo and no buttons. Before submitting: add Name to the App Privacy label (the waitlist
 asks for a first name) and sign in once with the review account on 437. After submitting, start
 the review watch: `gh workflow run asc-watch.yml -f version=1.6.3`. When it is live:
 `update app_release_gate set latest_version = '1.6.3';`
