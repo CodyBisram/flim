@@ -1,14 +1,16 @@
 name: Signing setup
 
 # By hand only. Registers an App ID (through the App Store Connect API key, no website login) and
-# adds its App Store profile to the match repo, using the secrets the TestFlight build already
-# has, so nobody types a signing password on a laptop. Run it once per new target, before the
-# first push that embeds that target:
+# makes its App Store profile, using the secrets the TestFlight build already has, so nobody types
+# a signing password on a laptop:
 #
 #   gh workflow run signing-setup.yml -f app_identifier=com.flim.app.NotificationService
 #
-# It never touches an existing profile (no force), so running it for an id that is already set
-# up changes nothing.
+# The token CI holds can read the certs repo but not write to it, and that is how it should stay.
+# So match runs against a copy made here, and the one new profile comes back as a git bundle
+# (an artifact, kept a day) for the owner to fetch into flim-certificates and push. The run fails
+# if anything but that one profile changed: this repo is public, and an artifact must never carry
+# the distribution certificate, encrypted or not.
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +27,8 @@ jobs:
   certificates:
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      APP_IDENTIFIER: ${{ inputs.app_identifier }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Set up Ruby + fastlane
@@ -32,21 +36,43 @@ jobs:
         with:
           ruby-version: "3.3"
           bundler-cache: true
-      # match commits the new profile to the certs repo; a runner has no git identity, and
-      # without one that commit fails (exit 128) while fastlane still reports success.
       - name: Git identity for match's commit
         run: |
           git config --global user.name "FLIM signing"
           git config --global user.email "signing@flim-app.com"
+      - name: Copy of the certs repo
+        env:
+          MATCH_GIT_URL:                 ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: |
+          git -c http.extraheader="Authorization: Basic $MATCH_GIT_BASIC_AUTHORIZATION" \
+            clone -q --bare "$MATCH_GIT_URL" "$RUNNER_TEMP/certs.git"
+          git -C "$RUNNER_TEMP/certs.git" rev-parse master > "$RUNNER_TEMP/before"
       - name: Register the App ID and make its profile
         run: bundle exec fastlane certificates app_identifier:"$APP_IDENTIFIER"
         env:
-          APP_IDENTIFIER:                ${{ inputs.app_identifier }}
-          ASC_KEY_ID:                    ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID:                 ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_P8:                    ${{ secrets.ASC_KEY_P8 }}
-          APPLE_TEAM_ID:                 ${{ secrets.APPLE_TEAM_ID }}
-          MATCH_PASSWORD:                ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_URL:                 ${{ secrets.MATCH_GIT_URL }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          MATCH_GIT_URL:  file://${{ runner.temp }}/certs.git
+          ASC_KEY_ID:     ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID:  ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8:     ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID:  ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           FASTLANE_HIDE_CHANGELOG: "true"
+      - name: Bundle the new profile, and only it
+        run: |
+          set -euo pipefail
+          G="$RUNNER_TEMP/certs.git"
+          before=$(cat "$RUNNER_TEMP/before"); after=$(git -C "$G" rev-parse master)
+          if [ "$before" = "$after" ]; then echo "Nothing new: the profile is already in the certs repo."; exit 1; fi
+          changed=$(git -C "$G" diff --name-only "$before" "$after")
+          echo "Changed: $changed"
+          [ "$changed" = "profiles/appstore/AppStore_${APP_IDENTIFIER}.mobileprovision" ] \
+            || { echo "Refusing: something other than the one new profile changed."; exit 1; }
+          git -C "$G" bundle create "$RUNNER_TEMP/profile.bundle" "$before..master"
+          echo "before=$before" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: profile-bundle
+          path: ${{ runner.temp }}/profile.bundle
+          retention-days: 1
+          if-no-files-found: error
