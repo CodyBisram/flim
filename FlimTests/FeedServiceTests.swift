@@ -106,6 +106,62 @@ import XCTest
                              requested: [edited], readStartedAt: service.tagWriteClock)
         #expect(service.tagsByPost[edited]?.isEmpty == true)
     }
+
+    private func reaction(on postId: UUID, emoji: String = "\u{2764}\u{FE0F}") -> PostReaction {
+        PostReaction(id: UUID(), postId: postId, userId: UUID(), emoji: emoji)
+    }
+
+    private func comment(on postId: UUID) -> CommentInfo {
+        CommentInfo(comment: PostComment(id: UUID(), postId: postId, userId: UUID(), body: "hi", createdAt: .now),
+                    author: nil, likeCount: 0, likedByMe: false)
+    }
+
+    /// A post opened from a notification is usually not on the feed's first page. The feed's own
+    /// reload used to replace the caches with that page's answer, so the open post's reactions
+    /// vanished until its poll came round, 8 seconds later.
+    @Test func pageReadLeavesPostsItWasNotAskedAbout() {
+        let service = FeedService()
+        let onPage = UUID()
+        let opened = UUID()
+        let openedReaction = reaction(on: opened)
+        let openedComment = comment(on: opened)
+        service.reactionsByPost = [opened: [openedReaction]]
+        service.commentsByPost = [opened: [openedComment]]
+
+        service.applyPageRead(reactions: [onPage: [reaction(on: onPage)]], comments: [:], requested: [onPage])
+
+        #expect(service.reactionsByPost[opened]?.map(\.id) == [openedReaction.id])
+        #expect(service.commentsByPost[opened]?.map(\.id) == [openedComment.id])
+        #expect(service.reactionsByPost[onPage]?.count == 1)
+    }
+
+    /// A post on the page whose last reaction was removed is absent from the answer; it must read
+    /// as zero, not keep the withdrawn reaction.
+    @Test func pageReadMissingARequestedPostClearsThatPost() {
+        let service = FeedService()
+        let postId = UUID()
+        service.reactionsByPost = [postId: [reaction(on: postId)]]
+        service.commentsByPost = [postId: [comment(on: postId)]]
+
+        service.applyPageRead(reactions: [:], comments: [:], requested: [postId])
+
+        #expect(service.reactionsByPost[postId]?.isEmpty == true)
+        #expect(service.commentsByPost[postId]?.isEmpty == true)
+    }
+
+    @Test func failedPageReadChangesNothing() {
+        let service = FeedService()
+        let postId = UUID()
+        let existing = reaction(on: postId)
+        let existingComment = comment(on: postId)
+        service.reactionsByPost = [postId: [existing]]
+        service.commentsByPost = [postId: [existingComment]]
+
+        service.applyPageRead(reactions: nil, comments: nil, requested: [postId])
+
+        #expect(service.reactionsByPost[postId]?.map(\.id) == [existing.id])
+        #expect(service.commentsByPost[postId]?.map(\.id) == [existingComment.id])
+    }
 }
 
 /// `FeedService`'s pure cache-maintenance helpers. `FeedService` is `@MainActor`, so these tests

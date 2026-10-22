@@ -1284,9 +1284,9 @@ final class FeedService {
             // A fresh load that genuinely has nothing to show (e.g. everyone followed was
             // unfollowed or blocked) still needs to clear whatever the previous page left behind;
             // `loadMoreFeed`'s ordinary "no more pages" return is the only other way here, and
-            // that one has nothing stale to clear because it's always appending.
+            // that one has nothing stale to clear because it's always appending. The reaction,
+            // comment and tag caches stay: other screens read them too (see `applyPageRead`).
             if replacingFeed, AccountEpoch.isCurrent(epoch), generation == feedGeneration {
-                reactionsByPost = [:]; commentsByPost = [:]; tagsByPost = [:]; tagProfiles = [:]
                 feed = []
             }
             return
@@ -1309,24 +1309,15 @@ final class FeedService {
         // append to the feed it produced.
         guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         if replacingFeed {
-            // Replace, not merge: the previous page's caches belong to posts that are about to
-            // disappear from `feed` entirely, keeping them around would just be stale memory.
-            // Except when a read failed (`nil`): then the old cache is the last known answer
-            // for whichever posts carry over, and a few stale entries cost less than every
-            // reaction bar or tag chip on the new page reading as empty.
-            if let fetchedReactions { reactionsByPost = fetchedReactions }
-            if let fetchedComments { commentsByPost = fetchedComments }
-            if let tagRead {
-                // A post whose tags were edited while this read was out keeps the edit.
-                let edited = tagsByPost.filter { tagWrittenAfter($0.key, readStartedAt: tagReadStart) }
-                tagsByPost = tagRead.tags.merging(edited) { _, edit in edit }
-                tagProfiles = edited.isEmpty ? tagRead.profiles
-                    : tagRead.profiles.merging(tagProfiles) { read, _ in read }
-            }
+            // Written per post on this page, never replaced wholesale: these caches are shared
+            // with every screen showing a post, not only the feed. A post opened from a
+            // notification is usually not on page one, and replacing the caches with page one's
+            // answer emptied that open post's reactions and tags until its poll came round.
+            applyPageRead(reactions: fetchedReactions, comments: fetchedComments, requested: postIds)
+            applyTagRead(tagRead, requested: postIds, readStartedAt: tagReadStart)
             feed = items
         } else {
-            if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
-            if let fetchedComments { commentsByPost.merge(fetchedComments) { _, new in new } }
+            applyPageRead(reactions: fetchedReactions, comments: fetchedComments, requested: postIds)
             applyTagRead(tagRead, requested: postIds, readStartedAt: tagReadStart)
             // Re-deduped against the live feed, not only `existingIds`: that snapshot
             // predates this function's awaits, and a straddle completion landing during them
@@ -1450,8 +1441,7 @@ final class FeedService {
         let tagRead = await tags
         guard straddleRunIsCurrent(epoch: epoch, generation: generation) else { return }
 
-        if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
-        if let fetchedComments { commentsByPost.merge(fetchedComments) { _, new in new } }
+        applyPageRead(reactions: fetchedReactions, comments: fetchedComments, requested: postIds)
         applyTagRead(tagRead, requested: postIds, readStartedAt: tagReadStart)
         // Deduped against the feed AS IT IS NOW, not the snapshot from before this
         // function's awaits: anything else that appended while those were in flight would
@@ -1587,6 +1577,26 @@ final class FeedService {
     struct TagRead {
         var tags: [UUID: [PostTag]]
         var profiles: [UUID: UserProfile]
+    }
+
+    /// The one writer of a page's reactions and comments READ into the shared caches.
+    ///
+    /// Every requested id is ASSIGNED, `[]` when the answer has no rows for it, so a post whose
+    /// last reaction was withdrawn reads as zero rather than keeping it. Ids not requested are
+    /// left alone: PostDetailView, a profile and the Darkroom read these same caches for posts
+    /// that are not on the feed's page, and a feed reload used to empty them. A failed read
+    /// (`nil`) changes nothing. A post with a reaction write in flight keeps its optimistic
+    /// state, the same rule `refreshReactions` follows.
+    func applyPageRead(reactions: [UUID: [PostReaction]]?, comments: [UUID: [CommentInfo]]?,
+                       requested postIds: [UUID]) {
+        if let reactions {
+            for id in postIds where !reactionWritesInFlight.contains(id) {
+                reactionsByPost[id] = reactions[id] ?? []
+            }
+        }
+        if let comments {
+            for id in postIds { commentsByPost[id] = comments[id] ?? [] }
+        }
     }
 
     /// The one writer of a tags READ into `tagsByPost` for posts already on screen.
