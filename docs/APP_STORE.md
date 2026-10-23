@@ -159,12 +159,13 @@ not add plurals of words already present. Apple handles both.
 ## What's New (version 1.6.3), build TBD, updated 2026-10-21
 
 Leads with reacting from a notification, since it is what every member will notice first (updated
-2026-10-21, DRAFT until the owner approves the new first paragraph); then the invite wall, the
+2026-10-21; first paragraph reworded and approved 2026-10-23, when a reaction began opening its
+post); then the invite wall, the
 first thing a new person meets, then Spotlight.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    React without opening the app. Press and hold the noon roundup, or a notification that you've been tagged, to see the photo and send a ❤️, 🔥 or 😂 right from there.
+    React right from a notification. Press and hold the noon roundup, or a notification that you've been tagged, to see the photo, then tap ❤️, 🔥 or 😂 to react and jump straight to the post.
 
     No code yet? Ask a friend for one right from the sign-in screen, or join the waitlist and we'll write to you when there's a spot.
 
