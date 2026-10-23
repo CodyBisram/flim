@@ -434,12 +434,17 @@ Deno.serve(async (req: Request) => {
   // 10:00 run. Defaults to a real send: the pg_cron job that actually drives this in production
   // calls the function URL with no query string at all, and that path must keep sending.
   const isDry = new URL(req.url).searchParams.get("dry") === "true";
+  // `?preview=owner` sends the owner alone a real digest now, so the photo and the reaction
+  // buttons can be tried on a phone without waiting for noon. It skips the noon, interval and
+  // last-launch gates (the window is the full 48 hours), takes no lease, so it can never make a
+  // real hourly run skip, and never writes digest_state, so the owner's real digest still comes.
+  const isOwnerPreview = new URL(req.url).searchParams.get("preview") === "owner";
 
   // One run at a time, same lease the other two senders take: two overlapping invocations (a
   // slow hour plus the next tick) both read digest_state before either wrote it and sent the
   // digest twice (nightly review, 2026-09-10). A dry run takes no lease; it writes nothing.
   let leaseToken: string | null = null;
-  if (!isDry) {
+  if (!isDry && !isOwnerPreview) {
     const { data } = await supabase.rpc("acquire_push_lock", { p_name: "digest", p_seconds: 240 });
     leaseToken = (data as string | null) ?? null;
     if (!leaseToken) return new Response("another run holds the lock");
@@ -470,6 +475,10 @@ Deno.serve(async (req: Request) => {
     const list = tokensByUser.get(row.user_id) ?? [];
     list.push(row.token);
     tokensByUser.set(row.user_id, list);
+  }
+  if (isOwnerPreview) {
+    const ownerId = await ownerUserId();
+    for (const userId of [...tokensByUser.keys()]) if (userId !== ownerId) tokensByUser.delete(userId);
   }
   if (tokensByUser.size === 0) return new Response("no devices");
 
@@ -524,7 +533,7 @@ Deno.serve(async (req: Request) => {
   for (const userId of recipientIds) {
     const zone = zoneByUser.get(userId);
     const hour = (zone ? localHour(zone, runAt) : null) ?? localHour(FALLBACK_TIMEZONE, runAt);
-    if (hour !== SEND_LOCAL_HOUR) tokensByUser.delete(userId);
+    if (hour !== SEND_LOCAL_HOUR && !isOwnerPreview) tokensByUser.delete(userId);
   }
   if (tokensByUser.size === 0) return new Response("nobody's noon this hour");
 
@@ -623,7 +632,7 @@ Deno.serve(async (req: Request) => {
     // Window starts at the last digest actually sent, so a missed run rolls into the next one.
     // A user with no state yet gets the default window rather than their whole history.
     const lastSentAt = lastSent.get(userId) ?? 0;
-    if (now - lastSentAt < DIGEST_INTERVAL_HOURS * 3600_000) continue;
+    if (now - lastSentAt < DIGEST_INTERVAL_HOURS * 3600_000 && !isOwnerPreview) continue;
 
     const baseSince = Math.max(lastSentAt, now - MAX_WINDOW_HOURS * 3600_000);
     // Clamp to this user's last known launch, so the 10:00 push counts only what arrived since
@@ -631,7 +640,8 @@ Deno.serve(async (req: Request) => {
     // recipient with no client_versions row (never on a build that reports, or hasn't relaunched
     // since updating) falls back to `baseSince` unchanged, exactly the pre-clamp behavior.
     const launchAt = lastLaunch.get(userId);
-    const since = launchAt !== undefined ? Math.max(baseSince, launchAt) : baseSince;
+    const since = isOwnerPreview ? now - MAX_WINDOW_HOURS * 3600_000
+      : launchAt !== undefined ? Math.max(baseSince, launchAt) : baseSince;
 
     considered++;
 
@@ -694,8 +704,10 @@ Deno.serve(async (req: Request) => {
 
     // Recorded even if APNs rejected every token: the alternative is retrying a dead device every
     // hour forever. A real delivery problem shows up in the per-send log above.
-    await supabase.from("digest_state")
-      .upsert({ user_id: userId, last_sent_at: new Date(now).toISOString() }, { onConflict: "user_id" });
+    if (!isOwnerPreview) {
+      await supabase.from("digest_state")
+        .upsert({ user_id: userId, last_sent_at: new Date(now).toISOString() }, { onConflict: "user_id" });
+    }
     if (delivered) sent++;
   }
 
