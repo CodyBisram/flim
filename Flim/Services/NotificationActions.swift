@@ -3,11 +3,13 @@ import Supabase
 import UserNotifications
 import os
 
-/// Buttons on a notification, acted on without opening the app.
+/// Buttons on a notification.
 ///
 /// "Follow back", on the push an inviter gets when someone joins with their invite ("@maya joined
-/// FLIM with your invite", owner-approved 2026-10-13). And since 1.6.3, three reactions under a
-/// push that shows a friend's photo: the noon roundup (its newest post) and "tagged you". The
+/// FLIM with your invite", owner-approved 2026-10-13), acts without opening the app. And since
+/// 1.6.3, three reactions under a push that shows a friend's photo: the noon roundup (its newest
+/// post) and "tagged you". A reaction opens FLIM on that post with the reaction on it (owner,
+/// 2026-10-23): a button that reacted and vanished said nothing about whether it had worked. The
 /// server names the category in `aps.category` and the recipient's id in `to`; iOS shows the
 /// buttons on a long-press or a pull-down of the banner. A build that never registered a category
 /// shows the plain notification, and a tap on the body still routes through `PushDestination`.
@@ -31,6 +33,11 @@ enum NotificationActions {
     /// account: someone holding a locked phone must not be able to follow people from it. It also
     /// means the keychain, where the session lives, is readable when the button runs.
     static func register() {
+        // One call for every category: each call replaces the whole set.
+        UNUserNotificationCenter.current().setNotificationCategories(categories())
+    }
+
+    static func categories() -> Set<UNNotificationCategory> {
         let followBack = UNNotificationAction(
             identifier: followBackAction,
             title: "Follow back",
@@ -43,8 +50,9 @@ enum NotificationActions {
             options: []
         )
         // Same `.authenticationRequired` reasoning: a reaction is written as the account.
+        // `.foreground` because a reaction then opens its post.
         let reactions = reactEmojis.map {
-            UNNotificationAction(identifier: reactAction($0), title: $0, options: [.authenticationRequired])
+            UNNotificationAction(identifier: reactAction($0), title: $0, options: [.authenticationRequired, .foreground])
         }
         let react = UNNotificationCategory(
             identifier: reactCategory,
@@ -52,8 +60,7 @@ enum NotificationActions {
             intentIdentifiers: [],
             options: []
         )
-        // One call for every category: each call replaces the whole set.
-        UNUserNotificationCenter.current().setNotificationCategories([category, react])
+        return [category, react]
     }
 
     /// Who to follow, and which account the push was for. Nil unless the payload carries both: a
@@ -125,11 +132,11 @@ extension NotificationActions {
 
     /// The reaction, written straight to the server, the same way and for the same reasons as
     /// `performFollowBack`. Already there is success (a second press, or a reaction made in the app
-    /// since). A write that fails puts the post in line for the next open, where the reaction is
-    /// one more tap.
-    @MainActor
-    static func performReact(_ action: React) async {
-        guard let session = try? await supabase.auth.session, session.user.id == action.recipient else { return }
+    /// since). True when the push's account is the one signed in, so its post is the one to open:
+    /// with the reaction on it, or, when the write failed, one tap away.
+    @MainActor @discardableResult
+    static func performReact(_ action: React) async -> Bool {
+        guard let session = try? await supabase.auth.session, session.user.id == action.recipient else { return false }
         struct R: Encodable { let post_id: UUID; let user_id: UUID; let emoji: String }
         do {
             try await supabase.from("post_reactions")
@@ -138,12 +145,10 @@ extension NotificationActions {
             // Already reacted with this emoji: the end state holds.
         } catch {
             log.error("react from notification failed: \(error.localizedDescription, privacy: .public)")
-            if let current = try? await supabase.auth.session, current.user.id == action.recipient {
-                PendingPushDestination.hold(.post(postId: action.postId, comments: false))
-            }
-            return
+            return true
         }
         NotificationCenter.default.post(name: .reactedFromNotification, object: action)
+        return true
     }
 }
 

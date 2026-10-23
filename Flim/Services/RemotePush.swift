@@ -413,8 +413,8 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        // A button pressed, not the notification tapped: act on it where it was pressed and open
-        // nothing. See `NotificationActions`.
+        // A button pressed, not the notification tapped. "Follow back" acts where it was pressed
+        // and opens nothing; a reaction opens its post once it is written. See `NotificationActions`.
         if response.actionIdentifier == NotificationActions.followBackAction {
             guard let action = NotificationActions.followBack(userInfo: userInfo) else {
                 completionHandler()
@@ -432,7 +432,12 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
                 return
             }
             Task { @MainActor in
-                await NotificationActions.performReact(react)
+                // Written first, so the post opens with the reaction already on it.
+                if await NotificationActions.performReact(react) {
+                    let destination = PushDestination.post(postId: react.postId, comments: false)
+                    PendingPushDestination.store(destination)
+                    NotificationCenter.default.post(name: .openPushDestination, object: destination)
+                }
                 completionHandler()
             }
             return

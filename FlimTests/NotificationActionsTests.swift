@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import UserNotifications
 @testable import Flim
 
 /// `NotificationActions.followBack(userInfo:)` decides whether a "Follow back" press writes a
@@ -97,5 +98,21 @@ struct NotificationActionsTests {
         #expect(!NotificationActions.isReactAction("com.apple.UNNotificationDefaultActionIdentifier"))
         #expect(NotificationActions.react(actionIdentifier: NotificationActions.followBackAction,
                                           userInfo: reactPayload()) == nil)
+    }
+
+    @Test("a reaction opens FLIM on its post; Follow back stays where it was pressed; both need the phone unlocked")
+    func whichButtonsOpenTheApp() throws {
+        let categories = NotificationActions.categories()
+        let react = try #require(categories.first { $0.identifier == NotificationActions.reactCategory })
+        #expect(react.actions.map(\.identifier) == NotificationActions.reactEmojis.map(NotificationActions.reactAction))
+        for action in react.actions {
+            #expect(action.options.contains(.foreground))
+            #expect(action.options.contains(.authenticationRequired))
+        }
+        let followBack = try #require(categories.first { $0.identifier == NotificationActions.followBackCategory })
+        for action in followBack.actions {
+            #expect(!action.options.contains(.foreground))
+            #expect(action.options.contains(.authenticationRequired))
+        }
     }
 }

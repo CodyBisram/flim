@@ -2313,8 +2313,9 @@ was mostly for new people. Two things added for the 85 already here, picked by t
   extension (FlimNotificationService, bundle com.flim.app.NotificationService) fetches only a
   signed photos URL on the project's own host and attaches it; anything else shows the words
   alone. The buttons write the reaction as the account the push was for
-  (`.authenticationRequired`, the same as Follow back); a failed write puts the post in line for
-  the next open. Builds before this one see the same pushes with no photo and no buttons.
+  (`.authenticationRequired`, the same as Follow back), then open FLIM on that post with the
+  reaction on it (since 2026-10-23, the owner's call: a button that reacted and vanished gave no
+  sign it had worked); a failed write still opens the post, one tap from reacting. Builds before this one see the same pushes with no photo and no buttons.
   Owner steps: `bundle exec fastlane certificates` once (registers the App ID through the API key
   and makes its profile) BEFORE the first push of this build; deploy both functions
   (`supabase functions deploy send-daily-digest --no-verify-jwt`, same for send-social-push).
@@ -2331,9 +2332,10 @@ was mostly for new people. Two things added for the 85 already here, picked by t
 
 On device, once the build is up:
 1. Long-press the noon roundup on a day a friend posted: the newest photo shows, with three
-   buttons. Press ❤️ with the phone locked: Face ID first, then the reaction is on the post
-   (the poster gets their usual reaction push). Press it again: nothing doubles.
+   buttons. Press ❤️ with the phone locked: Face ID first, then FLIM opens on the post with the
+   reaction on it (the poster gets their usual reaction push). Press it again: nothing doubles.
 2. A "tagged you" push shows the photo and the same buttons.
-3. Airplane mode, press a reaction: next open lands on that post.
+3. Airplane mode, press a reaction: FLIM opens on that post (or lands there once back online),
+   with no reaction on it.
 4. The feed's first launch on the new build: the invite line, once; tap it, send an invite,
    close the sheet: the count drops by one. Next launch: gone.
