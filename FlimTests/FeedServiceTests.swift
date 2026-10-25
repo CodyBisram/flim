@@ -111,6 +111,24 @@ import XCTest
         PostReaction(id: UUID(), postId: postId, userId: UUID(), emoji: emoji)
     }
 
+    /// A `refreshReactions` poll already in flight when a push's reaction button lands
+    /// (`noteReactionMadeElsewhere`) must not overwrite it with the pre-reaction snapshot it
+    /// fetched before the poll started.
+    @Test func reactionsReadOlderThanAPushReactionLeavesThatPost() {
+        let service = FeedService()
+        let postId = UUID()
+        let untouched = UUID()
+        let readStart = service.reactionWriteClock
+        service.reactionsByPost = [postId: [], untouched: [reaction(on: untouched)]]
+
+        service.noteReactionMadeElsewhere(postId: postId, emoji: "\u{2764}\u{FE0F}", userId: UUID())
+
+        service.applyReactionsRead([postId: [], untouched: []], requested: [postId, untouched], readStartedAt: readStart)
+
+        #expect(service.reactionsByPost[postId]?.count == 1)
+        #expect(service.reactionsByPost[untouched]?.isEmpty == true)
+    }
+
     private func comment(on postId: UUID) -> CommentInfo {
         CommentInfo(comment: PostComment(id: UUID(), postId: postId, userId: UUID(), body: "hi", createdAt: .now),
                     author: nil, likeCount: 0, likedByMe: false)
@@ -267,6 +285,58 @@ final class FeedServiceTests: XCTestCase {
         service.applyTagRead(FeedService.TagRead(tags: [postId: [fresh]], profiles: [:]),
                              requested: [postId], readStartedAt: readStart)
         XCTAssertEqual(service.tagsByPost[postId]?.map(\.id), [fresh.id])
+    }
+
+    /// setTags/removeMyTag's trailing `markTagWrite` call (after the write has landed) must not
+    /// advance the clock for an account that is no longer signed in, or a departing account's
+    /// call can still poison the clock for a post id the incoming account reads next, even after
+    /// resetForAccountChange has cleared tagWrittenAt (2026-10-21 reopen of this row).
+    func testMarkTagWriteGuardedByAStaleEpochDoesNotAdvanceTheClock() {
+        let service = FeedService()
+        let postId = UUID()
+        let epoch = AccountEpoch.current
+        let readStart = service.tagWriteClock
+
+        AccountEpoch.bump()   // stands in for a sign-out/sign-in mid-request
+        if AccountEpoch.isCurrent(epoch) { service.markTagWrite(postId) }
+
+        XCTAssertEqual(service.tagWriteClock, readStart, "a stale epoch must not advance the clock")
+
+        let fresh = PostTag(id: UUID(), postId: postId, taggedUserId: UUID(), x: 0.5, y: 0.5)
+        service.applyTagRead(FeedService.TagRead(tags: [postId: [fresh]], profiles: [:]),
+                             requested: [postId], readStartedAt: readStart)
+        XCTAssertEqual(service.tagsByPost[postId]?.map(\.id), [fresh.id])
+    }
+
+    // MARK: - ownSpotlightThumb
+
+    /// `performPutUp`'s optimistic write flips `ownSpotlightEntry.photoId` to the incoming frame
+    /// before the round trip resolves, so the identity check alone would blank the "Up now" row
+    /// for the whole send. While a write is in flight, the cached thumbnail holds as-is instead.
+    func testOwnSpotlightThumbHoldsTheOutgoingFrameWhileAWriteIsInFlight() throws {
+        let service = FeedService()
+        let outgoing = UUID()
+        let incoming = UUID()
+        let url = try XCTUnwrap(URL(string: "https://example.invalid/outgoing.jpg"))
+        service.ownSpotlightThumbPhotoId = outgoing
+        service.ownSpotlightThumbPath = "outgoing.jpg"
+        service.ownSpotlightThumbURL = url
+        service.ownSpotlightEntry = OwnSpotlightEntry(
+            weekKey: "2026-10-19", weekStartsAt: .now, weekClosesAt: .now.addingTimeInterval(86_400),
+            canPutUp: true, postId: UUID(), photoId: outgoing, postCreatedAt: .now, putUpAt: .now)
+
+        // The send starts: the entry's photoId flips optimistically, but the thumbnail cache
+        // has not been asked about the incoming frame yet.
+        service.spotlightWriteInFlight = true
+        service.ownSpotlightEntry?.photoId = incoming
+
+        let thumb = service.ownSpotlightThumb
+        XCTAssertEqual(thumb.url, url)
+        XCTAssertEqual(thumb.path, "outgoing.jpg")
+
+        // Once the send settles, the usual identity check applies again.
+        service.spotlightWriteInFlight = false
+        XCTAssertNil(service.ownSpotlightThumb.url)
     }
 
     // MARK: - myPostedPhotoIds (Darkroom "shared to your page" badge / pager share button)

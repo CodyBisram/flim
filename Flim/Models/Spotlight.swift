@@ -1111,9 +1111,11 @@ enum SpotlightSeenMark {
         return days.count >= shownDaysLimit
     }
 
-    /// The viewer's calendar day, as `noteShown` files it.
+    /// The viewer's calendar day, as `noteShown` files it. Shifted by the app's own 4am day
+    /// boundary (`FeedUnit.dayKey`), not a midnight cut, so late-night browsing across several
+    /// nights does not spend the 3-day "seen" allowance a day early.
     static func dayKey(_ date: Date = .now, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        let c = calendar.dateComponents([.year, .month, .day], from: FeedUnit.dayKey(for: date, calendar: calendar))
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
