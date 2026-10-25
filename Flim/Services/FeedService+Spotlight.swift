@@ -358,7 +358,15 @@ extension FeedService {
 
     /// The thumbnail of the frame up now, or nothing while the one held belongs to another
     /// photo (the entry moved and the read has not landed).
+    ///
+    /// While a put-up or swap is in flight, `ownSpotlightEntry.photoId` has already flipped to
+    /// the incoming frame optimistically, but the cached thumbnail still names the outgoing one;
+    /// it is held as-is for the whole send rather than blanking, matching the "Up now" row's own
+    /// comment that it holds the outgoing frame's picture during a send.
     var ownSpotlightThumb: (url: URL?, path: String?) {
+        if spotlightWriteInFlight, ownSpotlightThumbPhotoId != nil {
+            return (ownSpotlightThumbURL, ownSpotlightThumbPath)
+        }
         guard let photoId = ownSpotlightEntry?.photoId, ownSpotlightThumbPhotoId == photoId else {
             return (nil, nil)
         }

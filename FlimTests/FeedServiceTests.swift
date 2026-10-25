@@ -290,6 +290,37 @@ final class FeedServiceTests: XCTestCase {
         XCTAssertEqual(service.tagsByPost[postId]?.map(\.id), [fresh.id])
     }
 
+    // MARK: - ownSpotlightThumb
+
+    /// `performPutUp`'s optimistic write flips `ownSpotlightEntry.photoId` to the incoming frame
+    /// before the round trip resolves, so the identity check alone would blank the "Up now" row
+    /// for the whole send. While a write is in flight, the cached thumbnail holds as-is instead.
+    func testOwnSpotlightThumbHoldsTheOutgoingFrameWhileAWriteIsInFlight() throws {
+        let service = FeedService()
+        let outgoing = UUID()
+        let incoming = UUID()
+        let url = try XCTUnwrap(URL(string: "https://example.invalid/outgoing.jpg"))
+        service.ownSpotlightThumbPhotoId = outgoing
+        service.ownSpotlightThumbPath = "outgoing.jpg"
+        service.ownSpotlightThumbURL = url
+        service.ownSpotlightEntry = OwnSpotlightEntry(
+            weekKey: "2026-10-19", weekStartsAt: .now, weekClosesAt: .now.addingTimeInterval(86_400),
+            canPutUp: true, postId: UUID(), photoId: outgoing, postCreatedAt: .now, putUpAt: .now)
+
+        // The send starts: the entry's photoId flips optimistically, but the thumbnail cache
+        // has not been asked about the incoming frame yet.
+        service.spotlightWriteInFlight = true
+        service.ownSpotlightEntry?.photoId = incoming
+
+        let thumb = service.ownSpotlightThumb
+        XCTAssertEqual(thumb.url, url)
+        XCTAssertEqual(thumb.path, "outgoing.jpg")
+
+        // Once the send settles, the usual identity check applies again.
+        service.spotlightWriteInFlight = false
+        XCTAssertNil(service.ownSpotlightThumb.url)
+    }
+
     // MARK: - myPostedPhotoIds (Darkroom "shared to your page" badge / pager share button)
 
     /// A photo already in the batched set reads as shared; one that isn't, doesn't. This is the
