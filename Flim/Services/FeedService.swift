@@ -55,6 +55,11 @@ final class FeedService {
     /// Posts with a reaction write in flight. `refreshReactions` skips these so a poll can't
     /// clobber an optimistic toggle with a server read taken before the write landed.
     private var reactionWritesInFlight: Set<UUID> = []
+    /// Ticks whenever `noteReactionMadeElsewhere` lands a reaction outside `reactToPost`'s own
+    /// round trip (a push's reaction button), so a `refreshReactions` poll already in flight at
+    /// that moment does not overwrite it once its own read resolves. Same shape as `tagWriteClock`.
+    @ObservationIgnored private(set) var reactionWriteClock = 0
+    @ObservationIgnored private var reactionWrittenAt: [UUID: Int] = [:]
     /// One reaction write at a time per post. Two quick taps used to race: the second request
     /// could land before the first, and a failure in either rolled the WHOLE post back to a
     /// snapshot taken before both, wiping the one that succeeded. Writes now queue per post, and
@@ -358,6 +363,10 @@ final class FeedService {
               !current.contains(where: { $0.emoji == emoji && $0.userId == userId }) else { return }
         current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
         reactionsByPost[postId] = current
+        // A `refreshReactions` poll already in flight for this post started before this reaction
+        // landed and would otherwise overwrite it with the pre-reaction snapshot it fetched.
+        reactionWriteClock += 1
+        reactionWrittenAt[postId] = reactionWriteClock
     }
 
     /// Same contract as `follow`: whether the unfollow holds server-side.
@@ -1774,6 +1783,7 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let wanted = postIds.filter { !reactionWritesInFlight.contains($0) }
         guard !wanted.isEmpty else { return }
+        let readStartedAt = reactionWriteClock
         let fresh = await batchReactions(postIds: wanted)
         // This is the poll LiveRefresh runs every 8 to 20 seconds, so it is the request most
         // likely to be in flight across an account switch. Keyed by post id, so a stale entry is
@@ -1781,12 +1791,28 @@ final class FeedService {
         // account's reactions into shared state is exactly the thing this release is closing.
         // A failed poll (`nil`) writes nothing: assigning `[]` per post below zeroed every
         // visible bar until the next poll landed, 8 to 20 seconds later (audit A-2, 1.6.1).
-        guard AccountEpoch.isCurrent(epoch), let fresh else { return }
-        for id in wanted where !reactionWritesInFlight.contains(id) {
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        applyReactionsRead(fresh, requested: wanted, readStartedAt: readStartedAt)
+    }
+
+    /// The one writer of a reactions READ into `reactionsByPost` for posts already on screen.
+    /// `nil` (a failed read) changes nothing. `readStartedAt` is `reactionWriteClock` as the
+    /// read was sent: a post `noteReactionMadeElsewhere` wrote to after that keeps what it has,
+    /// the same contract `applyTagRead` holds for tags.
+    func applyReactionsRead(_ fresh: [UUID: [PostReaction]]?, requested postIds: [UUID], readStartedAt: Int) {
+        guard let fresh else { return }
+        for id in postIds where !reactionWritesInFlight.contains(id) && !reactionWrittenAfter(id, readStartedAt: readStartedAt) {
             // Assigned per post rather than merged, so a reaction someone REMOVED disappears.
             // `merge` would only ever add, leaving withdrawn reactions on screen forever.
             reactionsByPost[id] = fresh[id] ?? []
         }
+    }
+
+    /// Whether `noteReactionMadeElsewhere` landed a reaction for this post after this poll
+    /// started, so a read sent before it must not overwrite what it added.
+    private func reactionWrittenAfter(_ postId: UUID, readStartedAt: Int) -> Bool {
+        guard let written = reactionWrittenAt[postId] else { return false }
+        return written > readStartedAt
     }
 
     /// Posts a comment and refreshes just that post's cached comments.
