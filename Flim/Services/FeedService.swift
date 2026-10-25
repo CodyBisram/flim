@@ -1501,6 +1501,7 @@ final class FeedService {
 
     @discardableResult
     func setTags(_ tags: [PendingTag], on postId: UUID) async -> TagEditOutcome {
+        let epoch = AccountEpoch.current
         markTagWrite(postId)
         let existing = tagsByPost[postId] ?? []
         let existingIds = Set(existing.map(\.taggedUserId))
@@ -1536,7 +1537,9 @@ final class FeedService {
                 .eq("id", value: row.id.uuidString).execute()
         }
         // Again once the rows have landed, so only a read that starts after them can apply.
-        markTagWrite(postId)
+        // Guarded: a departing account's trailing call must not advance the clock for whoever
+        // is signed in now (2026-10-21 reopen of this row).
+        if AccountEpoch.isCurrent(epoch) { markTagWrite(postId) }
         await loadTags(for: postId)
         return outcome
     }
@@ -1547,12 +1550,13 @@ final class FeedService {
     /// supabase/migrations/2026-08-01_tag_self_removal.sql). Scoped by `tagged_user_id` as well as
     /// post so it can never take anyone else's tag down, even if called wrongly.
     func removeMyTag(from postId: UUID, userId: UUID) async {
+        let epoch = AccountEpoch.current
         markTagWrite(postId)
         _ = try? await supabase.from("post_tags").delete()
             .eq("post_id", value: postId.uuidString)
             .eq("tagged_user_id", value: userId.uuidString)
             .execute()
-        markTagWrite(postId)
+        if AccountEpoch.isCurrent(epoch) { markTagWrite(postId) }
         await loadTags(for: postId)
     }
 
