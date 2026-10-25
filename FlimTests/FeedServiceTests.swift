@@ -111,6 +111,24 @@ import XCTest
         PostReaction(id: UUID(), postId: postId, userId: UUID(), emoji: emoji)
     }
 
+    /// A `refreshReactions` poll already in flight when a push's reaction button lands
+    /// (`noteReactionMadeElsewhere`) must not overwrite it with the pre-reaction snapshot it
+    /// fetched before the poll started.
+    @Test func reactionsReadOlderThanAPushReactionLeavesThatPost() {
+        let service = FeedService()
+        let postId = UUID()
+        let untouched = UUID()
+        let readStart = service.reactionWriteClock
+        service.reactionsByPost = [postId: [], untouched: [reaction(on: untouched)]]
+
+        service.noteReactionMadeElsewhere(postId: postId, emoji: "\u{2764}\u{FE0F}", userId: UUID())
+
+        service.applyReactionsRead([postId: [], untouched: []], requested: [postId, untouched], readStartedAt: readStart)
+
+        #expect(service.reactionsByPost[postId]?.count == 1)
+        #expect(service.reactionsByPost[untouched]?.isEmpty == true)
+    }
+
     private func comment(on postId: UUID) -> CommentInfo {
         CommentInfo(comment: PostComment(id: UUID(), postId: postId, userId: UUID(), body: "hi", createdAt: .now),
                     author: nil, likeCount: 0, likedByMe: false)
