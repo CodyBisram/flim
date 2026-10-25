@@ -145,6 +145,11 @@ extension NotificationActions {
             // Already reacted with this emoji: the end state holds.
         } catch {
             log.error("react from notification failed: \(error.localizedDescription, privacy: .public)")
+            // Re-checked, like performFollowBack's own catch: an account switch mid-request must
+            // not open whoever pressed the button's post for whoever is signed in now.
+            guard let current = try? await supabase.auth.session, current.user.id == action.recipient else {
+                return false
+            }
             return true
         }
         NotificationCenter.default.post(name: .reactedFromNotification, object: action)
