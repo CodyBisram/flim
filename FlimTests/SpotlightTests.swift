@@ -981,6 +981,14 @@ struct SpotlightTests {
         #expect(SpotlightSeenMark.dayKey(date(10, 13, 23, 30), calendar: newYork) == "2026-10-13")
     }
 
+    @Test("SpotlightSeenMark.dayKey files through 04:00, not midnight")
+    func seenMarkDayKeyFollowsTheFourAMBoundary() {
+        // 01:00 is still the night before by the app's own day convention.
+        #expect(SpotlightSeenMark.dayKey(date(10, 14, 1), calendar: newYork) == "2026-10-13")
+        // At 04:00 the day turns.
+        #expect(SpotlightSeenMark.dayKey(date(10, 14, 4), calendar: newYork) == "2026-10-14")
+    }
+
     @Test("the day word files through 04:00 on both sides, with a pinned calendar")
     func dayWordAcrossFour() {
         // Now is Wednesday 03:30, which still files under Tuesday.
