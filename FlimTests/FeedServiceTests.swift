@@ -269,6 +269,27 @@ final class FeedServiceTests: XCTestCase {
         XCTAssertEqual(service.tagsByPost[postId]?.map(\.id), [fresh.id])
     }
 
+    /// setTags/removeMyTag's trailing `markTagWrite` call (after the write has landed) must not
+    /// advance the clock for an account that is no longer signed in, or a departing account's
+    /// call can still poison the clock for a post id the incoming account reads next, even after
+    /// resetForAccountChange has cleared tagWrittenAt (2026-10-21 reopen of this row).
+    func testMarkTagWriteGuardedByAStaleEpochDoesNotAdvanceTheClock() {
+        let service = FeedService()
+        let postId = UUID()
+        let epoch = AccountEpoch.current
+        let readStart = service.tagWriteClock
+
+        AccountEpoch.bump()   // stands in for a sign-out/sign-in mid-request
+        if AccountEpoch.isCurrent(epoch) { service.markTagWrite(postId) }
+
+        XCTAssertEqual(service.tagWriteClock, readStart, "a stale epoch must not advance the clock")
+
+        let fresh = PostTag(id: UUID(), postId: postId, taggedUserId: UUID(), x: 0.5, y: 0.5)
+        service.applyTagRead(FeedService.TagRead(tags: [postId: [fresh]], profiles: [:]),
+                             requested: [postId], readStartedAt: readStart)
+        XCTAssertEqual(service.tagsByPost[postId]?.map(\.id), [fresh.id])
+    }
+
     // MARK: - myPostedPhotoIds (Darkroom "shared to your page" badge / pager share button)
 
     /// A photo already in the batched set reads as shared; one that isn't, doesn't. This is the
