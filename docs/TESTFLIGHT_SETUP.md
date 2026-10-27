@@ -251,15 +251,18 @@ organization, also "FLIM Dev", apart from production's. Set up 2026-10-27:
 - Management API token for it: `~/.flim-v2-supabase-token`. Deploys to it name
   `--project-ref kwhgbrdznaogkdyqitvi` every time.
 
-Still to do, in order:
-1. Push: set the APNs key secrets on the beta project (the owner copies them; pushes stay off
-   until then).
-2. Register the three beta App IDs with the App Group `group.com.flim.app.beta` (the
-   `certificates` lane registers bundle ids through the API key), then make their profiles with
-   the `signing-setup` workflow: `match AppStore com.flim.app.beta`, `...beta.RollActivityWidget`
-   and `...beta.NotificationService`.
-3. Create the "FLIM Beta" app record in App Store Connect (website only).
-4. Add a beta TestFlight workflow that archives the `FLIM Beta` scheme with Release-Beta.
+Apple side, done 2026-10-27: App Group `group.com.flim.app.beta`; App IDs `com.flim.app.beta`
+(Push, App Groups with the beta group, Associated Domains), `...beta.RollActivityWidget` (App
+Groups, beta group) and `...beta.NotificationService`; their `match AppStore` profiles made by
+three `signing-setup` runs; the "FLIM Beta" app record in App Store Connect (Apple ID
+6827429017, SKU flim-beta).
+
+Builds: `.github/workflows/ios-beta-testflight.yml` runs the same `beta` lane with
+`FLIM_VARIANT=beta` (scheme `FLIM Beta`, Release-Beta, the beta bundle ids) on pushes to the `v2`
+branch or by hand. It shares the App Store app's concurrency group.
+
+Still to do: set the APNs key secrets on the beta project so FLIM Beta gets pushes (the owner
+copies them; pushes stay off until then).
 
 v2 database changes stay additive (new tables and columns the App Store app ignores), because v2
 will one day run on the production database while people are still on v1.

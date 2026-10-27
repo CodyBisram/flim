@@ -1,0 +1,67 @@
+name: iOS · FLIM Beta TestFlight
+
+# FLIM Beta, the v2 test app: its own bundle id, Supabase project and TestFlight (see
+# docs/TESTFLIGHT_SETUP.md, "FLIM Beta"). Ships from the `v2` branch, or by hand from any branch.
+# The App Store app's pipeline (ios-testflight.yml) is untouched by this file.
+on:
+  push:
+    branches: [v2]
+    paths-ignore:
+      - ".claude/**"
+      - "docs/**"
+      - "web/**"
+      - "scripts/**"
+      - "supabase/**"
+      - "*.md"
+      - "social/**"
+  workflow_dispatch:
+
+# Shares the App Store app's lane: one signing keychain and one archive at a time on the runners
+# this repo pays for. Not cancelled, the same as there.
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy FLIM Beta to TestFlight
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Set up Ruby + fastlane
+        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build & upload FLIM Beta to TestFlight
+        run: bundle exec fastlane beta
+        env:
+          FLIM_VARIANT:                  beta
+          ASC_KEY_ID:                    ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID:                 ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8:                    ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID:                 ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_PASSWORD:                ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL:                 ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          FASTLANE_HIDE_CHANGELOG: "true"
+          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
+
+      - name: Archive dSYM for crash symbolication
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dsym-beta-${{ github.sha }}
+          path: build/*.dSYM.zip
+          retention-days: 90
+          if-no-files-found: warn

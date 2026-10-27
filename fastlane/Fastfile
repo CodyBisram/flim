@@ -1,17 +1,22 @@
 default_platform(:ios)
 
-APP_IDENTIFIER    = "com.flim.app"
+# FLIM Beta, the v2 test app (docs/TESTFLIGHT_SETUP.md, "FLIM Beta"), builds through these same
+# lanes with FLIM_VARIANT=beta: its own bundle ids, scheme and configuration, its own App Store
+# Connect record and TestFlight. Unset is the App Store app, exactly as before.
+BETA_VARIANT      = ENV["FLIM_VARIANT"] == "beta"
+APP_IDENTIFIER    = BETA_VARIANT ? "com.flim.app.beta" : "com.flim.app"
 # The Live Activity widget extension — its own bundle id, App ID, and profile, same as the
 # main app needs. Used in both match(...) calls and the beta lane's provisioningProfiles map
 # below; project.yml embeds the target into the app. See docs/TESTFLIGHT_SETUP.md's "Adding a
 # new target" for the one-time setup this already went through.
-WIDGET_IDENTIFIER = "com.flim.app.RollActivityWidget"
+WIDGET_IDENTIFIER = "#{APP_IDENTIFIER}.RollActivityWidget"
 # The notification service extension (1.6.3): puts a friend's photo into a push that carries
 # reaction buttons. Same arrangement as the widget.
-NOTIFICATION_SERVICE_IDENTIFIER = "com.flim.app.NotificationService"
+NOTIFICATION_SERVICE_IDENTIFIER = "#{APP_IDENTIFIER}.NotificationService"
 ALL_IDENTIFIERS = [APP_IDENTIFIER, WIDGET_IDENTIFIER, NOTIFICATION_SERVICE_IDENTIFIER]
 XCODEPROJ      = "Flim.xcodeproj"
-SCHEME         = "Flim"
+SCHEME         = BETA_VARIANT ? "FLIM Beta" : "Flim"
+CONFIGURATION  = BETA_VARIANT ? "Release-Beta" : "Release"
 
 platform :ios do
   before_all do
@@ -100,7 +105,7 @@ platform :ios do
       api_key:              api_key,
       initial_build_number: 0
     ) + 1
-    UI.message("Building FLIM build ##{build_number}")
+    UI.message("Building #{BETA_VARIANT ? 'FLIM Beta' : 'FLIM'} build ##{build_number}")
 
     profile_name = ENV["sigh_#{APP_IDENTIFIER}_appstore_profile-name"] ||
                    "match AppStore #{APP_IDENTIFIER}"
@@ -112,7 +117,7 @@ platform :ios do
     build_app(
       project:        XCODEPROJ,
       scheme:         SCHEME,
-      configuration:  "Release",
+      configuration:  CONFIGURATION,
       export_method:  "app-store",
       output_directory: "build",
       output_name:    "Flim.ipa",
