@@ -56,7 +56,12 @@ def fetch_versions():
     """The app's four most recent App Store versions, newest first:
     [{"version", "build", "state", "created"}]."""
     bearer = token()
-    apps = get(f"/v1/apps?filter[bundleId]={BUNDLE_ID}&fields[apps]=name", bearer)["data"]
+    # The filter is not an exact match: since FLIM Beta (com.flim.app.beta) exists it returns both
+    # apps, and taking the first one watched the beta, which has no App Store versions at all
+    # ("no App Store version 1.6.3 found", 2026-10-27). Only the app whose bundle id IS ours.
+    apps = [app for app in get(f"/v1/apps?filter[bundleId]={BUNDLE_ID}&fields[apps]=name,bundleId",
+                               bearer)["data"]
+            if app.get("attributes", {}).get("bundleId") == BUNDLE_ID]
     if not apps:
         sys.exit(f"no app with bundle id {BUNDLE_ID}")
     versions = get(f"/v1/apps/{apps[0]['id']}/appStoreVersions?limit=4"
