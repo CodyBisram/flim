@@ -167,6 +167,8 @@ first thing a new person meets, then Spotlight.
 
     React right from a notification. Press and hold the noon roundup, or a notification that you've been tagged, to see the photo, then tap ❤️, 🔥 or 😂 to react and jump straight to the post.
 
+    Replies stay with the comment they answer. Reply to someone and yours sits right under their comment, and they'll know you replied.
+
     No code yet? Ask a friend for one right from the sign-in screen, or join the waitlist and we'll write to you when there's a spot.
 
     When someone joins with your invite, you'll hear about it, and you can follow them back straight from the notification.
