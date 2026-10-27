@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>FLIM</string>
+	<string>$(FLIM_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,12 +23,22 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.lapse.app</string>
+				<string>$(FLIM_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>FLIMAppGroup</key>
+	<string>$(FLIM_APP_GROUP)</string>
+	<key>FLIMEnvironment</key>
+	<string>$(FLIM_ENVIRONMENT)</string>
+	<key>FLIMSupabaseKey</key>
+	<string>$(FLIM_SUPABASE_KEY)</string>
+	<key>FLIMSupabaseURL</key>
+	<string>$(FLIM_SUPABASE_URL)</string>
+	<key>FLIMURLScheme</key>
+	<string>$(FLIM_URL_SCHEME)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>

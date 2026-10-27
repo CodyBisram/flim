@@ -214,3 +214,39 @@ Skipping step 4 is the failure mode to expect: the code builds fine locally (Deb
 uses automatic signing) and even builds in CI right up until the signed Release
 archive/export step, which fails looking for a profile that doesn't exist yet.
 </content>
+
+## FLIM Beta (the v2 test app)
+
+A second app from the same code, for v2 work that must never touch production. It installs beside
+FLIM on the same phone and ships to its own TestFlight.
+
+| | FLIM (App Store) | FLIM Beta |
+|---|---|---|
+| Build configurations | Debug, Release | Debug-Beta, Release-Beta |
+| Scheme | `Flim` (CI's, unchanged) | `FLIM Beta` |
+| Bundle ids | `com.flim.app` (+ `.RollActivityWidget`, `.NotificationService`) | `com.flim.app.beta` (+ the same two suffixes) |
+| App Group | `group.com.flim.app` | `group.com.flim.app.beta` |
+| URL scheme | `com.lapse.app` | `com.flim.app.beta` |
+| Supabase | production | its own project |
+
+Everything that differs is a `FLIM_*` build setting at the top of `project.yml`, written into each
+target's Info.plist and read by `Flim/Config/FlimEnvironment.swift`. Two rules there keep the beta
+away from production: a beta build with no Supabase project set stops at launch instead of falling
+back, and a beta build pointed at production's project stops at launch too. Only the App Store
+app may fall back to production's values.
+
+To finish setting it up, in order:
+1. Create the beta Supabase project, build its schema from `supabase/schema.sql` with test
+   accounts only (never a copy of real users), and set `FLIM_SUPABASE_URL` / `FLIM_SUPABASE_KEY`
+   under `configs: Beta:` in `project.yml`. Check its cron jobs and hooks call the beta's own
+   functions. Deploy the edge functions there with `APNS_BUNDLE_ID=com.flim.app.beta`, and add
+   `com.flim.app.beta://login-callback` to its auth redirect allowlist.
+2. Register the three beta App IDs with the App Group `group.com.flim.app.beta` (the
+   `certificates` lane registers bundle ids through the API key), then make their profiles with
+   the `signing-setup` workflow: `match AppStore com.flim.app.beta`, `...beta.RollActivityWidget`
+   and `...beta.NotificationService`.
+3. Create the "FLIM Beta" app record in App Store Connect (website only).
+4. Add a beta TestFlight workflow that archives the `FLIM Beta` scheme with Release-Beta.
+
+v2 database changes stay additive (new tables and columns the App Store app ignores), because v2
+will one day run on the production database while people are still on v1.

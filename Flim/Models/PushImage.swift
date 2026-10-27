@@ -5,8 +5,9 @@ import UserNotifications
 /// extension (FlimNotificationService); compiled into the app too, as a second source entry in
 /// project.yml, so the checks are tested with the rest of the suite.
 enum PushImage {
-    /// The project's own storage host. A URL anywhere else is not one the server signed.
-    static let host = "wxvwamwrjlrvqmuaafjv.supabase.co"
+    /// The project's own storage host (this build's, see `FlimEnvironment`). A URL anywhere else
+    /// is not one the server signed.
+    static let host = FlimEnvironment.current.supabaseURL.host ?? ""
     static let signedPathPrefix = "/storage/v1/object/sign/photos/"
 
     static func url(from userInfo: [AnyHashable: Any]) -> URL? {

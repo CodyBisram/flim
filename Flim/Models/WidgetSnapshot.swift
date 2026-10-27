@@ -151,11 +151,12 @@ extension WidgetSnapshot: Equatable {
 /// Built here, in the file both targets already share, so the strings the extension opens and the
 /// strings `PushDestination.parse(url:)` recognises cannot drift apart.
 ///
-/// The scheme is `com.lapse.app`, from Info.plist — the original bundle id, kept because a
-/// registered scheme cannot be changed without breaking every link already in the wild. The
-/// design handoff wrote these as `flim://…`, which is not registered; iOS drops those taps.
+/// The scheme is this build's (`FlimEnvironment`): `com.lapse.app` for the App Store app, the
+/// original bundle id, kept because a registered scheme cannot be changed without breaking every
+/// link already in the wild; FLIM Beta has its own, so a tap on one app's widget never opens the
+/// other. The design handoff wrote these as `flim://…`, which is not registered; iOS drops those taps.
 enum WidgetLink {
-    static let scheme = "com.lapse.app"
+    static let scheme = FlimEnvironment.current.urlScheme
 
     static var camera: String { "\(scheme)://camera" }
     static var darkroom: String { "\(scheme)://darkroom" }
@@ -167,8 +168,9 @@ enum WidgetLink {
 
 /// The shared container, and the only place either side names it.
 enum WidgetStore {
-    /// Must match the App Group in both targets' entitlements.
-    static let appGroup = "group.com.flim.app"
+    /// Must match the App Group in both targets' entitlements, which take it from the same
+    /// `FLIM_APP_GROUP` setting (`FlimEnvironment`).
+    static let appGroup = FlimEnvironment.current.appGroup
     private static let snapshotFile = "widget-snapshot.json"
 
     static var container: URL? {

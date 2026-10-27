@@ -1,7 +1,8 @@
 import Foundation
 import Supabase
 
+/// Production's project for the App Store app, FLIM Beta's own for the beta (`FlimEnvironment`).
 let supabase = SupabaseClient(
-    supabaseURL: URL(string: "https://wxvwamwrjlrvqmuaafjv.supabase.co")!,
-    supabaseKey: "sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4"
+    supabaseURL: FlimEnvironment.current.supabaseURL,
+    supabaseKey: FlimEnvironment.current.supabaseKey
 )

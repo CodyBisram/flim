@@ -3,7 +3,7 @@ import Observation
 import Supabase
 import os
 
-private let redirectURL = URL(string: "com.lapse.app://login-callback")!
+private let redirectURL = URL(string: "\(FlimEnvironment.current.urlScheme)://login-callback")!
 
 /// Auth failures we surface to the user with a friendly message.
 enum AuthError: LocalizedError {

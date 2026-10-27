@@ -130,6 +130,7 @@
 		501E96A133C04B4377522685 /* ChapterRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B739D0FF6A5C8AF0505ABB9D /* ChapterRecapView.swift */; };
 		501F195F7187429C965AE299 /* Photo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF062148240A383A260E8EE3 /* Photo.swift */; };
 		5050B2FB0E48828392ABF714 /* LookRegressionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211B6198E8CE7E255A511736 /* LookRegressionSupport.swift */; };
+		5198A8F442AC428E071946F4 /* FlimEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CAF590B588F7C1DAF18380D /* FlimEnvironment.swift */; };
 		521CDDD234317A8496499477 /* SwipeToDismiss.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB877D87534CC98FE281A6C2 /* SwipeToDismiss.swift */; };
 		5296D9B7D51AC5733F6E3C8B /* PushImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FBF232157CF43D0B62FDD2 /* PushImage.swift */; };
 		52CF9D7CCAFEFE3011047AE5 /* DarkroomMonthPaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788074CB36AF18B6BA347641 /* DarkroomMonthPaging.swift */; };
@@ -194,6 +195,7 @@
 		7D066E10F05CBEEF091EC904 /* LookRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F74C74BB63D759AD36FD8F /* LookRegressionTests.swift */; };
 		7DC664470EFC8E313FEAAE3B /* CommentThreadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1125F53475E0D5FCE1C5ACC2 /* CommentThreadsTests.swift */; };
 		7F707A309E379005989B5621 /* ChapterCurationCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02129E23694AF78C989C2B3F /* ChapterCurationCacheTests.swift */; };
+		7FE1A2B2C1A89BF8CC0B19C0 /* FlimEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CAF590B588F7C1DAF18380D /* FlimEnvironment.swift */; };
 		80AA6A5197FD0930C667CE99 /* DeliveryBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108830B39AFDFF33780E586 /* DeliveryBatchTests.swift */; };
 		81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B10C6663F963898FEE63F64 /* FlimAppTests.swift */; };
 		82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6254E85A41574632F3716FF3 /* EditCaptionSheet.swift */; };
@@ -261,6 +263,7 @@
 		B4474A58359A89EEFA669FE9 /* ShareSheetUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */; };
 		B55F9D476602872837F6CCDA /* NotificationAuthorizationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22ABBF2BC75AB4F195F7798E /* NotificationAuthorizationStateTests.swift */; };
 		B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF0928EB05A780C49AC79C8 /* CameraView.swift */; };
+		B7D462E9542B7AD8DD2CDBC0 /* FlimEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CAF590B588F7C1DAF18380D /* FlimEnvironment.swift */; };
 		B978981B10C71B09F5F07AED /* MentionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635F41BDBDCA4E6DD118E4DE /* MentionsTests.swift */; };
 		B9AB819C9DB0A80D36255196 /* TagSaveOutcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF88DC660A8BC9D5C2936AA /* TagSaveOutcomeTests.swift */; };
 		B9FBD2885C49E04CFBD7EF9D /* RefreshToCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EB6F429DB5837568077F0F6 /* RefreshToCompletion.swift */; };
@@ -319,6 +322,7 @@
 		E143DE33C1ED32CF50E52E85 /* flim_spotlight.caf in Resources */ = {isa = PBXBuildFile; fileRef = A55EE255B01DDE0DB5549A0C /* flim_spotlight.caf */; };
 		E2F8F78AB9FA2DA5E3E27CEA /* ChapterRecapPagerMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 887740F010C7010E90BF5DFF /* ChapterRecapPagerMappingTests.swift */; };
 		E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */; };
+		E352EF99CFF8237B9C587AD7 /* FlimEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625E4BAE6F83D2FCB44B5353 /* FlimEnvironmentTests.swift */; };
 		E383A0EABB2339BAB0476EDB /* PeopleSearchFieldTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661C9A57B20EE6E81E51EA9B /* PeopleSearchFieldTests.swift */; };
 		E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373B00DF38CFC40848E59929 /* MetaChip.swift */; };
 		E3D1E6E334F232D564729AE1 /* PinchZoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF17B9249B262F2D8A2C799 /* PinchZoom.swift */; };
@@ -491,6 +495,7 @@
 		2B25C7E9436A87FF2CF810B8 /* CameraRollAutoSave.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollAutoSave.swift; sourceTree = "<group>"; };
 		2B9BDF1F7E813164FE9D6B1E /* FeedServiceMentionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceMentionTests.swift; sourceTree = "<group>"; };
 		2BF0928EB05A780C49AC79C8 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		2CAF590B588F7C1DAF18380D /* FlimEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimEnvironment.swift; sourceTree = "<group>"; };
 		2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPhotoSheet.swift; sourceTree = "<group>"; };
 		2D80B24DA82931851A213F96 /* UndoCenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoCenterTests.swift; sourceTree = "<group>"; };
 		2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersSheet.swift; sourceTree = "<group>"; };
@@ -572,6 +577,7 @@
 		60C526FFFA358B2589F94B8B /* ChapterStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterStats.swift; sourceTree = "<group>"; };
 		621A9FC5C5A0087AAAD106ED /* BurstDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstDetector.swift; sourceTree = "<group>"; };
 		6254E85A41574632F3716FF3 /* EditCaptionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditCaptionSheet.swift; sourceTree = "<group>"; };
+		625E4BAE6F83D2FCB44B5353 /* FlimEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimEnvironmentTests.swift; sourceTree = "<group>"; };
 		633694E1E73B65F0E57EA591 /* UndoCapsule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoCapsule.swift; sourceTree = "<group>"; };
 		633F468E30E62ADA6EFE45C5 /* FilmStripGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStripGrid.swift; sourceTree = "<group>"; };
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
@@ -942,6 +948,7 @@
 		55F410877B333B2DFC41DA1E /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				2CAF590B588F7C1DAF18380D /* FlimEnvironment.swift */,
 				A0EABF568B1F50179364FE91 /* SupabaseClient.swift */,
 			);
 			path = Config;
@@ -1228,6 +1235,7 @@
 				0132F6E244DC3730C2145E2D /* FilmStripLayoutTests.swift */,
 				8F9C44C207C08D9E8F263DDF /* FlashFalloffTests.swift */,
 				0B10C6663F963898FEE63F64 /* FlimAppTests.swift */,
+				625E4BAE6F83D2FCB44B5353 /* FlimEnvironmentTests.swift */,
 				1A1DF3242DF37C9E6E0DDB68 /* FocusCommentsDecisionTests.swift */,
 				576D3E4C1A2306A568E55C61 /* FollowUpRollTests.swift */,
 				46744648380F2F94FFA7161E /* FrameCreditTests.swift */,
@@ -1563,6 +1571,7 @@
 				77401132FEC9B4725EDA43A8 /* FilmStripLayoutTests.swift in Sources */,
 				56574F4B2007E36D6BD2AECD /* FlashFalloffTests.swift in Sources */,
 				81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */,
+				E352EF99CFF8237B9C587AD7 /* FlimEnvironmentTests.swift in Sources */,
 				E08486964EB7755AF68AAE46 /* FocusCommentsDecisionTests.swift in Sources */,
 				3F8ECA9E3584512E5B13B068 /* FollowUpRollTests.swift in Sources */,
 				BD84A382085C3DDDEC6B7214 /* FrameCreditTests.swift in Sources */,
@@ -1655,6 +1664,7 @@
 			files = (
 				305059BC7E8376F1EA969083 /* DarkroomWidget.swift in Sources */,
 				BF7CC543E4B4AA9122A6A435 /* FlimAccentPalette.swift in Sources */,
+				5198A8F442AC428E071946F4 /* FlimEnvironment.swift in Sources */,
 				B00FB0B98DAAA494F7404E69 /* MemoryWidget.swift in Sources */,
 				29A5B8A988AD5C1A12DA61E2 /* RollActivityWidgetBundle.swift in Sources */,
 				C74A7254222213AB7C52FB3A /* RollRevealAttributes.swift in Sources */,
@@ -1753,6 +1763,7 @@
 				AD13E5171D07D0676B312D32 /* FirstVisitLine.swift in Sources */,
 				044E0603C382A28DB1640C3E /* FlimAccentPalette.swift in Sources */,
 				F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */,
+				B7D462E9542B7AD8DD2CDBC0 /* FlimEnvironment.swift in Sources */,
 				7283B8423917F90243028272 /* FlimFont.swift in Sources */,
 				2FB452868458857E3289C03D /* FlimToast.swift in Sources */,
 				F184E9E2AABA6A9F4F29EE52 /* FollowingList.swift in Sources */,
@@ -1871,6 +1882,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7FE1A2B2C1A89BF8CC0B19C0 /* FlimEnvironment.swift in Sources */,
 				BACFE47465494884E5B13E03 /* NotificationService.swift in Sources */,
 				4ABE573DCE381CB6C4B16525 /* PushImage.swift in Sources */,
 			);
@@ -1929,8 +1941,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.6.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.RollActivityWidget;
-				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app.RollActivityWidget";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
+				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.9;
@@ -1975,6 +1987,13 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				FLIM_APP_GROUP = group.com.flim.app;
+				FLIM_BUNDLE_ID = com.flim.app;
+				FLIM_DISPLAY_NAME = FLIM;
+				FLIM_ENVIRONMENT = production;
+				FLIM_SUPABASE_KEY = "sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4";
+				FLIM_SUPABASE_URL = "https://wxvwamwrjlrvqmuaafjv.supabase.co";
+				FLIM_URL_SCHEME = com.lapse.app;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -2010,13 +2029,146 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.6.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.RollActivityWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
+		};
+		274642FBED3437E1892D3145 /* Release-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Flim.app/Flim";
+			};
+			name = "Release-Beta";
+		};
+		37B9A86956B2E12A16B2F31C /* Debug-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				FLIM_APP_GROUP = group.com.flim.app.beta;
+				FLIM_BUNDLE_ID = com.flim.app.beta;
+				FLIM_DISPLAY_NAME = "FLIM Beta";
+				FLIM_ENVIRONMENT = beta;
+				FLIM_SUPABASE_KEY = "";
+				FLIM_SUPABASE_URL = "";
+				FLIM_URL_SCHEME = com.flim.app.beta;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = "Debug-Beta";
+		};
+		3DF0E73ADA436567E36B451F /* Release-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DCU7GHRVUQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FlimNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.6.3;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
+				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Release-Beta";
+		};
+		45762ED25E88BB89B10F04C4 /* Debug-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Flim;
+			};
+			name = "Debug-Beta";
 		};
 		4CDB5F591240119EE7442374 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -2036,6 +2188,31 @@
 				TEST_TARGET_NAME = Flim;
 			};
 			name = Release;
+		};
+		60E8080BE42A8EDD38F70521 /* Debug-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Flim/Flim.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DCU7GHRVUQ;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Flim/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.6.3;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-Beta";
 		};
 		64DF107F2FF369664FF3B768 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -2112,6 +2289,13 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				FLIM_APP_GROUP = group.com.flim.app;
+				FLIM_BUNDLE_ID = com.flim.app;
+				FLIM_DISPLAY_NAME = FLIM;
+				FLIM_ENVIRONMENT = production;
+				FLIM_SUPABASE_KEY = "sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4";
+				FLIM_SUPABASE_URL = "https://wxvwamwrjlrvqmuaafjv.supabase.co";
+				FLIM_URL_SCHEME = com.lapse.app;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -2138,6 +2322,75 @@
 			};
 			name = Debug;
 		};
+		6ABAD51986D50729C95DD80C /* Release-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RollActivityWidget/RollActivityWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DCU7GHRVUQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RollActivityWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.6.3;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
+				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Release-Beta";
+		};
+		6D762C3CB941D323303D91F3 /* Release-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Flim;
+			};
+			name = "Release-Beta";
+		};
+		7645C3697D6C519575CA52AB /* Debug-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RollActivityWidget/RollActivityWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DCU7GHRVUQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RollActivityWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.6.3;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-Beta";
+		};
 		8F6E1372D4ED84283FA54DFB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2156,12 +2409,75 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.6.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
+		};
+		9D2674FF0D674D401AF04753 /* Release-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				FLIM_APP_GROUP = group.com.flim.app.beta;
+				FLIM_BUNDLE_ID = com.flim.app.beta;
+				FLIM_DISPLAY_NAME = "FLIM Beta";
+				FLIM_ENVIRONMENT = beta;
+				FLIM_SUPABASE_KEY = "";
+				FLIM_SUPABASE_URL = "";
+				FLIM_URL_SCHEME = com.flim.app.beta;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = "Release-Beta";
 		};
 		A7644BDDB2BEF9FAA5A0D021 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -2198,14 +2514,63 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.6.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.NotificationService;
-				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app.NotificationService";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
+				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
+		};
+		C91EA1123BF7E63E43269E8C /* Release-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = production;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Flim/Flim.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DCU7GHRVUQ;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Flim/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.6.3;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
+				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Release-Beta";
+		};
+		D97A61BF4D5303720FDC39CF /* Debug-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DCU7GHRVUQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FlimNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.6.3;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-Beta";
 		};
 		F0C43D949D30F29017AEAE70 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -2222,7 +2587,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.6.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.NotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.9;
@@ -2248,13 +2613,32 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.6.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
-				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
+				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
+		};
+		FDBDE808E5099EB458DE4D97 /* Debug-Beta */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Flim.app/Flim";
+			};
+			name = "Debug-Beta";
 		};
 /* End XCBuildConfiguration section */
 
@@ -2263,7 +2647,9 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8F6E1372D4ED84283FA54DFB /* Debug */,
+				60E8080BE42A8EDD38F70521 /* Debug-Beta */,
 				F6C725FFE499D8440C83D49D /* Release */,
+				C91EA1123BF7E63E43269E8C /* Release-Beta */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -2272,7 +2658,9 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0B0AB35CCDB91FE09185C958 /* Debug */,
+				7645C3697D6C519575CA52AB /* Debug-Beta */,
 				015FFE86D9052E7E5946D487 /* Release */,
+				6ABAD51986D50729C95DD80C /* Release-Beta */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -2281,7 +2669,9 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				F0C43D949D30F29017AEAE70 /* Debug */,
+				D97A61BF4D5303720FDC39CF /* Debug-Beta */,
 				B623A4BE93D67A7B1EC4A118 /* Release */,
+				3DF0E73ADA436567E36B451F /* Release-Beta */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -2290,7 +2680,9 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				682C112265F3681D4DE7F0A0 /* Debug */,
+				FDBDE808E5099EB458DE4D97 /* Debug-Beta */,
 				A7644BDDB2BEF9FAA5A0D021 /* Release */,
+				274642FBED3437E1892D3145 /* Release-Beta */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -2299,7 +2691,9 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				64DF107F2FF369664FF3B768 /* Debug */,
+				45762ED25E88BB89B10F04C4 /* Debug-Beta */,
 				4CDB5F591240119EE7442374 /* Release */,
+				6D762C3CB941D323303D91F3 /* Release-Beta */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -2308,7 +2702,9 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6A89858BBCD2BAD1B23965C1 /* Debug */,
+				37B9A86956B2E12A16B2F31C /* Debug-Beta */,
 				05D8D0DEE9956006AEB57606 /* Release */,
+				9D2674FF0D674D401AF04753 /* Release-Beta */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

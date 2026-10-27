@@ -7,6 +7,41 @@ options:
   xcodeVersion: "16"
   generateEmptyDirectories: true
 
+# Two apps from one codebase (2026-10-27). Debug and Release build the App Store app against the
+# production database, exactly as before. Debug-Beta and Release-Beta build FLIM Beta: its own
+# bundle id, App Group, URL scheme and Supabase project, installed beside FLIM and shipped to its
+# own TestFlight, for v2 work that must never touch production. Each target lists the beta configs
+# beside Debug and Release with the same signing settings; the profile names follow FLIM_BUNDLE_ID.
+configs:
+  Debug: debug
+  Release: release
+  Debug-Beta: debug
+  Release-Beta: release
+
+# Read at runtime from each target's Info.plist by FlimEnvironment.swift, and used below for bundle
+# ids, App Groups, display names and profile names.
+settings:
+  base:
+    FLIM_ENVIRONMENT: production
+    FLIM_BUNDLE_ID: com.flim.app
+    FLIM_DISPLAY_NAME: FLIM
+    FLIM_APP_GROUP: group.com.flim.app
+    # Kept as com.lapse.app to match the Supabase auth redirect allowlist.
+    FLIM_URL_SCHEME: com.lapse.app
+    FLIM_SUPABASE_URL: https://wxvwamwrjlrvqmuaafjv.supabase.co
+    FLIM_SUPABASE_KEY: sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4
+  configs:
+    Beta:
+      FLIM_ENVIRONMENT: beta
+      FLIM_BUNDLE_ID: com.flim.app.beta
+      FLIM_DISPLAY_NAME: FLIM Beta
+      FLIM_APP_GROUP: group.com.flim.app.beta
+      FLIM_URL_SCHEME: com.flim.app.beta
+      # FLIM Beta's own Supabase project, once it exists. Until then a beta build stops at launch
+      # and says so, rather than reach production (FlimEnvironment refuses production's host too).
+      FLIM_SUPABASE_URL: ""
+      FLIM_SUPABASE_KEY: ""
+
 packages:
   supabase-swift:
     url: https://github.com/supabase/supabase-swift
@@ -29,7 +64,7 @@ targets:
         # sandbox, so the snapshot the widget renders crosses through this group; it must be
         # present on BOTH targets and must match `WidgetStore.appGroup` exactly.
         com.apple.security.application-groups:
-          - group.com.flim.app
+          - $(FLIM_APP_GROUP)
         # Makes https://flim-app.com/join/CODE open the app directly instead of dead-ending on
         # the web landing page. The AASA at /.well-known/apple-app-site-association is already
         # live and correct (DCU7GHRVUQ.com.flim.app, /join/*), so this entitlement is the last
@@ -40,8 +75,14 @@ targets:
     info:
       path: Flim/Info.plist
       properties:
-        # Home-screen app name. To rename the app: change this + AppInfo.appName (covers the UI).
-        CFBundleDisplayName: FLIM
+        # Home-screen app name. To rename the app: change FLIM_DISPLAY_NAME + AppInfo.appName.
+        CFBundleDisplayName: $(FLIM_DISPLAY_NAME)
+        # Which FLIM this is and what it talks to, read by FlimEnvironment.swift.
+        FLIMEnvironment: $(FLIM_ENVIRONMENT)
+        FLIMSupabaseURL: $(FLIM_SUPABASE_URL)
+        FLIMSupabaseKey: $(FLIM_SUPABASE_KEY)
+        FLIMAppGroup: $(FLIM_APP_GROUP)
+        FLIMURLScheme: $(FLIM_URL_SCHEME)
         # App uses only standard HTTPS (exempt encryption) — declaring this skips
         # the per-build export-compliance prompt so builds reach testers automatically.
         ITSAppUsesNonExemptEncryption: false
@@ -57,11 +98,11 @@ targets:
         NSSupportsLiveActivities: true
         CFBundleURLTypes:
           - CFBundleURLSchemes:
-              # Kept as com.lapse.app to match the Supabase auth redirect allowlist.
-              - com.lapse.app
+              # com.lapse.app for the App Store app (see FLIM_URL_SCHEME above).
+              - $(FLIM_URL_SCHEME)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app
+        PRODUCT_BUNDLE_IDENTIFIER: $(FLIM_BUNDLE_ID)
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: DCU7GHRVUQ
         ENABLE_PREVIEWS: YES
@@ -74,16 +115,18 @@ targets:
         MARKETING_VERSION: "1.6.3"
         CURRENT_PROJECT_VERSION: "1"
       configs:
-        Debug:
+        Debug: &app_debug
           APS_ENVIRONMENT: development
           CODE_SIGN_STYLE: Automatic
-        Release:
+        Debug-Beta: *app_debug
+        Release: &app_release
           APS_ENVIRONMENT: production
           # Signing lives on the APP TARGET (not global xcargs) so it doesn't
           # leak onto SPM package targets, which reject provisioning profiles.
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Apple Distribution"
-          PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore $(FLIM_BUNDLE_ID)"
+        Release-Beta: *app_release
     dependencies:
       - package: supabase-swift
         product: Supabase
@@ -120,6 +163,8 @@ targets:
       # card lives in Flim/Models and the home tiles live in the extension, so a hex value
       # defined in either would need a second copy in the other.
       - path: Flim/Models/WidgetTheme.swift
+      # Which FLIM this is: the App Group and URL scheme the widget uses come from it.
+      - path: Flim/Config/FlimEnvironment.swift
     entitlements:
       path: RollActivityWidget/RollActivityWidget.entitlements
       properties:
@@ -127,11 +172,17 @@ targets:
         # here the extension's own container lookup returns nil and the widget can only ever
         # render its empty state.
         com.apple.security.application-groups:
-          - group.com.flim.app
+          - $(FLIM_APP_GROUP)
     info:
       path: RollActivityWidget/Info.plist
       properties:
-        CFBundleDisplayName: FLIM
+        CFBundleDisplayName: $(FLIM_DISPLAY_NAME)
+        # Same keys as the app's, read by FlimEnvironment.swift from this bundle's own plist.
+        FLIMEnvironment: $(FLIM_ENVIRONMENT)
+        FLIMSupabaseURL: $(FLIM_SUPABASE_URL)
+        FLIMSupabaseKey: $(FLIM_SUPABASE_KEY)
+        FLIMAppGroup: $(FLIM_APP_GROUP)
+        FLIMURLScheme: $(FLIM_URL_SCHEME)
         # An extension's CFBundleVersion must match its containing app's, or App Store Connect
         # rejects the upload. CURRENT_PROJECT_VERSION arrives correctly via CI's xcargs (applies
         # project-wide, not per-target), but MARKETING_VERSION only exists as a literal on the
@@ -143,7 +194,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app.RollActivityWidget
+        PRODUCT_BUNDLE_IDENTIFIER: $(FLIM_BUNDLE_ID).RollActivityWidget
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: DCU7GHRVUQ
         TARGETED_DEVICE_FAMILY: "1"
@@ -152,15 +203,17 @@ targets:
         MARKETING_VERSION: "1.6.3"
         CURRENT_PROJECT_VERSION: "1"
       configs:
-        Debug:
+        Debug: &widget_debug
           CODE_SIGN_STYLE: Automatic
-        Release:
+        Debug-Beta: *widget_debug
+        Release: &widget_release
           # Needs its own "match AppStore com.flim.app.RollActivityWidget" profile before this
           # builds in CI — a new bundle ID needs a new App ID + profile in the Developer portal
           # first, which is a manual, one-time step (see the commit message for this target).
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Apple Distribution"
-          PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app.RollActivityWidget"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget"
+        Release-Beta: *widget_release
 
   FlimNotificationService:
     type: app-extension
@@ -170,10 +223,18 @@ targets:
       - path: FlimNotificationService
       # Shared with the app target so its checks run in FlimTests.
       - path: Flim/Models/PushImage.swift
+      # Which FLIM this is: the storage host PushImage trusts comes from it.
+      - path: Flim/Config/FlimEnvironment.swift
     info:
       path: FlimNotificationService/Info.plist
       properties:
-        CFBundleDisplayName: FLIM
+        CFBundleDisplayName: $(FLIM_DISPLAY_NAME)
+        # Same keys as the app's, read by FlimEnvironment.swift from this bundle's own plist.
+        FLIMEnvironment: $(FLIM_ENVIRONMENT)
+        FLIMSupabaseURL: $(FLIM_SUPABASE_URL)
+        FLIMSupabaseKey: $(FLIM_SUPABASE_KEY)
+        FLIMAppGroup: $(FLIM_APP_GROUP)
+        FLIMURLScheme: $(FLIM_URL_SCHEME)
         # Must match the containing app's, the same as the widget's (see its note above).
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -182,7 +243,7 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app.NotificationService
+        PRODUCT_BUNDLE_IDENTIFIER: $(FLIM_BUNDLE_ID).NotificationService
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: DCU7GHRVUQ
         TARGETED_DEVICE_FAMILY: "1"
@@ -191,14 +252,16 @@ targets:
         MARKETING_VERSION: "1.6.3"
         CURRENT_PROJECT_VERSION: "1"
       configs:
-        Debug:
+        Debug: &nse_debug
           CODE_SIGN_STYLE: Automatic
-        Release:
+        Debug-Beta: *nse_debug
+        Release: &nse_release
           # Needs "match AppStore com.flim.app.NotificationService" in the certs repo before CI
           # can archive: `bundle exec fastlane certificates` registers the App ID and makes it.
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Apple Distribution"
-          PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app.NotificationService"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore $(FLIM_BUNDLE_ID).NotificationService"
+        Release-Beta: *nse_release
 
   FlimTests:
     type: bundle.unit-test
@@ -245,6 +308,21 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # FLIM Beta: the same app built as the beta (configs above). No test action: the suite runs
+  # against production's configuration in the Flim scheme, and a beta without its project set
+  # stops at launch by design.
+  FLIM Beta:
+    build:
+      targets:
+        Flim: all
+    run:
+      config: Debug-Beta
+    profile:
+      config: Release-Beta
+    analyze:
+      config: Debug-Beta
+    archive:
+      config: Release-Beta
   # On demand only: `xcodebuild test -scheme FlimUITests ...` drives a simulator through XCUITest
   # (no account needed, see FlimUITests). Kept out of the Flim scheme so CI's `xcodebuild test`
   # and the local suite stay UI-free.
