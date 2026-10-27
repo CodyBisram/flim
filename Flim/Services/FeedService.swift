@@ -1678,12 +1678,11 @@ final class FeedService {
     }
 
     /// The "most relevant" comment order used on both the feed and the detail view: most-liked
-    /// first, ties broken oldest-created-first.
+    /// conversation first, ties broken oldest-created-first, each comment followed by its replies
+    /// oldest first. Ranked by thread, not by comment: a liked reply ranked on its own climbed
+    /// above the comment it answered and read as an answer to nothing (2026-10-26).
     static func rank(_ comments: [CommentInfo]) -> [CommentInfo] {
-        comments.sorted {
-            $0.likeCount != $1.likeCount ? $0.likeCount > $1.likeCount
-                                         : $0.comment.createdAt < $1.comment.createdAt
-        }
+        CommentThreads.flattened(CommentThreads.build(comments, rootsBefore: CommentThreads.byLikes))
     }
 
     /// Optimistic react/unreact that updates the shared cache (so cards stay in sync as they
@@ -1791,11 +1790,11 @@ final class FeedService {
     /// `authorId` is the post's author, when the caller has it; see `reactToPost`.
     @discardableResult
     func commentOnPost(_ postId: UUID, body: String, userId: UUID, authorId: UUID? = nil,
-                       commenter: AppUser? = nil) async -> Bool {
+                       commenter: AppUser? = nil, parentId: UUID? = nil) async -> Bool {
         // Captured before the first await: a comment sent just before an account switch must
         // not land the old account's comment list (with its likedByMe) in the new one's cache.
         let epoch = AccountEpoch.current
-        let created = await addComment(postId: postId, body: body, userId: userId)
+        let created = await addComment(postId: postId, body: body, userId: userId, parentId: parentId)
         if created != nil, AccountEpoch.isCurrent(epoch) {
             NewAccountIntro.InviterNudge.noteInteraction(withAuthor: authorId, userId: userId)
         }
@@ -1822,7 +1821,7 @@ final class FeedService {
             var list = commentsByPost[postId] ?? []
             if !list.contains(where: { $0.id == created.id }) {
                 list.append(CommentInfo(comment: created, author: author, likeCount: 0, likedByMe: false))
-                commentsByPost[postId] = list
+                commentsByPost[postId] = Self.rank(list)
             }
         }
         return created != nil
@@ -2293,11 +2292,20 @@ final class FeedService {
         return Self.rank(items)
     }
 
-    func addComment(postId: UUID, body: String, userId: UUID) async -> PostComment? {
-        struct C: Encodable { let post_id: UUID; let user_id: UUID; let body: String }
-        return try? await supabase.from("post_comments")
-            .insert(C(post_id: postId, user_id: userId, body: body))
-            .select().single().execute().value
+    /// `parentId` makes it a reply in that comment's thread. Against a database without threads
+    /// yet (PostgREST's PGRST204, unknown column) the reply is sent again without it, as the
+    /// "@name" comment every build sent before, rather than lost.
+    func addComment(postId: UUID, body: String, userId: UUID, parentId: UUID? = nil) async -> PostComment? {
+        struct C: Encodable { let post_id: UUID; let user_id: UUID; let body: String; let parent_id: UUID? }
+        do {
+            return try await supabase.from("post_comments")
+                .insert(C(post_id: postId, user_id: userId, body: body, parent_id: parentId))
+                .select().single().execute().value
+        } catch let error as PostgrestError where parentId != nil && error.code == "PGRST204" {
+            return await addComment(postId: postId, body: body, userId: userId)
+        } catch {
+            return nil
+        }
     }
 
     func deleteComment(id: UUID) async {
@@ -2625,10 +2633,10 @@ final class FeedService {
         /// the same photo the push would have, not just the roll.
         var rollPhotoId: UUID? = nil
         var rollPhotoDisplayPath: String? = nil
-        /// Set only on `.mentioned`, `.threadComment`, and `.rollPhotoThreadComment` raws: the
-        /// underlying comment row's own id, so a thread-comment raw that turns out to already be
-        /// represented as a mention (the mention row wins) can be found and dropped, see
-        /// `shouldIncludeThreadComment` below.
+        /// Set on every comment-based raw: the underlying comment row's own id, so the same
+        /// comment reached through two sources shows once. A thread-comment raw already
+        /// represented as a mention is dropped (`shouldIncludeThreadComment`), and any raw whose
+        /// comment is a reply to you gives way to its `.replied` row (`shouldGiveWayToReply`).
         var commentId: UUID? = nil
     }
 
@@ -2653,6 +2661,7 @@ final class FeedService {
         async let postThreadRaws = activityPostThreadComments(userId: userId)
         async let rollThreadRaws = activityRollPhotoThreadComments(userId: userId)
         async let spotlightRaws = activitySpotlight(userId: userId)
+        async let replyRaws = activityReplies(userId: userId)
 
         await blockedDone
         var raws: [ActivityRaw]
@@ -2673,6 +2682,9 @@ final class FeedService {
             // Not a throwing source: a Spotlight read that fails leaves the rest of Activity
             // standing rather than turning the whole screen into an error.
             raws += await spotlightRaws
+            // Not throwing either: a database without threads yet answers this with an error,
+            // and that must not take the rest of Activity down with it.
+            raws += await replyRaws
             guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
@@ -2702,6 +2714,12 @@ final class FeedService {
                 return false
             }
         }
+
+        let repliedCommentIds = Set(raws.compactMap { raw -> UUID? in
+            guard case .replied = raw.kind else { return nil }
+            return raw.commentId
+        })
+        raws.removeAll { raw in Self.shouldGiveWayToReply(raw.kind, commentId: raw.commentId, repliedCommentIds: repliedCommentIds) }
 
         raws.removeAll { raw in raw.actorId.map { blockedIds.contains($0) } ?? false }
         let profiles = await fetchProfiles(ids: Array(Set(raws.compactMap(\.actorId))))
@@ -2765,16 +2783,17 @@ final class FeedService {
         }()
 
         async let comments: [ActivityRaw] = {
-            struct C: Decodable { let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
+            struct C: Decodable { let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
             let cs: [C] = try await QueryBatch.inChunks(postIds) { chunk in
                 try await supabase.from("post_comments")
-                    .select("user_id,body,created_at,post_id")
+                    .select("id,user_id,body,created_at,post_id")
                     .in("post_id", values: chunk)
                     .neq("user_id", value: userId.uuidString)
                     .order("created_at", ascending: false).limit(40).execute().value
             }
             let newest = cs.sorted { $0.created_at > $1.created_at }.prefix(40)
-            return newest.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+            return newest.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id,
+                                            commentId: $0.id) }
         }()
 
         return try await reactions + comments
@@ -2952,12 +2971,12 @@ final class FeedService {
     /// newest rows, not a full scan.
     private func activityRollPhotoComments(userId: UUID) async throws -> [ActivityRaw] {
         struct RC: Decodable {
-            let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
+            let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
             let photos: Meta?
             struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
         }
         let rows: [RC] = try await supabase.from("photo_comments")
-            .select("user_id, body, created_at, photo_id, photos!inner(user_id, roll_id, thumb_path, storage_path)")
+            .select("id, user_id, body, created_at, photo_id, photos!inner(user_id, roll_id, thumb_path, storage_path)")
             .eq("photos.user_id", value: userId.uuidString)
             .neq("user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value
@@ -2965,7 +2984,7 @@ final class FeedService {
             guard let meta = r.photos else { return nil }
             return ActivityRaw(kind: .rollPhotoComment(r.body), actorId: r.user_id, date: r.created_at,
                                 postId: nil, rollId: meta.roll_id, rollPhotoId: r.photo_id,
-                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
+                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path, commentId: r.id)
         }
     }
 
@@ -3057,6 +3076,74 @@ final class FeedService {
             return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: nil,
                                 rollId: meta.roll_id, rollPhotoId: r.photo_id,
                                 rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path, commentId: r.id)
+        }
+    }
+
+    /// The pure dedup rule for replies: any other row about a comment that is also a reply to
+    /// you (`.comment`, `.mentioned`, `.threadComment` and the roll analogs) is dropped, and the
+    /// `.replied` row stands for it. Same "don't double the same event" reasoning as
+    /// `shouldIncludeMention`.
+    nonisolated static func shouldGiveWayToReply(
+        _ kind: ActivityItem.Kind, commentId: UUID?, repliedCommentIds: Set<UUID>
+    ) -> Bool {
+        if case .replied = kind { return false }
+        guard let commentId else { return false }
+        return repliedCommentIds.contains(commentId)
+    }
+
+    /// Replies to your comments, on a post or a roll photo, from someone else: the Activity side
+    /// of `send-social-push`'s "{name} replied to your comment". Bounded like every other source,
+    /// by your 40 most recent comments and the 40 newest replies to them. A reply's `parent_id`
+    /// is always a top-level comment, so only your top-level comments can be answered this way;
+    /// an answer to one of your replies reaches you as a mention, the way its push does.
+    ///
+    /// Never throws: before the threads migration there is no `parent_id` to filter on, and the
+    /// read errors. That costs this row kind, not the screen.
+    private func activityReplies(userId: UUID) async -> [ActivityRaw] {
+        async let onPosts = try? activityRepliesOnPosts(userId: userId)
+        async let onPhotos = try? activityRepliesOnPhotos(userId: userId)
+        return (await onPosts ?? []) + (await onPhotos ?? [])
+    }
+
+    private func activityRepliesOnPosts(userId: UUID) async throws -> [ActivityRaw] {
+        struct Mine: Decodable { let id: UUID }
+        let mine: [Mine] = try await supabase.from("post_comments").select("id")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        guard !mine.isEmpty else { return [] }
+        struct R: Decodable { let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
+        let rows: [R] = try await supabase.from("post_comments")
+            .select("id, user_id, body, created_at, post_id")
+            .in("parent_id", values: mine.map(\.id.uuidString))
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        return rows.map {
+            ActivityRaw(kind: .replied($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id,
+                        commentId: $0.id)
+        }
+    }
+
+    private func activityRepliesOnPhotos(userId: UUID) async throws -> [ActivityRaw] {
+        struct Mine: Decodable { let id: UUID }
+        let mine: [Mine] = try await supabase.from("photo_comments").select("id")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        guard !mine.isEmpty else { return [] }
+        struct R: Decodable {
+            let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
+            let photos: Meta?
+            struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
+        }
+        let rows: [R] = try await supabase.from("photo_comments")
+            .select("id, user_id, body, created_at, photo_id, photos(roll_id, thumb_path, storage_path)")
+            .in("parent_id", values: mine.map(\.id.uuidString))
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        return rows.compactMap { r in
+            guard let meta = r.photos else { return nil }
+            return ActivityRaw(kind: .replied(r.body), actorId: r.user_id, date: r.created_at, postId: nil,
+                               rollId: meta.roll_id, rollPhotoId: r.photo_id,
+                               rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path, commentId: r.id)
         }
     }
 

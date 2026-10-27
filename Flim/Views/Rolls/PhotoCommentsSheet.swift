@@ -20,6 +20,10 @@ struct PhotoCommentsSheet: View {
     /// Who `draft` is replying to, if anyone. Owned here, not inferred from `draft`'s text, so
     /// `CommentComposer` can show an explicit "Replying to…" banner.
     @State private var replyTarget: String?
+    /// The thread `draft` replies into, set with `replyTarget` and cleared with it.
+    @State private var replyParentId: UUID?
+    /// Threads opened past their first replies with "View N more replies".
+    @State private var expandedThreads: Set<UUID> = []
     @State private var sending = false
     @State private var loaded = false
     @FocusState private var focused: Bool
@@ -50,7 +54,7 @@ struct PhotoCommentsSheet: View {
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 16) {
-                                ForEach(comments) { row($0) }
+                                ForEach(CommentThreads.build(comments)) { threadView($0) }
                             }
                             .padding(16)
                         }
@@ -76,6 +80,35 @@ struct PhotoCommentsSheet: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// Same shape as `CommentsSheet.threadView`: the comment, its replies indented and folded past
+    /// two, and one quiet line where a comment that is gone used to be.
+    private func threadView(_ thread: CommentThread<PhotoComment>) -> some View {
+        let visible = CommentThreads.visibleReplies(thread, expanded: expandedThreads.contains(thread.id))
+        return VStack(alignment: .leading, spacing: 12) {
+            if let root = thread.root {
+                row(root)
+            } else {
+                Text("Comment unavailable")
+                    .flimFont(12, relativeTo: .subheadline).italic()
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            ForEach(visible.shown) { reply in
+                row(reply).padding(.leading, CommentThreads.replyIndent)
+            }
+            if visible.hidden > 0 {
+                Button {
+                    Haptics.tap()
+                    withAnimation(.snappy(duration: 0.22)) { _ = expandedThreads.insert(thread.id) }
+                } label: {
+                    Text(CommentThreads.moreRepliesLabel(visible.hidden))
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                .padding(.leading, CommentThreads.replyIndent)
+            }
+        }
+    }
+
     private func row(_ comment: PhotoComment) -> some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
@@ -94,8 +127,8 @@ struct PhotoCommentsSheet: View {
                         // 9 + 17.5 either side = 44, same reach as everywhere else this small.
                         .expandTapTarget(by: 17.5)
                     } else {
-                        // Same reply-as-mention control as CommentsSheet. Not on your own
-                        // comments: replying to yourself would just mention yourself.
+                        // Same reply control as CommentsSheet: into the comment's thread. Not on
+                        // your own comments: replying to yourself would just mention yourself.
                         Button { reply(to: comment) } label: {
                             Text("Reply").flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                         }
@@ -149,6 +182,10 @@ struct PhotoCommentsSheet: View {
             // the same bar. Opaque, not material: material here is glass on glass on iOS 26,
             // where the sheet is already glass.
             .background(FlimTheme.sheetTile)
+            // The banner's X cancels the reply, and with it the thread it was going into.
+            .onChange(of: replyTarget) { _, new in
+                if new == nil { replyParentId = nil }
+            }
     }
 
     /// Focuses the composer with `@handle ` in front, preserving whatever was already typed, and
@@ -158,6 +195,7 @@ struct PhotoCommentsSheet: View {
         let target = handle(comment.userId)
         draft = prefillingReply(to: target, in: draft)
         replyTarget = target
+        replyParentId = comment.parentId ?? comment.id
         focused = true
     }
 
@@ -175,17 +213,21 @@ struct PhotoCommentsSheet: View {
         guard let uid = auth.currentUser?.id, canSend, !sending else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let target = replyTarget
+        let parent = replyParentId
         draft = ""
         replyTarget = nil
+        replyParentId = nil
         focused = false
         Task {
             sending = true
-            let created = await photoService.addPhotoComment(photoId: photoId, body: body, userId: uid)
+            let created = await photoService.addPhotoComment(photoId: photoId, body: body, userId: uid, parentId: parent)
             await load()
             sending = false
+            if created != nil, let parent { expandedThreads.insert(parent) }
             if created == nil {
                 draft = body   // restore instead of silently losing the comment
                 replyTarget = target
+                replyParentId = parent
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()
             }

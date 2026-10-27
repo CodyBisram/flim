@@ -82,6 +82,8 @@ struct FeedUnitCard: View {
         let id = UUID()
         /// Whose comment is being replied to, when the sheet was opened by a Reply.
         var replyHandle: String?
+        /// The thread that reply goes into.
+        var replyParentId: UUID?
     }
     @State private var showContactSheet = false
     @State private var route: ProfileRoute?
@@ -169,8 +171,13 @@ struct FeedUnitCard: View {
         reactions.contains { $0.emoji == "❤️" && $0.userId == auth.currentUser?.id }
     }
     /// Preview depth two ROWS: the caption is the first row when it exists, then comments.
+    /// Top-level comments only: a reply shown without the comment it answers reads as an answer
+    /// to nothing. Their replies are counted under them instead (`replyCount`).
     private var previewComments: [CommentInfo] {
-        Array(comments.prefix(post.caption?.isEmpty == false ? 1 : 2))
+        Array(comments.filter { $0.comment.parentId == nil }.prefix(post.caption?.isEmpty == false ? 1 : 2))
+    }
+    private func replyCount(_ info: CommentInfo) -> Int {
+        comments.reduce(0) { $0 + ($1.comment.parentId == info.id ? 1 : 0) }
     }
     private var unseenRemaining: Int {
         unit.unseenCount(isSeen: isSeenOutsideThisLook)
@@ -327,7 +334,8 @@ struct FeedUnitCard: View {
             if let pending = pendingProfile { pendingProfile = nil; route = pending }
         }) { target in
             CommentsSheet(post: post, authorHandle: unit.author.handle,
-                          initialReplyHandle: target.replyHandle) {
+                          initialReplyHandle: target.replyHandle,
+                          initialReplyParentId: target.replyParentId) {
                 pendingProfile = ProfileRoute(id: $0)
             }
         }
@@ -586,6 +594,7 @@ struct FeedUnitCard: View {
             // draft's target away) but the word is here, and it opens the sheet with the
             // reply already armed, composer focused and @handle prefilled.
             ForEach(previewComments) { info in
+                VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     MentionText(
                         text: info.comment.body,
@@ -608,7 +617,7 @@ struct FeedUnitCard: View {
                     if info.comment.userId != auth.currentUser?.id {
                         Button {
                             Haptics.tap()
-                            commentsTarget = CommentsTarget(replyHandle: info.handle)
+                            commentsTarget = CommentsTarget(replyHandle: info.handle, replyParentId: info.id)
                         } label: {
                             Text("Reply")
                                 .flimFont(12.5, relativeTo: .footnote)
@@ -635,6 +644,19 @@ struct FeedUnitCard: View {
                     }
                     .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 4)
                     .accessibilityLabel(info.likedByMe ? "Unlike comment" : "Like comment")
+                }
+                // The conversation under this comment, counted rather than shown: the sheet is
+                // where a thread reads in order.
+                let replies = replyCount(info)
+                if replies > 0 {
+                    Button { commentsTarget = CommentsTarget() } label: {
+                        Text(CommentThreads.replyCountLabel(replies))
+                            .flimFont(11.5, relativeTo: .caption)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .padding(.leading, CommentThreads.replyIndent)
+                    .expandTapTarget(top: 4, leading: 4, bottom: 6, trailing: 4)
+                }
                 }
             }
             // ONE line, always present, always the same destination, so a frame with no

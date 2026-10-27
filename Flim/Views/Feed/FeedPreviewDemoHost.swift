@@ -180,20 +180,22 @@ enum FeedPreviewFixtures {
 
         // Threads where the design drew them: on mira's captioned late shot and a couple more.
         func comment(_ n: Int, on item: FeedItem, by author: UserProfile, _ body: String,
-                     likes: Int = 0) -> CommentInfo {
+                     likes: Int = 0, replyingTo parent: Int? = nil) -> CommentInfo {
             CommentInfo(
                 comment: PostComment(id: uuid(200_000 + n), postId: item.post.id,
                                      userId: author.id, body: body,
-                                     createdAt: item.post.createdAt.addingTimeInterval(1800)),
+                                     createdAt: item.post.createdAt.addingTimeInterval(1800 + Double(n) * 60),
+                                     parentId: parent.map { uuid(200_000 + $0) }),
                 author: author, likeCount: likes, likedByMe: false)
         }
         service.commentsByPost = [
-            miraItems[12].post.id: [
-                comment(1, on: miraItems[12], by: noor, "the chairs going up is such a detail", likes: 1),
-                comment(2, on: miraItems[12], by: dev, "stayed till close, respect"),
-                comment(3, on: miraItems[12], by: mira, "@noor come next time"),
-                comment(4, on: miraItems[12], by: noor, "booking flights"),
-            ],
+            miraItems[12].post.id: FeedService.rank([
+                // A liked reply under an unliked comment: the thread keeps it below what it answers.
+                comment(1, on: miraItems[12], by: dev, "stayed till close, respect"),
+                comment(2, on: miraItems[12], by: noor, "the chairs going up is such a detail"),
+                comment(3, on: miraItems[12], by: mira, "@noor come next time", likes: 2, replyingTo: 2),
+                comment(4, on: miraItems[12], by: noor, "@mira booking flights", replyingTo: 2),
+            ]),
             miraItems[5].post.id: [
                 comment(5, on: miraItems[5], by: dev, "ok this is the one"),
                 comment(6, on: miraItems[5], by: noor, "where is this exactly"),

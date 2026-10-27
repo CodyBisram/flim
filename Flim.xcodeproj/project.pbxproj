@@ -192,6 +192,7 @@
 		7B26E64E08E3681DA77C073A /* FeedbackSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A251B6DCFD8210DF89FD18B3 /* FeedbackSheet.swift */; };
 		7CC65D898130236C8681AB7A /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 659573B57F39ED8C122771FD /* AvatarView.swift */; };
 		7D066E10F05CBEEF091EC904 /* LookRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F74C74BB63D759AD36FD8F /* LookRegressionTests.swift */; };
+		7DC664470EFC8E313FEAAE3B /* CommentThreadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1125F53475E0D5FCE1C5ACC2 /* CommentThreadsTests.swift */; };
 		7F707A309E379005989B5621 /* ChapterCurationCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02129E23694AF78C989C2B3F /* ChapterCurationCacheTests.swift */; };
 		80AA6A5197FD0930C667CE99 /* DeliveryBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108830B39AFDFF33780E586 /* DeliveryBatchTests.swift */; };
 		81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B10C6663F963898FEE63F64 /* FlimAppTests.swift */; };
@@ -296,6 +297,7 @@
 		CFC5BA76CCE7F254E9E23522 /* AuthRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD1B8502DB294D5BE1986E3 /* AuthRulesTests.swift */; };
 		D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B87FE1069C71306456DFF /* Roll.swift */; };
 		D11F727BCAD0A2EFDA8BEF07 /* ConsequenceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F4E837376ECF8180532F9E /* ConsequenceSheet.swift */; };
+		D283DDFE52C7CF8DD04B003F /* CommentThreads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185C74A36D5ECA241AD360AA /* CommentThreads.swift */; };
 		D34FB311CBBBF85669A44377 /* InviteReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4F627F67108FD7C9956074 /* InviteReminderTests.swift */; };
 		D38ED66624883730EBF8F9FB /* ProfileCropGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36FE0B8735BA0AADE0C8C7C /* ProfileCropGeometryTests.swift */; };
 		D49EF9C9EB2112546D756C9C /* PhotoTagsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90BE0C5BA46C41F86085BD3 /* PhotoTagsTests.swift */; };
@@ -442,6 +444,7 @@
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
 		0FA5444D3CDCB4379BF00F72 /* Social.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Social.swift; sourceTree = "<group>"; };
 		1023C54C67509092736FA8F3 /* SortDeckComposeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortDeckComposeSheet.swift; sourceTree = "<group>"; };
+		1125F53475E0D5FCE1C5ACC2 /* CommentThreadsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentThreadsTests.swift; sourceTree = "<group>"; };
 		113E2F3628E3CD77571BD494 /* NotificationActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationActionsTests.swift; sourceTree = "<group>"; };
 		11A829D912030FA62BCF3EDD /* emoji-keywords.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "emoji-keywords.txt"; sourceTree = "<group>"; };
 		121F65D393ABD1CC13DA0186 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
@@ -452,6 +455,7 @@
 		14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantFilmProcessor.swift; sourceTree = "<group>"; };
 		17436C2A3F9564EB8D028D07 /* flim.cube */ = {isa = PBXFileReference; path = flim.cube; sourceTree = "<group>"; };
 		17748DA0845B5512541A214D /* FeedServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceTests.swift; sourceTree = "<group>"; };
+		185C74A36D5ECA241AD360AA /* CommentThreads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentThreads.swift; sourceTree = "<group>"; };
 		18CA22877447A7870546FAFB /* GrainCompositeSweep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrainCompositeSweep.swift; sourceTree = "<group>"; };
 		1A1DF3242DF37C9E6E0DDB68 /* FocusCommentsDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusCommentsDecisionTests.swift; sourceTree = "<group>"; };
 		1AF74B1882B2963B0A26004E /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
@@ -906,6 +910,7 @@
 				44986F8867E5B522EBEABEE8 /* AppUser.swift */,
 				543E15371B8D02BD1F562C0B /* Chapter.swift */,
 				60C526FFFA358B2589F94B8B /* ChapterStats.swift */,
+				185C74A36D5ECA241AD360AA /* CommentThreads.swift */,
 				88F0B8C5B056D1D3786284B1 /* DarkroomMonthSummaryV2.swift */,
 				B836AA433FC02113BC1E3BA8 /* DarkroomYearMonth.swift */,
 				5698D3272C4A1C9EAAFBAC56 /* EmojiCatalog.swift */,
@@ -1191,6 +1196,7 @@
 				4727E0F91D5CBF486124674F /* ClockWindowTests.swift */,
 				E1BCF6EBC279A8B682333548 /* ColorProfileTests.swift */,
 				5187733F2549E32AAD048816 /* CommentPreviewTests.swift */,
+				1125F53475E0D5FCE1C5ACC2 /* CommentThreadsTests.swift */,
 				E3C590B63A4012D64C717271 /* ConsequenceCopyTests.swift */,
 				AECB660B4FF8C9C77820A49F /* ContrastTests.swift */,
 				409A6D3129F94E675E11C751 /* CubeLUTTests.swift */,
@@ -1525,6 +1531,7 @@
 				A978696CD65F86349FBA2EFD /* ClockWindowTests.swift in Sources */,
 				F63EEF7D9CF0A8333B587BE8 /* ColorProfileTests.swift in Sources */,
 				293CC0DB094A96F35B68C6D7 /* CommentPreviewTests.swift in Sources */,
+				7DC664470EFC8E313FEAAE3B /* CommentThreadsTests.swift in Sources */,
 				E88A22503479924C6120E0D7 /* ConsequenceCopyTests.swift in Sources */,
 				87AB22662BAFF452175C23C6 /* ContrastTests.swift in Sources */,
 				DFCED2D30474E53F1E6B116D /* CubeLUTTests.swift in Sources */,
@@ -1705,6 +1712,7 @@
 				2809A7461B571890AD4E05A8 /* ChapterStatsVisibilitySheet.swift in Sources */,
 				CBD274ED68BE280556D5FE1C /* ChromePreviewDemoHost.swift in Sources */,
 				33C4DC997AC45611BC769B13 /* CommentComposer.swift in Sources */,
+				D283DDFE52C7CF8DD04B003F /* CommentThreads.swift in Sources */,
 				FD353271770C9545F7CD5972 /* CommentsSheet.swift in Sources */,
 				D11F727BCAD0A2EFDA8BEF07 /* ConsequenceSheet.swift in Sources */,
 				FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */,

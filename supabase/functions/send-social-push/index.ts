@@ -648,6 +648,27 @@ function mentionedUsernames(text: string): string[] {
   return [...found];
 }
 
+/// For each comment id that is a reply, the author of the comment it answers. Read apart from the
+/// polls that find new comments, so a database without `parent_id` yet, or a failed read, costs
+/// only the "replied to your comment" wording: every comment still notifies exactly as before.
+/// `parent_id` is always the top-level comment (the insert trigger flattens a reply to a reply),
+/// so the person answered inside a thread who is not its starter hears it as an @mention.
+async function replyParentAuthors(table: "post_comments" | "photo_comments", ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (ids.length === 0) return out;
+  const { data: rel, error } = await supabase.from(table).select("id, parent_id").in("id", ids).not("parent_id", "is", null);
+  if (error || !rel?.length) return out;
+  const parentIds = [...new Set(rel.map((r) => r.parent_id as string))];
+  const { data: parents, error: pErr } = await supabase.from(table).select("id, user_id").in("id", parentIds);
+  if (pErr) return out;
+  const authorOf = new Map((parents ?? []).map((p) => [p.id as string, p.user_id as string]));
+  for (const r of rel) {
+    const author = authorOf.get(r.parent_id as string);
+    if (author) out.set(r.id as string, author);
+  }
+  return out;
+}
+
 /// Resolves mentioned handles to user ids, dropping any that match nobody (a typo, or someone who
 /// has since changed their username).
 async function mentionedUserIds(text: string): Promise<string[]> {
@@ -887,6 +908,8 @@ Deno.serve(async (req: Request) => {
     .select("id, post_id, user_id, body, posts(user_id, hidden, created_at)")
     .eq("push_sent", false);
 
+  const repliedTo = await replyParentAuthors("post_comments", (comments ?? []).map((c) => c.id as string));
+
   for (const c of comments ?? []) {
     const postMeta = (c as { posts?: { user_id?: string; hidden?: boolean; created_at?: string } }).posts;
     if (postMeta?.hidden) {
@@ -907,9 +930,23 @@ Deno.serve(async (req: Request) => {
     // post_id), never hoisted, so nothing from a previous row's iteration can leak in.
     const route: FlimRoute = { t: "post", id: c.post_id, comments: true };
     const notified = new Set<string>([c.user_id]);
+    // A reply goes first to the person whose comment it answers, and outranks the owner and
+    // mention pushes for them: "replied to your comment" is the more exact of the three. Someone
+    // other than the post's owner gets the same covered-post and follower checks as a mention,
+    // since commenting once is no promise they can still open the post.
+    const parentAuthor = repliedTo.get(c.id as string);
+    if (parentAuthor && !notified.has(parentAuthor)) {
+      const canOpen = parentAuthor === ownerId || !ownerId || (
+        (!postMeta?.created_at || coveredPostVisibleTo(coveredCtx, parentAuthor, ownerId, postMeta.created_at)) &&
+        await postVisibleTo(parentAuthor, c.post_id, ownerId, `comment:${c.id}`));
+      if (canOpen) {
+        notified.add(parentAuthor);
+        sent += await notify(parentAuthor, c.user_id, `${name} replied to your comment`, preview, route, `comment:${c.id}`);
+      }
+    }
     // The owner push never needs a covered-post check: ownerId IS the post's author, so if the
     // post is covered, its own author is trivially allowed to be told about activity on it.
-    if (ownerId) {
+    if (ownerId && !notified.has(ownerId)) {
       notified.add(ownerId);
       sent += await notify(ownerId, c.user_id, `${name} commented`, preview, route, `comment:${c.id}`);
     }
@@ -1230,6 +1267,8 @@ Deno.serve(async (req: Request) => {
     byPhoto.set(pc.photo_id, g);
   }
 
+  const photoRepliedTo = await replyParentAuthors("photo_comments", (photoComments ?? []).map((pc) => pc.id as string));
+
   for (const [photoId, g] of byPhoto) {
     // Who can still open this thread: the photo's owner and the roll's CURRENT members, the same
     // two the "photo_comments: readable by roll members" policy allows. Someone who left the roll,
@@ -1279,6 +1318,15 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Whoever a reply answers hears about it too, under the same mute and read rules, and
+    // uncapped like the owner: one person per reply.
+    for (const it of g.items) {
+      const parentAuthor = photoRepliedTo.get(it.id);
+      if (parentAuthor && parentAuthor !== it.userId && !muted.has(parentAuthor) && canRead.has(parentAuthor)) {
+        thread.add(parentAuthor);
+      }
+    }
+
     for (const recipient of thread) {
       if (muted.has(recipient) || !canRead.has(recipient)) continue;
       const fromOthers = g.items.filter((it) => it.userId !== recipient);  // never notify about your own
@@ -1286,7 +1334,8 @@ Deno.serve(async (req: Request) => {
 
       let title: string, body: string;
       if (fromOthers.length === 1) {
-        title = `${await handle(fromOthers[0].userId)} commented`;
+        const verb = photoRepliedTo.get(fromOthers[0].id) === recipient ? "replied to your comment" : "commented";
+        title = `${await handle(fromOthers[0].userId)} ${verb}`;
         const b = fromOthers[0].body;
         body = b.length > 90 ? b.slice(0, 87) + "…" : b;
       } else {

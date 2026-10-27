@@ -17,6 +17,9 @@ struct CommentsSheet: View {
     /// (the design's rule: the pager can swipe an inline draft's target away); this is the
     /// sheet doing the reaching instead.
     var initialReplyHandle: String? = nil
+    /// The thread `initialReplyHandle` replies into: the tapped comment's own id, or its parent's
+    /// when it was itself a reply.
+    var initialReplyParentId: UUID? = nil
 
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -35,6 +38,10 @@ struct CommentsSheet: View {
     /// `CommentComposer` can show an explicit "Replying to…" banner instead of leaving it
     /// ambiguous whether the leading `@handle` was tapped or typed.
     @State private var replyTarget: String?
+    /// The thread `draft` replies into, set with `replyTarget` and cleared with it.
+    @State private var replyParentId: UUID?
+    /// Threads opened past their first replies with "View N more replies".
+    @State private var expandedThreads: Set<UUID> = []
     @State private var sending = false
     /// The last send didn't land: the draft is back in the field, and the composer says why.
     @State private var sendFailed = false
@@ -61,6 +68,8 @@ struct CommentsSheet: View {
             .filter { !feed.blockedIds.contains($0.comment.userId) }
             .sorted { $0.comment.createdAt < $1.comment.createdAt }
     }
+    /// Conversations in the order they began, each reply under the comment it answers.
+    private var threads: [CommentThread<CommentInfo>] { CommentThreads.build(comments) }
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
@@ -98,7 +107,7 @@ struct CommentsSheet: View {
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 18) {
-                                ForEach(comments) { commentRow($0) }
+                                ForEach(threads) { threadView($0) }
                             }
                             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
                         }
@@ -129,9 +138,40 @@ struct CommentsSheet: View {
             if let handle = initialReplyHandle, draft.isEmpty {
                 draft = prefillingReply(to: handle, in: draft)
                 replyTarget = handle
+                replyParentId = initialReplyParentId
                 focused = true
             }
             await reload()
+        }
+    }
+
+    /// A comment, then its replies indented under it, folded past the first two. A comment that
+    /// is gone (deleted, or its author blocked) keeps its place as one quiet line, so the replies
+    /// still read as answers.
+    private func threadView(_ thread: CommentThread<CommentInfo>) -> some View {
+        let visible = CommentThreads.visibleReplies(thread, expanded: expandedThreads.contains(thread.id))
+        return VStack(alignment: .leading, spacing: 14) {
+            if let root = thread.root {
+                commentRow(root)
+            } else {
+                Text("Comment unavailable")
+                    .flimFont(13, relativeTo: .subheadline).italic()
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            ForEach(visible.shown) { reply in
+                commentRow(reply).padding(.leading, CommentThreads.replyIndent)
+            }
+            if visible.hidden > 0 {
+                Button {
+                    Haptics.tap()
+                    withAnimation(.snappy(duration: 0.22)) { _ = expandedThreads.insert(thread.id) }
+                } label: {
+                    Text(CommentThreads.moreRepliesLabel(visible.hidden))
+                        .flimFont(12, weight: .medium, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                .padding(.leading, CommentThreads.replyIndent)
+            }
         }
     }
 
@@ -150,9 +190,10 @@ struct CommentsSheet: View {
                         }
                         .accessibilityLabel("Delete your comment")
                     } else {
-                        // A reply is just a mention someone didn't have to type, not a nested
-                        // thread. Own comments don't get this: replying to yourself would just
-                        // mention yourself, which is nonsense, and commenting again already covers it.
+                        // Replies join the comment's thread (one level: replying to a reply
+                        // answers inside the same thread, still opening with its "@name"). Own
+                        // comments don't get this: replying to yourself would just mention
+                        // yourself, and commenting again already covers it.
                         Button { reply(to: info) } label: {
                             Text("Reply").flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                         }
@@ -225,6 +266,10 @@ struct CommentsSheet: View {
             .background(FlimTheme.sheetTile)
             .onChange(of: draft) { _, new in
                 if new.isEmpty { sendFailed = false }
+            }
+            // The banner's X cancels the reply, and with it the thread it was going into.
+            .onChange(of: replyTarget) { _, new in
+                if new == nil { replyParentId = nil }
             }
     }
 
@@ -326,18 +371,23 @@ struct CommentsSheet: View {
         guard let uid = auth.currentUser?.id, canSend else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let target = replyTarget
+        let parent = replyParentId
         draft = ""
         replyTarget = nil
+        replyParentId = nil
         sendFailed = false
         Haptics.tap()
         Task {
             sending = true
             let ok = await feed.commentOnPost(post.id, body: body, userId: uid, authorId: post.userId,
-                                              commenter: auth.currentUser)   // updates the shared cache
+                                              commenter: auth.currentUser, parentId: parent)   // updates the shared cache
             sending = false
+            // A reply lands at the end of its thread, so the thread opens to show it.
+            if ok, let parent { expandedThreads.insert(parent) }
             if !ok {
                 draft = body   // don't lose what they typed, restore and let them retry
                 replyTarget = target
+                replyParentId = parent
                 sendFailed = true
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()
@@ -347,11 +397,13 @@ struct CommentsSheet: View {
     }
 
     /// Focuses the composer with `@handle ` in front, preserving whatever was already typed, and
-    /// arms the banner naming who it's for.
+    /// arms the banner naming who it's for. The reply goes into the comment's thread: its own, or
+    /// the one it already sits in.
     private func reply(to info: CommentInfo) {
         Haptics.tap()
         draft = prefillingReply(to: info.handle, in: draft)
         replyTarget = info.handle
+        replyParentId = info.comment.parentId ?? info.id
         focused = true
     }
 

@@ -87,12 +87,16 @@ struct PostComment: Codable, Identifiable {
     let userId: UUID
     let body: String
     let createdAt: Date
+    /// The top-level comment this one replies to, nil for a top-level comment (and for every row
+    /// from a database before threads, which has no such column). See `CommentThreads`.
+    var parentId: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, body
         case postId = "post_id"
         case userId = "user_id"
         case createdAt = "created_at"
+        case parentId = "parent_id"
     }
 }
 
@@ -103,12 +107,16 @@ struct PhotoComment: Codable, Identifiable {
     let userId: UUID
     let body: String
     let createdAt: Date
+    /// The top-level comment this one replies to, nil for a top-level comment (and for every row
+    /// from a database before threads, which has no such column). See `CommentThreads`.
+    var parentId: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, body
         case photoId = "photo_id"
         case userId = "user_id"
         case createdAt = "created_at"
+        case parentId = "parent_id"
     }
 }
 
@@ -194,6 +202,12 @@ struct ActivityItem: Identifiable {
         /// something you own: that comment already has its own row (`.comment` or
         /// `.rollPhotoComment`), so a mention inside it isn't a second event.
         case mentioned(String)
+        /// Someone replied to a comment of yours, on a post or a roll photo, yours or not. Mirrors
+        /// `send-social-push`'s "{name} replied to your comment". Outranks every other row about
+        /// the same comment (`.comment`, `.mentioned`, `.threadComment` and their roll analogs):
+        /// a reply opens with "@you", so it is always a mention too, and on your own photo it is
+        /// a comment too, but it is one event and reads best as the most exact of them.
+        case replied(String)
         /// Someone commented on a roll photo you own, never your own comment. The roll-photo
         /// analog of `.comment`, closing the gap `send-social-push`'s roll-photo-comment push
         /// (the owner half of it) had no Activity row for at all.

@@ -2339,3 +2339,44 @@ On device, once the build is up:
    with no reaction on it.
 4. The feed's first launch on the new build: the invite line, once; tap it, send an invite,
    close the sheet: the count drops by one. Next launch: gone.
+
+## Comment threads (2026-10-26, after 1.6.3)
+
+A reply about a game release sat above the comment that announced it, on the feed card and the
+post screen: both ranked comments by likes, and the reply had two. A reply was only a comment
+whose text opened with "@name". The owner picked real threads over guessing from that text.
+
+- **Data.** `post_comments.parent_id` and `photo_comments.parent_id`, the top-level comment a
+  reply belongs to. No foreign key on purpose: a deleted comment's replies keep the id and show
+  under "Comment unavailable". A trigger refuses a parent on another post or photo, refuses a
+  reply to someone blocked either way, flattens a reply to a reply onto its thread (one level),
+  and makes a reply whose comment vanished mid-typing a plain comment. Migration
+  `2026-10-26_comment_threads.sql`, section 3 links the replies written before it from their
+  leading "@name" (15 in production on 2026-10-26). Tried on the bootstrap staging DB: link,
+  flatten, elsewhere, missing, blocked and delete all behave.
+- **App.** `CommentThreads` groups any comment list. The sheets list conversations in the order
+  they began, replies indented and oldest first, folded past two behind "View N more replies";
+  the post screen does the same but ranks conversations by their own comment's likes (a liked
+  reply lifts nothing), and gains a Reply button. The feed card previews top-level comments only,
+  with "N replies" under one that has them. Reply sends into the comment's thread; replying to a
+  reply joins the same thread, still opening with "@name". Against a database without the column,
+  a reply is resent as the plain "@name" comment (PGRST204) rather than lost.
+- **Notifications.** send-social-push tells the person whose comment was answered "{name}
+  replied to your comment" (posts and roll photos), ahead of the owner's "commented" and any
+  mention, one push per person. The parent lookup is its own read, so without the column every
+  comment still notifies as before. Activity shows the same as `.replied`, and that row stands
+  for every other row about the same comment. The bell already counted these once.
+- **Older builds** keep showing a flat list in time order, every reply still opening with
+  "@name", and keep writing top-level comments.
+
+Owner steps, in this order: apply the migration, then deploy send-social-push, then push the
+app. The app and the function both cope with the others missing, so the order only decides when
+replies start reading as threads.
+
+On device, once the build is up:
+1. On a friend's post, Reply to a comment: yours sits indented under it in the sheet, and on
+   the feed card the comment shows "1 reply". Its author gets "replied to your comment".
+2. Like the reply a few times from other accounts: it never moves above the comment.
+3. Four replies on one comment: two show, then "View 2 more replies".
+4. Delete a comment that has replies: "Comment unavailable" in its place, replies stay.
+5. The same on a roll photo's comments.

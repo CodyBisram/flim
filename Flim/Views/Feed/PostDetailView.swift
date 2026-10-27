@@ -61,6 +61,10 @@ struct PostDetailView: View {
     /// Who `draft` is replying to, if anyone. Owned here, not inferred from `draft`'s text, so
     /// `CommentComposer` can show an explicit "Replying to…" banner.
     @State private var replyTarget: String?
+    /// The thread `draft` replies into, set with `replyTarget` and cleared with it.
+    @State private var replyParentId: UUID?
+    /// Threads opened past their first replies with "View N more replies".
+    @State private var expandedThreads: Set<UUID> = []
     @State private var sending = false
     @State private var shareItem: ShareImage?
     /// A delete that didn't reach the server. Distinct from dismissing: staying on a post that
@@ -553,7 +557,36 @@ struct PostDetailView: View {
                 .flimFont(11, weight: .medium, relativeTo: .caption).tracking(1.5)
                 .foregroundStyle(FlimTheme.textTertiary)
 
-            ForEach(comments) { info in
+            ForEach(CommentThreads.build(comments, rootsBefore: CommentThreads.byLikes)) { thread in
+                let visible = CommentThreads.visibleReplies(thread, expanded: expandedThreads.contains(thread.id))
+                if let root = thread.root {
+                    commentRow(root)
+                } else {
+                    Text("Comment unavailable")
+                        .flimFont(12, relativeTo: .subheadline).italic()
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                ForEach(visible.shown) { reply in
+                    commentRow(reply).padding(.leading, CommentThreads.replyIndent)
+                }
+                if visible.hidden > 0 {
+                    Button {
+                        Haptics.tap()
+                        withAnimation(.snappy(duration: 0.22)) { _ = expandedThreads.insert(thread.id) }
+                    } label: {
+                        Text(CommentThreads.moreRepliesLabel(visible.hidden))
+                            .flimFont(11, weight: .medium, relativeTo: .caption)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .padding(.leading, CommentThreads.replyIndent)
+                }
+            }
+        }
+    }
+
+    /// One comment on this page: a top-level comment and a reply look the same, the reply only
+    /// indented under its comment by `commentsSection`.
+    private func commentRow(_ info: CommentInfo) -> some View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
@@ -569,6 +602,14 @@ struct PostDetailView: View {
                                 }
                                 .accessibilityLabel("Delete your comment")
                                 // 9 + 17.5 either side = 44, same reach as everywhere else this small.
+                                .expandTapTarget(by: 17.5)
+                            } else {
+                                // Same rule as the comments sheet: into the comment's thread,
+                                // never on your own.
+                                Button { reply(to: info) } label: {
+                                    Text("Reply").flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                                }
+                                .accessibilityLabel("Reply to \(info.handle)")
                                 .expandTapTarget(by: 17.5)
                             }
                         }
@@ -599,8 +640,14 @@ struct PostDetailView: View {
                     // 13 + 15.5 either side = 44.
                     .expandTapTarget(by: 15.5)
                 }
-            }
-        }
+    }
+
+    private func reply(to info: CommentInfo) {
+        Haptics.tap()
+        draft = prefillingReply(to: info.handle, in: draft)
+        replyTarget = info.handle
+        replyParentId = info.comment.parentId ?? info.id
+        commentFocused = true
     }
 
     /// Pinned above the keyboard. This screen IS the comment thread (the full list renders
@@ -618,6 +665,10 @@ struct PostDetailView: View {
                         focus: $commentFocused) { send() }
             .onChange(of: draft) { _, new in
                 if new.isEmpty { commentSendFailed = false }
+            }
+            // The banner's X cancels the reply, and with it the thread it was going into.
+            .onChange(of: replyTarget) { _, new in
+                if new == nil { replyParentId = nil }
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(
@@ -706,8 +757,10 @@ struct PostDetailView: View {
         guard let uid = auth.currentUser?.id, canSend else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let target = replyTarget
+        let parent = replyParentId
         draft = ""
         replyTarget = nil
+        replyParentId = nil
         commentFocused = false
         commentSendFailed = false
         sending = true
@@ -716,12 +769,14 @@ struct PostDetailView: View {
             // returns nil on failure with nothing here checking it, which is how a comment
             // that never reached the server still cleared the draft as if it had.
             let ok = await feed.commentOnPost(post.id, body: body, userId: uid, authorId: post.userId,
-                                              commenter: auth.currentUser)
+                                              commenter: auth.currentUser, parentId: parent)
             await reloadComments()
             sending = false
+            if ok, let parent { expandedThreads.insert(parent) }
             if !ok {
                 draft = body   // don't lose what they typed, restore and let them retry
                 replyTarget = target
+                replyParentId = parent
                 commentSendFailed = true
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()

@@ -2129,12 +2129,20 @@ final class PhotoService {
         return blockedIds.isEmpty ? rows : rows.filter { !blockedIds.contains($0.userId) }
     }
 
+    /// `parentId` makes it a reply in that comment's thread, with the same fallback as
+    /// `FeedService.addComment` for a database without threads yet.
     @discardableResult
-    func addPhotoComment(photoId: UUID, body: String, userId: UUID) async -> PhotoComment? {
-        struct C: Encodable { let photo_id: UUID; let user_id: UUID; let body: String }
-        return try? await supabase.from("photo_comments")
-            .insert(C(photo_id: photoId, user_id: userId, body: body))
-            .select().single().execute().value
+    func addPhotoComment(photoId: UUID, body: String, userId: UUID, parentId: UUID? = nil) async -> PhotoComment? {
+        struct C: Encodable { let photo_id: UUID; let user_id: UUID; let body: String; let parent_id: UUID? }
+        do {
+            return try await supabase.from("photo_comments")
+                .insert(C(photo_id: photoId, user_id: userId, body: body, parent_id: parentId))
+                .select().single().execute().value
+        } catch let error as PostgrestError where parentId != nil && error.code == "PGRST204" {
+            return await addPhotoComment(photoId: photoId, body: body, userId: userId)
+        } catch {
+            return nil
+        }
     }
 
     func deletePhotoComment(id: UUID) async {

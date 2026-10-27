@@ -39,6 +39,7 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
     case .follow: return "started following you"
     case .tagged: return "tagged you in a photo"
     case .mentioned(let body): return "mentioned you: “\(body)”"
+    case .replied(let body): return "replied to your comment: “\(body)”"
     // The roll-photo analog of `.comment`, same sentence: the destination (a roll's viewer
     // instead of a post) is what tells these apart, not the wording.
     case .rollPhotoComment(let body): return "commented: “\(body)”"
@@ -74,7 +75,7 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
 /// to the photo."
 func activityOpensThread(_ kind: ActivityItem.Kind) -> Bool {
     switch kind {
-    case .comment, .commentLiked, .mentioned, .threadComment: return true
+    case .comment, .commentLiked, .mentioned, .replied, .threadComment: return true
     default: return false
     }
 }
@@ -101,7 +102,7 @@ func activityDestination(for item: ActivityItem) -> ActivityDestination {
         // mention (both have a thread worth opening to), never on a bare reaction.
         let comments: Bool
         switch item.kind {
-        case .rollPhotoComment, .mentioned, .rollPhotoThreadComment: comments = true
+        case .rollPhotoComment, .mentioned, .replied, .rollPhotoThreadComment: comments = true
         default: comments = false
         }
         return .roll(rollId: rollId, photoId: item.rollPhotoId, comments: comments)
@@ -493,7 +494,7 @@ struct ActivityFeedView: View {
                     .background(FlimTheme.bg, in: Circle())
                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
             }
-        case .comment, .tagged, .commentLiked, .rollPhotoComment, .mentioned, .threadComment, .rollPhotoThreadComment:
+        case .comment, .tagged, .commentLiked, .rollPhotoComment, .mentioned, .replied, .threadComment, .rollPhotoThreadComment:
             Image(systemName: icon(kind))
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white)
@@ -573,6 +574,7 @@ private struct ActivityLine: View {
         case .follow: return "person.fill.badge.plus"
         case .tagged: return "tag.fill"
         case .mentioned: return "at"
+        case .replied: return "arrowshape.turn.up.left.fill"
         case .spotlight: return SpotlightGlyph.systemName
         }
     }
