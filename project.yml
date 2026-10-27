@@ -37,10 +37,10 @@ settings:
       FLIM_DISPLAY_NAME: FLIM Beta
       FLIM_APP_GROUP: group.com.flim.app.beta
       FLIM_URL_SCHEME: com.flim.app.beta
-      # FLIM Beta's own Supabase project, once it exists. Until then a beta build stops at launch
-      # and says so, rather than reach production (FlimEnvironment refuses production's host too).
-      FLIM_SUPABASE_URL: ""
-      FLIM_SUPABASE_KEY: ""
+      # FLIM Beta's own Supabase project: "FLIM Dev" in the free FLIM Dev organization, apart from
+      # production's. FlimEnvironment refuses production's host here even if this is ever changed.
+      FLIM_SUPABASE_URL: https://kwhgbrdznaogkdyqitvi.supabase.co
+      FLIM_SUPABASE_KEY: sb_publishable_yF7BvU2ZvRimBj8UgcxVjg_2bp7zeaE
 
 packages:
   supabase-swift:

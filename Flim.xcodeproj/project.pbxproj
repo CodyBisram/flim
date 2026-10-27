@@ -2097,8 +2097,8 @@
 				FLIM_BUNDLE_ID = com.flim.app.beta;
 				FLIM_DISPLAY_NAME = "FLIM Beta";
 				FLIM_ENVIRONMENT = beta;
-				FLIM_SUPABASE_KEY = "";
-				FLIM_SUPABASE_URL = "";
+				FLIM_SUPABASE_KEY = sb_publishable_yF7BvU2ZvRimBj8UgcxVjg_2bp7zeaE;
+				FLIM_SUPABASE_URL = "https://kwhgbrdznaogkdyqitvi.supabase.co";
 				FLIM_URL_SCHEME = com.flim.app.beta;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -2457,8 +2457,8 @@
 				FLIM_BUNDLE_ID = com.flim.app.beta;
 				FLIM_DISPLAY_NAME = "FLIM Beta";
 				FLIM_ENVIRONMENT = beta;
-				FLIM_SUPABASE_KEY = "";
-				FLIM_SUPABASE_URL = "";
+				FLIM_SUPABASE_KEY = sb_publishable_yF7BvU2ZvRimBj8UgcxVjg_2bp7zeaE;
+				FLIM_SUPABASE_URL = "https://kwhgbrdznaogkdyqitvi.supabase.co";
 				FLIM_URL_SCHEME = com.flim.app.beta;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;

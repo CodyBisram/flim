@@ -235,12 +235,25 @@ away from production: a beta build with no Supabase project set stops at launch 
 back, and a beta build pointed at production's project stops at launch too. Only the App Store
 app may fall back to production's values.
 
-To finish setting it up, in order:
-1. Create the beta Supabase project, build its schema from `supabase/schema.sql` with test
-   accounts only (never a copy of real users), and set `FLIM_SUPABASE_URL` / `FLIM_SUPABASE_KEY`
-   under `configs: Beta:` in `project.yml`. Check its cron jobs and hooks call the beta's own
-   functions. Deploy the edge functions there with `APNS_BUNDLE_ID=com.flim.app.beta`, and add
-   `com.flim.app.beta://login-callback` to its auth redirect allowlist.
+The beta's Supabase project is "FLIM Dev" (`kwhgbrdznaogkdyqitvi`, us-west-2) in its own free
+organization, also "FLIM Dev", apart from production's. Set up 2026-10-27:
+- Schema built from `supabase/schema.sql` with production's ref swapped for the beta's (four
+  cron jobs call functions by URL), after enabling `pg_cron` and `pg_net`; same object counts as
+  the bootstrap build, row level security on every table. The Pi hooks stay inert (no secret row).
+- All edge functions deployed there with `--project-ref kwhgbrdznaogkdyqitvi`;
+  `APNS_BUNDLE_ID=com.flim.app.beta` and its own `CRON_SECRET` (`~/.flim-v2-cron-secret`, not
+  production's) set as function secrets, and wired into its cron jobs.
+- Auth: redirect `com.flim.app.beta://login-callback`, 6-digit codes. Free projects on the default
+  email service cannot change the email template (so the email carries a sign-in link, which the
+  app handles) and send about two emails an hour. A custom SMTP sender (Resend, as production
+  uses) lifts both.
+- Test accounts only, allowed in `allowed_emails` with note 'test account'.
+- Management API token for it: `~/.flim-v2-supabase-token`. Deploys to it name
+  `--project-ref kwhgbrdznaogkdyqitvi` every time.
+
+Still to do, in order:
+1. Push: set the APNs key secrets on the beta project (the owner copies them; pushes stay off
+   until then).
 2. Register the three beta App IDs with the App Group `group.com.flim.app.beta` (the
    `certificates` lane registers bundle ids through the API key), then make their profiles with
    the `signing-setup` workflow: `match AppStore com.flim.app.beta`, `...beta.RollActivityWidget`
