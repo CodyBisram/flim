@@ -53,6 +53,17 @@ def get(path, bearer):
         sys.exit(f"HTTP {error.code} on {path.split('?')[0]}: {error.read().decode()[:300]}")
 
 
+def soft_get(path, bearer):
+    """`get` for a read the key may not be allowed: None instead of stopping the report."""
+    request = urllib.request.Request(API + path, headers={"Authorization": f"Bearer {bearer}"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        print(f"(HTTP {error.code} on {path.split('?')[0]})")
+        return None
+
+
 def fetch_versions():
     """The app's four most recent App Store versions, newest first:
     [{"version", "build", "state", "created"}]."""
@@ -105,22 +116,26 @@ def beta_report():
         attrs = build["attributes"]
         link = (build.get("relationships", {}).get("buildBetaDetail") or {}).get("data")
         detail = details.get(link["id"], {}) if link else {}
-        groups = [g["attributes"].get("name") for g in
-                  get(f"/v1/builds/{build['id']}/betaGroups?fields[betaGroups]=name", bearer)["data"]]
+        in_groups = soft_get(f"/v1/builds/{build['id']}/betaGroups?fields[betaGroups]=name", bearer)
+        groups = [g["attributes"].get("name") for g in in_groups["data"]] if in_groups else "?"
         print(f"ASC_BETA build={attrs.get('version')} processing={attrs.get('processingState')} "
               f"internal={detail.get('internalBuildState')} external={detail.get('externalBuildState')} "
               f"expired={attrs.get('expired')} uploaded={attrs.get('uploadedDate')} "
               f"groups={groups or '-'}")
-    groups = get(f"/v1/apps/{app_id}/betaGroups?limit=50"
-                 "&fields[betaGroups]=name,isInternalGroup,hasAccessToAllBuilds", bearer)["data"]
+    listed = soft_get(f"/v1/apps/{app_id}/betaGroups?limit=50"
+                      "&fields[betaGroups]=name,isInternalGroup,hasAccessToAllBuilds", bearer)
+    if listed is None:
+        return
+    groups = listed["data"]
     if not groups:
         print("ASC_BETA_GROUP none")
     for group in groups:
         attrs = group["attributes"]
-        testers = get(f"/v1/betaGroups/{group['id']}/betaTesters?limit=200&fields[betaTesters]=state",
-                      bearer)["data"]
+        members = soft_get(f"/v1/betaGroups/{group['id']}/betaTesters?limit=200&fields[betaTesters]=state",
+                           bearer)
+        testers = len(members["data"]) if members else "?"
         print(f"ASC_BETA_GROUP {attrs.get('name')} internal={attrs.get('isInternalGroup')} "
-              f"all_builds={attrs.get('hasAccessToAllBuilds')} testers={len(testers)}")
+              f"all_builds={attrs.get('hasAccessToAllBuilds')} testers={testers}")
 
 
 def main():
