@@ -310,13 +310,20 @@ struct MainTabView: View {
                 }
             }
         )
-        // A sheet, so a swipe down puts the shelf away and the camera is under it. Back to
-        // Personal only if Rolls were still chosen: a route that moved on to another place closes
-        // the sheet too, and must not be sent back to the camera by it.
-        .sheet(isPresented: Binding(get: { selected == V2Place.rollsTab },
-                                    set: { if !$0, selected == V2Place.rollsTab { selected = V2Place.personal.tab } })) {
-            rollsStack
-                .presentationDragIndicator(.visible)
+        // Over the places, with Back. Back to Personal only if Rolls were still chosen: a route
+        // that moved on to another place closes the shelf too, and must not be sent back to the
+        // camera by it. The path is the Rolls tab's, so routes that push a roll still land.
+        .fullScreenCover(isPresented: Binding(get: { selected == V2Place.rollsTab },
+                                              set: { if !$0, selected == V2Place.rollsTab { selected = V2Place.personal.tab } })) {
+            NavigationStack(path: $rollsPath) {
+                V2RollsView(pendingPhotoIntent: $pendingRollPhoto,
+                            push: { rollsPath.append($0) },
+                            close: { selected = V2Place.personal.tab })
+            }
+            .undoCapsuleHost()
+            #if DEBUG
+            .modifier(V2DemoFrame())
+            #endif
                 // The join sheet a roll invite opens, hosted here while Rolls are up: one
                 // presenter cannot show a second sheet over its own.
                 .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
