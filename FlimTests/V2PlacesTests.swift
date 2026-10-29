@@ -101,4 +101,25 @@ struct V2PlacesTests {
         #expect(V2When.left(until: now.addingTimeInterval(40 * 60), now: now) == "40m left")
         #expect(V2When.left(until: now.addingTimeInterval(3 * 86_400 + 60), now: now) == "3d left")
     }
+
+    @Test("a new roll's opening choices stay inside the server's seven days, and tonight goes once the evening has")
+    func rollOpening() {
+        let afternoon = Self.at(15)
+        #expect(V2RollTime.Choice.available(now: afternoon, calendar: Self.calendar) == [.tonight, .tomorrow, .week])
+        #expect(V2RollTime.Choice.available(now: Self.at(21, 30), calendar: Self.calendar) == [.tomorrow, .week])
+        for now in [afternoon, Self.at(19), Self.at(23, 50)] {
+            let week = V2RollTime.Choice.week.date(now: now, calendar: Self.calendar)
+            #expect(week > now)
+            #expect(week.timeIntervalSince(now) < 7 * 86_400)
+        }
+        #expect(V2RollTime.Choice.tonight.date(now: afternoon, calendar: Self.calendar) == Self.at(22))
+        #expect(V2RollTime.Choice.tomorrow.date(now: afternoon, calendar: Self.calendar) == Self.at(18, day: 28))
+    }
+
+    @Test("the lid's clock is 24-hour and names tonight and tomorrow")
+    func lidClock() {
+        let now = Self.at(15)
+        #expect(V2RollTime.clock(Self.at(18, day: 28), now: now, calendar: Self.calendar).hasPrefix("TOMORROW "))
+        #expect(V2RollTime.clock(Self.at(22), now: now, calendar: Self.calendar).hasPrefix("TONIGHT "))
+    }
 }
