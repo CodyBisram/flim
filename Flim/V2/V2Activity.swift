@@ -50,7 +50,7 @@ struct V2ActivityView: View {
             .background { V2Desktop(palette: palette) }
             .foregroundStyle(palette.ink)
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(item: $profile) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
+            .navigationDestination(item: $profile) { V2PageView(userId: $0.id, openInvite: $0.openInvite) }
         }
         .fullScreenCover(item: $opened) { print in
             V2GroupView(groups: [V2FeedGroup(author: print.item.author, items: [print.item])], index: 0,

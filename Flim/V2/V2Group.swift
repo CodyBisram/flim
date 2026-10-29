@@ -82,7 +82,7 @@ struct V2GroupView: View {
             .background { V2Desktop(palette: palette) }
             .foregroundStyle(palette.ink)
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(item: $profile) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
+            .navigationDestination(item: $profile) { V2PageView(userId: $0.id, openInvite: $0.openInvite) }
         }
     }
 

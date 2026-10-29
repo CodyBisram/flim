@@ -50,9 +50,14 @@ struct V2TopRow<Middle: View>: View {
                 }
             }
         }
-        .sheet(isPresented: $showPage) {
-            if let uid = auth.currentUser?.id {
-                NavigationStack { UserPageView(userId: uid) }
+        .fullScreenCover(isPresented: $showPage) {
+            if let uid = pageUserId {
+                NavigationStack { V2PageView(userId: uid) }
+                    .environment(\.v2Palette, palette)
+                    .undoCapsuleHost()
+                    #if DEBUG
+                    .modifier(V2DemoFrame())
+                    #endif
             }
         }
         .fullScreenCover(isPresented: $showFind) {
@@ -78,12 +83,14 @@ struct V2TopRow<Middle: View>: View {
                 #endif
         }
         #if DEBUG
-        // `-v2OpenActivity` / `-v2OpenFind`: opens one at launch, for screenshots.
+        // `-v2OpenActivity` / `-v2OpenFind` / `-v2OpenPage`: opens one at launch, for screenshots.
         .task {
             let args = ProcessInfo.processInfo.arguments
-            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") else { return }
+            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") || args.contains("-v2OpenPage") else { return }
             try? await Task.sleep(for: .seconds(1.2))
-            if args.contains("-v2OpenActivity") { showActivity = true } else { showFind = true }
+            if args.contains("-v2OpenActivity") { showActivity = true }
+            else if args.contains("-v2OpenPage") { showPage = true }
+            else { showFind = true }
         }
         #endif
         .task(id: auth.currentUser?.id) { await refreshUnread() }
@@ -93,6 +100,16 @@ struct V2TopRow<Middle: View>: View {
         .onChange(of: showActivity) { _, open in
             if !open { Task { await refreshUnread() } }
         }
+    }
+
+    /// Whose page "You" opens: yours. With `-v2DemoPage` and no account, a stand-in, for screenshots.
+    private var pageUserId: UUID? {
+        #if DEBUG
+        if auth.currentUser == nil, ProcessInfo.processInfo.arguments.contains("-v2DemoPage") {
+            return UUID(uuidString: "00000000-0000-0000-0000-00000000C0DE")
+        }
+        #endif
+        return auth.currentUser?.id
     }
 
     private var you: some View {

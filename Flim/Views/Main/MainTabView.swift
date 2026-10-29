@@ -298,7 +298,7 @@ struct MainTabView: View {
                     V2FriendsPlace(scrollToTop: scrollSignal[3, default: 0],
                                    isFrontmost: selected == 3,
                                    openProfile: { feedPath.append($0) })
-                        .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
+                        .navigationDestination(for: ProfileRoute.self) { V2PageView(userId: $0.id, openInvite: $0.openInvite) }
                         .navigationDestination(for: FeedItem.self) { item in
                             let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
                             PostDetailView(
