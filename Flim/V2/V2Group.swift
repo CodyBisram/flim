@@ -9,7 +9,12 @@ import SwiftUI
 struct V2GroupView: View {
     let groups: [V2FeedGroup]
     @State var index: Int
-    var close: () -> Void
+    /// Opens on the back of the print: an Activity slip about a note goes straight to the notes.
+    var startsOnBack = false
+    /// Just the print and its back, side by side, for a pane beside a list (Activity, open,
+    /// board 16-1k). Its host provides the desk and the way out.
+    var embedded = false
+    var close: () -> Void = {}
 
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.v2Palette) private var palette
@@ -33,6 +38,35 @@ struct V2GroupView: View {
     private var me: UUID? { auth.currentUser?.id }
 
     var body: some View {
+        Group {
+            if embedded {
+                GeometryReader { proxy in pane(proxy.size) }
+            } else {
+                full
+            }
+        }
+        .task(id: item.id) {
+            FeedSeenStore.shared.markSeen(item.id)
+            guard let me else { return }
+            if let fresh = await feed.fetchComments(postId: item.id, currentUserId: me) {
+                feed.commentsByPost[item.id] = fresh
+            }
+        }
+        .onAppear {
+            if startsOnBack { showsBack = true }
+            #if DEBUG
+            // `-v2GroupBack`: opens on the back of the print, for screenshots.
+            if ProcessInfo.processInfo.arguments.contains("-v2GroupBack") { showsBack = true }
+            #endif
+        }
+        .onChange(of: index) { _, _ in
+            frame = 0
+            showsBack = false
+            replyParentId = nil
+        }
+    }
+
+    private var full: some View {
         NavigationStack {
             GeometryReader { proxy in
                 let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
@@ -50,22 +84,21 @@ struct V2GroupView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $profile) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
         }
-        .task(id: item.id) {
-            FeedSeenStore.shared.markSeen(item.id)
-            guard let me else { return }
-            if let fresh = await feed.fetchComments(postId: item.id, currentUserId: me) {
-                feed.commentsByPost[item.id] = fresh
+    }
+
+    /// The embedded pane: the print, and beside it the back with the composer under it.
+    private func pane(_ size: CGSize) -> some View {
+        let half = (size.width - V2Metrics.margin) / 2
+        let width = printWidth(in: CGSize(width: half, height: size.height - 90))
+        return VStack(spacing: 14) {
+            HStack(alignment: .top, spacing: V2Metrics.margin) {
+                stack(width: width, turnable: false)
+                backFace(width: width, height: V2PrintGeometry.height(width: width))
             }
+            composer
+            quickReactions
         }
-        #if DEBUG
-        // `-v2GroupBack`: opens on the back of the print, for screenshots.
-        .onAppear { if ProcessInfo.processInfo.arguments.contains("-v2GroupBack") { showsBack = true } }
-        #endif
-        .onChange(of: index) { _, _ in
-            frame = 0
-            showsBack = false
-            replyParentId = nil
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Arrangements
@@ -238,13 +271,15 @@ struct V2GroupView: View {
                 .rotationEffect(.degrees(4))
                 .offset(x: width * 0.08, y: 6)
                 .opacity(0.9)
-            V2PrintCard(width: width, showsShadow: true) {
-                V2Image(path: next?.post.cardPath, maxPixel: width)
-                    .opacity(0.85)
-            } foot: { Color.clear }
-            .rotationEffect(.degrees(-3))
-            .offset(x: -width * 0.05, y: 4)
-            .accessibilityHidden(true)
+            if let next {
+                V2PrintCard(width: width, showsShadow: true) {
+                    V2Image(path: next.post.cardPath, maxPixel: width)
+                        .opacity(0.85)
+                } foot: { Color.clear }
+                .rotationEffect(.degrees(-3))
+                .offset(x: -width * 0.05, y: 4)
+                .accessibilityHidden(true)
+            }
             if turnable {
                 turningCard(width: width, height: height)
             } else {

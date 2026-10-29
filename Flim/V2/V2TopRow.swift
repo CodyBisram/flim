@@ -55,18 +55,37 @@ struct V2TopRow<Middle: View>: View {
                 NavigationStack { UserPageView(userId: uid) }
             }
         }
-        .sheet(isPresented: $showFind) {
-            DiscoverPeopleView()
+        .fullScreenCover(isPresented: $showFind) {
+            V2FindView { showFind = false }
+                .environment(\.v2Palette, palette)
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
-        .sheet(isPresented: $showActivity) {
-            ActivityFeedView(seenBefore: activitySeenBefore) { queriedAt in
+        .fullScreenCover(isPresented: $showActivity) {
+            V2ActivityView(seenBefore: activitySeenBefore, onLoaded: { queriedAt in
                 // Never backwards, the same rule as the Feed's bell.
                 let uid = auth.currentUser?.id
                 ActivitySeenMark.set(max(ActivitySeenMark.value(userId: uid), queriedAt.timeIntervalSince1970),
                                      userId: uid)
                 unreadActivity = 0
-            }
+            }, close: { showActivity = false })
+                .environment(\.v2Palette, palette)
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
+        #if DEBUG
+        // `-v2OpenActivity` / `-v2OpenFind`: opens one at launch, for screenshots.
+        .task {
+            let args = ProcessInfo.processInfo.arguments
+            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") else { return }
+            try? await Task.sleep(for: .seconds(1.2))
+            if args.contains("-v2OpenActivity") { showActivity = true } else { showFind = true }
+        }
+        #endif
         .task(id: auth.currentUser?.id) { await refreshUnread() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await refreshUnread() } }
