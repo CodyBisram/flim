@@ -209,55 +209,133 @@ struct MainTabView: View {
         )
     }
 
-    var body: some View {
+    /// The four tabs. FLIM Beta replaces them with v2's places (`v2Places`); the screens inside,
+    /// and every route below that picks a tab, are the same in both.
+    private var tabs: some View {
         // Base symbol names only (`MainTabSymbol`): the tab bar fills the selected tab itself.
         TabView(selection: selection) {
             Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
                 CameraView()
             }
             Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) {
-                NavigationStack {
-                    DarkroomView(scrollToTop: scrollSignal[1, default: 0],
-                                 openSortDeckSignal: sortDeckSignal,
-                                 openPhotoId: $openPhotoId)
-                }
+                darkroomStack
             }
             Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
-                // A real path (not a plain stack) so a `reveal` push destination, and `-openRollId`
-                // in DEBUG, can push a roll's detail programmatically. RollsView declares its own
-                // `.navigationDestination(for: Roll.self)`, which this path pushes onto.
-                NavigationStack(path: $rollsPath) {
-                    RollsView(scrollToTop: scrollSignal[2, default: 0], pendingPhotoIntent: $pendingRollPhoto)
-                }
+                rollsStack
                 // A dot, not a number: a developed roll whose reveal has not been watched here.
                 .badge(rollsBadge)
             }
             Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) {
-                // Both destinations are declared INSIDE the stack, on its content, not on the
-                // NavigationStack itself. Hung on the stack they are outside the navigation
-                // hierarchy, so a value appended to `feedPath` has no destination visible from
-                // where it is pushed: SwiftUI logs "no matching navigationDestination
-                // declaration" and renders its own yellow placeholder, which is a pushed screen
-                // that is blank apart from a back button. That is what tapping a reaction
-                // notification did. The Rolls tab never had the bug because RollsView declares
-                // its own destination inside itself.
-                NavigationStack(path: $feedPath) {
-                    FeedView(scrollToTop: scrollSignal[3, default: 0], isFrontmost: selected == 3)
-                        .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
-                        .navigationDestination(for: FeedItem.self) { item in
-                            let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
-                            PostDetailView(
-                                item: item,
-                                focusCommentsOnAppear: decision.shouldFocus,
-                                onCommentsFocusConsumed: { focusCommentsPostId = decision.nextFocusPostId }
-                            )
-                        }
-                }
+                feedStack
                 // Unread posts in the feed, or unread activity.
                 .badge(feedBadge)
             }
 
         }
+    }
+
+    private var darkroomStack: some View {
+        NavigationStack {
+            DarkroomView(scrollToTop: scrollSignal[1, default: 0],
+                         openSortDeckSignal: sortDeckSignal,
+                         openPhotoId: $openPhotoId)
+        }
+    }
+
+    private var rollsStack: some View {
+        // A real path (not a plain stack) so a `reveal` push destination, and `-openRollId`
+        // in DEBUG, can push a roll's detail programmatically. RollsView declares its own
+        // `.navigationDestination(for: Roll.self)`, which this path pushes onto.
+        NavigationStack(path: $rollsPath) {
+            RollsView(scrollToTop: scrollSignal[2, default: 0], pendingPhotoIntent: $pendingRollPhoto)
+        }
+    }
+
+    private var feedStack: some View {
+        // Both destinations are declared INSIDE the stack, on its content, not on the
+        // NavigationStack itself. Hung on the stack they are outside the navigation
+        // hierarchy, so a value appended to `feedPath` has no destination visible from
+        // where it is pushed: SwiftUI logs "no matching navigationDestination
+        // declaration" and renders its own yellow placeholder, which is a pushed screen
+        // that is blank apart from a back button. That is what tapping a reaction
+        // notification did. The Rolls tab never had the bug because RollsView declares
+        // its own destination inside itself.
+        NavigationStack(path: $feedPath) {
+            FeedView(scrollToTop: scrollSignal[3, default: 0], isFrontmost: selected == 3)
+                .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
+                .navigationDestination(for: FeedItem.self) { item in
+                    let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
+                    PostDetailView(
+                        item: item,
+                        focusCommentsOnAppear: decision.shouldFocus,
+                        onCommentsFocusConsumed: { focusCommentsPostId = decision.nextFocusPostId }
+                    )
+                }
+        }
+    }
+
+    #if FLIM_V2
+    /// FLIM Beta's frame: Darkroom, Personal and Friends side by side, driving the same `selected`
+    /// the tab bar does (`V2Place.tab`). Rolls, the one tab that is not a place, open over the
+    /// camera from its foot as a sheet, and any route that picks the Rolls tab opens them the same way.
+    private var v2Places: some View {
+        V2RootView(
+            place: Binding(get: { V2Place.forTab(selected) },
+                           set: { selection.wrappedValue = $0.tab }),
+            onReselect: { selection.wrappedValue = $0.tab },
+            topRow: { V2TopRow() },
+            content: { place, isShowing in
+                switch place {
+                case .personal:
+                    // Built only on screen: the pager mounts its neighbours early, and the
+                    // camera starts its session (and asks for access) in `onAppear`. Leaving
+                    // Personal removes it, which stops the session in its `onDisappear`.
+                    if isShowing { CameraView() } else { Color.black }
+                case .darkroom: darkroomStack
+                case .friends: feedStack
+                }
+            },
+            foot: {
+                V2RollsButton(hasUnwatched: signals.rollsHaveUnwatched) { selection.wrappedValue = V2Place.rollsTab }
+            }
+        )
+        // A sheet, so a swipe down puts the shelf away and the camera is under it. Back to
+        // Personal only if Rolls were still chosen: a route that moved on to another place closes
+        // the sheet too, and must not be sent back to the camera by it.
+        .sheet(isPresented: Binding(get: { selected == V2Place.rollsTab },
+                                    set: { if !$0, selected == V2Place.rollsTab { selected = V2Place.personal.tab } })) {
+            rollsStack
+                .presentationDragIndicator(.visible)
+                // The join sheet a roll invite opens, hosted here while Rolls are up: one
+                // presenter cannot show a second sheet over its own.
+                .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
+                    JoinRollView(initialCode: inviteCode ?? "")
+                }
+        }
+    }
+    #endif
+
+    /// Whether the roll-invite sheet hangs on this view. In FLIM Beta it hangs on the Rolls sheet
+    /// instead (`v2Places`).
+    private var hostsInviteSheet: Bool {
+        #if FLIM_V2
+        false
+        #else
+        true
+        #endif
+    }
+
+    @ViewBuilder
+    private var places: some View {
+        #if FLIM_V2
+        v2Places
+        #else
+        tabs
+        #endif
+    }
+
+    var body: some View {
+        places
         // Tint via the OBSERVED accentColor (not the static accent) so the tab bar
         // re-tints the moment the user picks a new accent, the static read never invalidates
         // this view, which left the old color until a relaunch.
@@ -295,7 +373,7 @@ struct MainTabView: View {
         .sheet(isPresented: $showNotifPrimer) {
             NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
         }
-        .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
+        .sheet(isPresented: Binding(get: { hostsInviteSheet && inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
             JoinRollView(initialCode: inviteCode ?? "")
         }
         .sheet(item: $spotlightSheet) { route in

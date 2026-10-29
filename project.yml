@@ -114,19 +114,31 @@ targets:
         # Train... previously approved version"). Bump this again for the next release.
         MARKETING_VERSION: "1.6.3"
         CURRENT_PROJECT_VERSION: "1"
+      # v2 (Flim/V2 and its fonts) is compiled into Debug, so its tests and the -v2Demo host run
+      # in the Flim scheme, and into both beta configs, where FLIM_V2 swaps the tab bar for v2's
+      # places. The App Store app's Release leaves every v2 file out of the build.
       configs:
-        Debug: &app_debug
+        Debug:
           APS_ENVIRONMENT: development
           CODE_SIGN_STYLE: Automatic
-        Debug-Beta: *app_debug
-        Release: &app_release
+        Debug-Beta:
+          APS_ENVIRONMENT: development
+          CODE_SIGN_STYLE: Automatic
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "DEBUG FLIM_V2"
+        Release:
           APS_ENVIRONMENT: production
           # Signing lives on the APP TARGET (not global xcargs) so it doesn't
           # leak onto SPM package targets, which reject provisioning profiles.
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Apple Distribution"
           PROVISIONING_PROFILE_SPECIFIER: "match AppStore $(FLIM_BUNDLE_ID)"
-        Release-Beta: *app_release
+          EXCLUDED_SOURCE_FILE_NAMES: "V2*.swift *.ttf OFL-*.txt"
+        Release-Beta:
+          APS_ENVIRONMENT: production
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore $(FLIM_BUNDLE_ID)"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: FLIM_V2
     dependencies:
       - package: supabase-swift
         product: Supabase

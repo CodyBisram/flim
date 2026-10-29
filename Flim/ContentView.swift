@@ -63,6 +63,10 @@ struct ContentView: View {
                 // The sign-in screen with the waitlist sheet open over it and a stubbed server.
                 // See WaitlistPreviewDemoHost.
                 WaitlistPreviewDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-v2Demo") {
+                // v2's frame on stand-in places, for the iPhone and iPhone Duo arrangements.
+                // See V2DemoHost.
+                V2DemoHost()
             } else {
                 authGate
             }

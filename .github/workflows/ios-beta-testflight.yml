@@ -1,25 +1,24 @@
 name: iOS · FLIM Beta TestFlight
 
 # FLIM Beta, the v2 test app: its own bundle id, Supabase project and TestFlight (see
-# docs/TESTFLIGHT_SETUP.md, "FLIM Beta"). Ships from the `v2` branch, or by hand from any branch.
-# The App Store app's pipeline (ios-testflight.yml) is untouched by this file.
+# docs/TESTFLIGHT_SETUP.md, "FLIM Beta"). v2 is built on main under Flim/V2, so a push to main that
+# touches v2 ships a beta build; anything else, including a change to the App Store app's screens
+# that v2 also shows, ships one by hand (workflow_dispatch). The App Store app's pipeline
+# (ios-testflight.yml) ignores v2's paths, so a v2-only push never ships an identical App Store
+# build.
 on:
   push:
-    branches: [v2]
-    paths-ignore:
-      - ".claude/**"
-      - "docs/**"
-      - "web/**"
-      - "scripts/**"
-      - "supabase/**"
-      - "*.md"
-      - "social/**"
+    branches: [main]
+    paths:
+      - "Flim/V2/**"
+      - "Flim/Resources/Fonts/**"
+      - ".github/workflows/ios-beta-testflight.yml"
   workflow_dispatch:
 
-# Shares the App Store app's lane: one signing keychain and one archive at a time on the runners
-# this repo pays for. Not cancelled, the same as there.
+# Its own lane. The App Store app's build number is that app's latest TestFlight build plus one,
+# and FLIM Beta's is its own app's, so the two never collide and need not wait for each other.
 concurrency:
-  group: ios-testflight
+  group: ios-beta-testflight
   cancel-in-progress: false
 
 jobs:

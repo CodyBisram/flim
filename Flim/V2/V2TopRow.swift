@@ -1,0 +1,143 @@
+import SwiftUI
+
+/// You, Find and Activity: the top row on the phone and the open display, the top of the trailing
+/// column on the closed one. All three are words, not glyphs ("text is the control"); Activity
+/// carries the red dot when something is new (owner, 2026-10-02: every "new" dot is red).
+///
+/// Activity shares its watermark with the Feed's bell (`ActivitySeenMark`), so reading it in
+/// either place clears both.
+struct V2TopRow: View {
+    @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
+    @Environment(\.v2Palette) private var palette
+    @Environment(\.v2LayoutMode) private var mode
+    @Environment(\.scenePhase) private var scenePhase
+
+    @State private var showPage = false
+    @State private var showFind = false
+    @State private var showActivity = false
+    @State private var unreadActivity = 0
+    /// The watermark before this visit, so Activity can put what is newer under "New".
+    @State private var activitySeenBefore: Date?
+
+    var body: some View {
+        Group {
+            if mode == .outer {
+                VStack(alignment: .leading, spacing: 12) {
+                    you
+                    find
+                    activity
+                }
+            } else {
+                HStack(spacing: 18) {
+                    you
+                    Spacer(minLength: 8)
+                    find
+                    activity
+                }
+            }
+        }
+        .sheet(isPresented: $showPage) {
+            if let uid = auth.currentUser?.id {
+                NavigationStack { UserPageView(userId: uid) }
+            }
+        }
+        .sheet(isPresented: $showFind) {
+            DiscoverPeopleView()
+        }
+        .sheet(isPresented: $showActivity) {
+            ActivityFeedView(seenBefore: activitySeenBefore) { queriedAt in
+                // Never backwards, the same rule as the Feed's bell.
+                let uid = auth.currentUser?.id
+                ActivitySeenMark.set(max(ActivitySeenMark.value(userId: uid), queriedAt.timeIntervalSince1970),
+                                     userId: uid)
+                unreadActivity = 0
+            }
+        }
+        .task(id: auth.currentUser?.id) { await refreshUnread() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await refreshUnread() } }
+        }
+        .onChange(of: showActivity) { _, open in
+            if !open { Task { await refreshUnread() } }
+        }
+    }
+
+    private var you: some View {
+        Button { showPage = true } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(palette.rule)
+                    .frame(width: 28, height: 28)
+                    .overlay {
+                        Text(initial)
+                            .font(V2Type.serif(14, relativeTo: .footnote))
+                            .foregroundStyle(palette.ink)
+                    }
+                    .accessibilityHidden(true)
+                Text(auth.currentUser?.username ?? "You")
+                    .font(V2Type.serif(15, relativeTo: .subheadline))
+                    .foregroundStyle(palette.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Your page")
+    }
+
+    private var find: some View {
+        Button { showFind = true } label: {
+            word("Find")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Find friends")
+    }
+
+    private var activity: some View {
+        Button {
+            let mark = ActivitySeenMark.value(userId: auth.currentUser?.id)
+            activitySeenBefore = mark > 0 ? Date(timeIntervalSince1970: mark) : nil
+            showActivity = true
+        } label: {
+            word("Activity")
+                .overlay(alignment: .topTrailing) {
+                    if unreadActivity > 0 {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 7, height: 7)
+                            .offset(x: 6, y: 9)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Activity")
+        .accessibilityValue(unreadActivity > 0 ? "\(unreadActivity) new" : "")
+        .animation(V2Motion.setDown, value: unreadActivity > 0)
+    }
+
+    private func word(_ text: String) -> some View {
+        Text(text)
+            .font(V2Type.control())
+            .foregroundStyle(palette.ink2)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+    }
+
+    private var initial: String {
+        String((auth.currentUser?.username ?? "?").prefix(1)).uppercased()
+    }
+
+    private func refreshUnread() async {
+        guard let uid = auth.currentUser?.id else { return }
+        let epoch = AccountEpoch.current
+        let mark = ActivitySeenMark.value(userId: uid)
+        let count = await feed.unreadActivityCount(userId: uid, since: Date(timeIntervalSince1970: mark))
+        // Activity opened during the round trip moved the mark; this answer is older than that.
+        guard AccountEpoch.isCurrent(epoch), ActivitySeenMark.value(userId: uid) == mark else { return }
+        unreadActivity = count
+    }
+}

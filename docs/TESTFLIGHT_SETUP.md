@@ -258,8 +258,18 @@ three `signing-setup` runs; the "FLIM Beta" app record in App Store Connect (App
 6827429017, SKU flim-beta).
 
 Builds: `.github/workflows/ios-beta-testflight.yml` runs the same `beta` lane with
-`FLIM_VARIANT=beta` (scheme `FLIM Beta`, Release-Beta, the beta bundle ids) on pushes to the `v2`
-branch or by hand. It shares the App Store app's concurrency group.
+`FLIM_VARIANT=beta` (scheme `FLIM Beta`, Release-Beta, the beta bundle ids) on pushes to main that
+touch `Flim/V2/**` or `Flim/Resources/Fonts/**`, or by hand for anything else. It has its own
+concurrency group. The App Store app's workflow ignores those two paths.
+
+v2 code lives on main in `Flim/V2` (every file named `V2*.swift`) with its fonts in
+`Flim/Resources/Fonts`. The App Store app's Release build leaves all of it out
+(`EXCLUDED_SOURCE_FILE_NAMES` in project.yml); Debug compiles it so its tests and the `-v2Demo`
+launch host run in the Flim scheme; the two beta configs compile it with `FLIM_V2`, which swaps the
+tab bar for v2's places in `MainTabView`. Code outside `Flim/V2` that names a v2 type must sit
+under `#if FLIM_V2` (or `#if DEBUG`), or the App Store build stops compiling. `-v2Demo`
+(optionally `-v2DemoPlace darkroom|friends` and `-v2DemoFrame 669x951`) shows the frame without an
+account; the iPhone Duo simulator needs the iOS 27.1 runtime.
 
 Still to do: set the APNs key secrets on the beta project so FLIM Beta gets pushes (the owner
 copies them; pushes stay off until then).
