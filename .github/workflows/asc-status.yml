@@ -1,5 +1,6 @@
 # Read-only: prints each recent App Store version, its build and review state
-# (WAITING_FOR_REVIEW, IN_REVIEW, PENDING_DEVELOPER_RELEASE, READY_FOR_DISTRIBUTION...).
+# (WAITING_FOR_REVIEW, IN_REVIEW, PENDING_DEVELOPER_RELEASE, READY_FOR_DISTRIBUTION...), then
+# FLIM Beta's TestFlight builds and tester groups.
 # Uses the same App Store Connect key as the TestFlight pipeline, which exists only as
 # repo secrets. Started on demand: `gh workflow run asc-status.yml`.
 name: App Store status
@@ -25,4 +26,6 @@ jobs:
           ASC_KEY_ID:    ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8:    ${{ secrets.ASC_KEY_P8 }}
-        run: python3 scripts/asc_status.py
+        run: |
+          python3 scripts/asc_status.py
+          python3 scripts/asc_status.py --beta

@@ -3,7 +3,7 @@
 
 Credentials come from the environment, the same three the TestFlight pipeline uses:
 ASC_KEY_ID, ASC_ISSUER_ID, and ASC_KEY_P8 (the .p8 PEM, or a base64 blob of it) or ASC_KEY_PATH
-(a .p8 file). It only ever GETs, and never prints the key or the token. Run by the
+(a .p8 file). `--beta` reads FLIM Beta's TestFlight builds and tester groups instead. It only ever GETs, and never prints the key or the token. Run by the
 `App Store status` workflow (.github/workflows/asc-status.yml), or locally with those variables.
 """
 import base64
@@ -18,6 +18,7 @@ import urllib.request
 import jwt
 
 BUNDLE_ID = "com.flim.app"
+BETA_BUNDLE_ID = "com.flim.app.beta"
 API = "https://api.appstoreconnect.apple.com"
 
 
@@ -82,7 +83,50 @@ def fetch_versions():
     return sorted(rows, key=lambda r: r["created"], reverse=True)
 
 
+def beta_report():
+    """FLIM Beta's TestFlight side: its latest builds (processing and internal/external testing
+    state) and its tester groups (counts only, never who). FLIM Beta has no App Store versions."""
+    bearer = token()
+    apps = [app for app in get(f"/v1/apps?filter[bundleId]={BETA_BUNDLE_ID}&fields[apps]=name,bundleId",
+                               bearer)["data"]
+            if app.get("attributes", {}).get("bundleId") == BETA_BUNDLE_ID]
+    if not apps:
+        sys.exit(f"no app with bundle id {BETA_BUNDLE_ID}")
+    app_id = apps[0]["id"]
+    builds = get(f"/v1/builds?filter[app]={app_id}&sort=-uploadedDate&limit=5"
+                 "&fields[builds]=version,processingState,uploadedDate,expired,buildBetaDetail"
+                 "&include=buildBetaDetail"
+                 "&fields[buildBetaDetails]=internalBuildState,externalBuildState", bearer)
+    details = {d["id"]: d["attributes"] for d in builds.get("included", [])
+               if d["type"] == "buildBetaDetails"}
+    if not builds["data"]:
+        print("ASC_BETA no builds")
+    for build in builds["data"]:
+        attrs = build["attributes"]
+        link = (build.get("relationships", {}).get("buildBetaDetail") or {}).get("data")
+        detail = details.get(link["id"], {}) if link else {}
+        groups = [g["attributes"].get("name") for g in
+                  get(f"/v1/builds/{build['id']}/betaGroups?fields[betaGroups]=name", bearer)["data"]]
+        print(f"ASC_BETA build={attrs.get('version')} processing={attrs.get('processingState')} "
+              f"internal={detail.get('internalBuildState')} external={detail.get('externalBuildState')} "
+              f"expired={attrs.get('expired')} uploaded={attrs.get('uploadedDate')} "
+              f"groups={groups or '-'}")
+    groups = get(f"/v1/apps/{app_id}/betaGroups?limit=50"
+                 "&fields[betaGroups]=name,isInternalGroup,hasAccessToAllBuilds", bearer)["data"]
+    if not groups:
+        print("ASC_BETA_GROUP none")
+    for group in groups:
+        attrs = group["attributes"]
+        testers = get(f"/v1/betaGroups/{group['id']}/betaTesters?limit=200&fields[betaTesters]=state",
+                      bearer)["data"]
+        print(f"ASC_BETA_GROUP {attrs.get('name')} internal={attrs.get('isInternalGroup')} "
+              f"all_builds={attrs.get('hasAccessToAllBuilds')} testers={len(testers)}")
+
+
 def main():
+    if "--beta" in sys.argv:
+        beta_report()
+        return
     for row in fetch_versions():
         print(f"ASC_STATUS {row['version']} build={row['build'] or '-'} state={row['state']}")
 
