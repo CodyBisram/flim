@@ -3,8 +3,7 @@ import SwiftUI
 /// The Darkroom: what developed and waits to be sorted, as a stack of prints, and the last few
 /// you kept (prototype, board 15d's right half). Tapping the stack opens the sort deck.
 ///
-/// For now the deck is the App Store app's (`SortDeckView`) and "Kept" opens its Darkroom; the
-/// v2 sort deck (board 2a, 15b) replaces the first.
+/// "Kept" opens the App Store app's Darkroom for now.
 struct V2DarkroomPlace: View {
     /// Signals from routes that open the sort deck (a push, the camera's old "to sort"), as the
     /// App Store Darkroom takes them.
@@ -28,11 +27,18 @@ struct V2DarkroomPlace: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ScrollView {
-                content(width: proxy.size.width, height: proxy.size.height)
+            if showSortDeck, mode == .inner {
+                // Open, the deck takes the Darkroom's half only, so the camera stays live beside
+                // it (board 15d).
+                V2SortDeck { closeSortDeck() }
+                    .transition(.opacity)
+            } else {
+                ScrollView {
+                    content(width: proxy.size.width, height: proxy.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .refreshable { await reload() }
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .refreshable { await reload() }
         }
         .task(id: auth.currentUser?.id) { await reload() }
         .onChange(of: scenePhase) { _, phase in
@@ -43,8 +49,21 @@ struct V2DarkroomPlace: View {
             if new < old { Task { await reload() } }
         }
         .onChange(of: openSortDeckSignal) { _, _ in showSortDeck = true }
-        .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
-            SortDeckView()
+        #if DEBUG
+        // `-v2OpenSort`: opens the sort deck at launch, for screenshots.
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenSort") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            showSortDeck = true
+        }
+        #endif
+        .fullScreenCover(isPresented: Binding(get: { showSortDeck && mode != .inner },
+                                              set: { if !$0 { showSortDeck = false } })) {
+            V2SortDeck { closeSortDeck() }
+                .environment(\.v2Palette, palette)
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
         .fullScreenCover(item: Binding(get: { pagerStart.map(PagerStart.init) },
                                        set: { pagerStart = $0?.index })) { start in
@@ -56,6 +75,11 @@ struct V2DarkroomPlace: View {
         .toolbar(.hidden, for: .navigationBar)
         // The desk shows through the stack, which otherwise paints its own background over it.
         .containerBackground(.clear, for: .navigation)
+    }
+
+    private func closeSortDeck() {
+        withAnimation(V2Motion.slide) { showSortDeck = false }
+        Task { await reload() }
     }
 
     private struct PagerStart: Identifiable {
