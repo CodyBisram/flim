@@ -266,10 +266,15 @@ v2 code lives on main in `Flim/V2` (every file named `V2*.swift`) with its fonts
 `Flim/Resources/Fonts`. The App Store app's Release build leaves all of it out
 (`EXCLUDED_SOURCE_FILE_NAMES` in project.yml); Debug compiles it so its tests and the `-v2Demo`
 launch host run in the Flim scheme; the two beta configs compile it with `FLIM_V2`, which swaps the
-tab bar for v2's places in `MainTabView`. Code outside `Flim/V2` that names a v2 type must sit
+tab bar for `V2Home` in `MainTabView`. Code outside `Flim/V2` that names a v2 type must sit
 under `#if FLIM_V2` (or `#if DEBUG`), or the App Store build stops compiling. `-v2Demo`
-(optionally `-v2DemoPlace darkroom|friends` and `-v2DemoFrame 669x951`) shows the frame without an
-account; the iPhone Duo simulator needs the iOS 27.1 runtime.
+(optionally `-v2DemoPlace darkroom|friends`) shows the frame on stand-in places without an
+account. The real places run without an account in the FLIM Beta scheme with `-chromePreviewDemo`
+(feed fixtures), plus `-v2DemoDarkroom` (a Darkroom stack and kept row), `-v2NoCamera` (no camera
+session or access prompt) and `-seedDemo` or `-tabFeed` to open on Darkroom or Friends; their photos
+are `demo/pNN.jpg`, planted in the disk image cache by `scripts/plant_demo_images.py <simulator id>`. `-v2DemoFrame 890x626` (or `669x951`) draws
+either host at the Duo's open size, since the simulator cannot be unfolded from the command line.
+The iPhone Duo simulator needs the iOS 27.1 runtime.
 
 Still to do: set the APNs key secrets on the beta project so FLIM Beta gets pushes (the owner
 copies them; pushes stay off until then).

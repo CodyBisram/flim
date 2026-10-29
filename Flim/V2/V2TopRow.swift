@@ -1,12 +1,15 @@
 import SwiftUI
 
 /// You, Find and Activity: the top row on the phone and the open display, the top of the trailing
-/// column on the closed one. All three are words, not glyphs ("text is the control"); Activity
-/// carries the red dot when something is new (owner, 2026-10-02: every "new" dot is red).
+/// column on the closed one. Find and Activity are words, not glyphs ("text is the control");
+/// Activity carries the red dot when something is new (owner, 2026-10-02: every "new" dot is red).
+/// Open, the place names sit in the middle of the same line (`middle`, board 15d).
 ///
 /// Activity shares its watermark with the Feed's bell (`ActivitySeenMark`), so reading it in
 /// either place clears both.
-struct V2TopRow: View {
+struct V2TopRow<Middle: View>: View {
+    @ViewBuilder var middle: () -> Middle
+
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.v2Palette) private var palette
@@ -22,15 +25,25 @@ struct V2TopRow: View {
 
     var body: some View {
         Group {
-            if mode == .outer {
-                VStack(alignment: .leading, spacing: 12) {
+            switch mode {
+            case .outer:
+                VStack(alignment: .trailing, spacing: 0) {
                     you
                     find
                     activity
                 }
-            } else {
-                HStack(spacing: 18) {
+            case .phone:
+                HStack(spacing: 16) {
                     you
+                    Spacer(minLength: 8)
+                    find
+                    activity
+                }
+            case .inner:
+                HStack(spacing: 16) {
+                    you
+                    Spacer(minLength: 8)
+                    middle()
                     Spacer(minLength: 8)
                     find
                     activity
@@ -66,22 +79,15 @@ struct V2TopRow: View {
     private var you: some View {
         Button { showPage = true } label: {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(palette.rule)
-                    .frame(width: 28, height: 28)
-                    .overlay {
-                        Text(initial)
-                            .font(V2Type.serif(14, relativeTo: .footnote))
-                            .foregroundStyle(palette.ink)
-                    }
+                AvatarView(path: auth.currentUser?.avatarPath, name: auth.currentUser?.username, size: 26)
                     .accessibilityHidden(true)
                 Text(auth.currentUser?.username ?? "You")
-                    .font(V2Type.serif(15, relativeTo: .subheadline))
+                    .font(V2Type.serif(14, relativeTo: .subheadline))
                     .foregroundStyle(palette.ink)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: mode == .outer ? 36 : 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -107,8 +113,8 @@ struct V2TopRow: View {
                     if unreadActivity > 0 {
                         Circle()
                             .fill(Color.red)
-                            .frame(width: 7, height: 7)
-                            .offset(x: 6, y: 9)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 8, y: 11)
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
@@ -119,16 +125,13 @@ struct V2TopRow: View {
         .animation(V2Motion.setDown, value: unreadActivity > 0)
     }
 
+    /// 12/600 on the phone (prototype), 13 in the column, ink 2.
     private func word(_ text: String) -> some View {
         Text(text)
-            .font(V2Type.control())
+            .font(V2Type.control(mode == .phone ? .caption : .footnote))
             .foregroundStyle(palette.ink2)
-            .frame(minHeight: 44)
+            .frame(minHeight: mode == .outer ? 32 : 44)
             .contentShape(Rectangle())
-    }
-
-    private var initial: String {
-        String((auth.currentUser?.username ?? "?").prefix(1)).uppercased()
     }
 
     private func refreshUnread() async {
@@ -140,4 +143,8 @@ struct V2TopRow: View {
         guard AccountEpoch.isCurrent(epoch), ActivitySeenMark.value(userId: uid) == mark else { return }
         unreadActivity = count
     }
+}
+
+extension V2TopRow where Middle == EmptyView {
+    init() { self.init(middle: { EmptyView() }) }
 }

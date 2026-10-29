@@ -4,27 +4,31 @@ import SwiftUI
 /// Activity) and the place names over them. Replaces the tab bar.
 ///
 /// One view for every screen shape (owner, 2026-10-27: iPhone Duo and regular iPhones together):
-/// - phone: the top row, then the place names with their ticks, then one place at a time.
+/// - phone: the top row, then the place names spread across with their ticks, then one place at
+///   a time (prototype).
 /// - outer (Duo closed, short and wide): the places fill the display and the top row becomes a
-///   column on the trailing edge, the place names in its middle and the place's action at its
-///   foot, near the thumb (board 15a to 15c).
-/// - inner (Duo open): Personal and Darkroom share the display as one page; Friends is the other
-///   (board 15d, 15e).
+///   column on the trailing edge: you, Find and Activity at the top, the place names in the
+///   middle, the place's main action at the foot, near the thumb (board 15a to 15c).
+/// - inner (Duo open): one line across the top, you, the place names and Find and Activity;
+///   Personal and Darkroom share the display as one page, the fold between them, and Friends is
+///   the other (board 15d, 15e).
 ///
 /// The places themselves come from the caller, so this frame knows nothing about the camera, the
 /// Darkroom or the feed, and the demo host can fill it with anything.
-struct V2RootView<TopRow: View, Content: View, Foot: View>: View {
+struct V2RootView<Content: View, Foot: View>: View {
     @Binding var place: V2Place
     /// Tapping the name of the place already showing: scroll it to the top, as a re-tapped tab did.
     var onReselect: (V2Place) -> Void = { _ in }
-    @ViewBuilder var topRow: () -> TopRow
+    /// Darkroom's count beside its name, as the prototype writes it ("Darkroom 4"). Nil or zero
+    /// shows the name alone.
+    var darkroomCount: Int? = nil
     /// A place's screen, and whether its page is the one showing. The pager builds the pages
     /// beside the current one early, and their `onAppear` fires then, so anything that must run
     /// only on screen (the camera above all) is built only while this is true.
     @ViewBuilder var content: (_ place: V2Place, _ isShowing: Bool) -> Content
-    /// Personal's own action under the camera (the Rolls shelf for now). In the outer column's
-    /// foot when the display is closed.
-    @ViewBuilder var foot: () -> Foot
+    /// The closed display's column foot: the place's main action, last in the column (the shutter
+    /// and Rolls on Personal). Unused on the phone and the open display, where the place holds it.
+    @ViewBuilder var columnFoot: (_ place: V2Place) -> Foot
 
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.colorScheme) private var colorScheme
@@ -39,44 +43,59 @@ struct V2RootView<TopRow: View, Content: View, Foot: View>: View {
             let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
             Group {
                 switch mode {
-                case .phone, .inner: stacked(mode)
+                case .phone: stacked(mode)
                 case .outer: column(mode)
+                case .inner: open(mode)
                 }
             }
             .environment(\.v2LayoutMode, mode)
         }
-        .background(palette.background.ignoresSafeArea())
+        .background { V2Desktop(palette: palette, leak: place == .personal) }
         .environment(\.v2Palette, palette)
+        .foregroundStyle(palette.ink)
     }
 
     // MARK: Arrangements
 
     private func stacked(_ mode: V2LayoutMode) -> some View {
         VStack(spacing: 0) {
-            topRow()
+            V2TopRow()
                 .padding(.horizontal, V2Metrics.margin)
-                .padding(.top, 6)
-            V2PlaceRow(mode: mode, place: place, select: select)
-                .padding(.top, 10)
-                .padding(.bottom, 8)
+            V2PlaceRow(mode: mode, place: place, darkroomCount: darkroomCount, select: select)
+                .padding(.horizontal, V2Metrics.margin)
             pager(mode)
+                .padding(.top, 2)
         }
     }
 
+    /// The column sits on the trailing edge for right-handed use (board 15a). Its names are
+    /// right-aligned; the place is not divided from it by a rule.
     private func column(_ mode: V2LayoutMode) -> some View {
         HStack(spacing: 0) {
             pager(mode)
-            Rectangle().fill(palette.rule).frame(width: 1).ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 0) {
-                topRow()
+            VStack(alignment: .trailing, spacing: 0) {
+                V2TopRow()
                 Spacer(minLength: 16)
-                V2PlaceRow(mode: mode, place: place, select: select)
+                V2PlaceRow(mode: mode, place: place, darkroomCount: darkroomCount, select: select)
                 Spacer(minLength: 16)
-                if place == .personal { foot() }
+                columnFoot(place)
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 12)
-            .frame(width: V2RootMetrics.columnWidth)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+            .padding(.trailing, 14)
+            .frame(width: V2RootMetrics.columnWidth, alignment: .trailing)
+        }
+    }
+
+    private func open(_ mode: V2LayoutMode) -> some View {
+        VStack(spacing: 0) {
+            V2TopRow {
+                V2PlaceRow(mode: mode, place: place, darkroomCount: darkroomCount, select: select)
+            }
+            .padding(.horizontal, V2Metrics.margin)
+            .padding(.top, 2)
+            pager(mode)
+                .padding(.top, 10)
         }
     }
 
@@ -84,7 +103,7 @@ struct V2RootView<TopRow: View, Content: View, Foot: View>: View {
         let groups = mode.placeGroups
         return TabView(selection: pageBinding(mode)) {
             ForEach(groups.indices, id: \.self) { index in
-                page(groups[index], mode: mode, isShowing: index == mode.page(of: place))
+                page(groups[index], isShowing: index == mode.page(of: place))
                     .tag(index)
             }
         }
@@ -95,33 +114,22 @@ struct V2RootView<TopRow: View, Content: View, Foot: View>: View {
     }
 
     @ViewBuilder
-    private func page(_ group: [V2Place], mode: V2LayoutMode, isShowing: Bool) -> some View {
+    private func page(_ group: [V2Place], isShowing: Bool) -> some View {
         if group.count == 1, let only = group.first {
-            placeView(only, mode: mode, isShowing: isShowing)
+            content(only, isShowing)
         } else {
-            // Open, the split sits on the fold, so nothing either side puts a control there.
+            // Open, the two share the display and the fold runs between them: a dashed mark
+            // that takes no space, and nothing either side puts a control on it (board 15d).
             HStack(spacing: 0) {
                 ForEach(group) { member in
-                    if member != group.first {
-                        Rectangle().fill(palette.rule).frame(width: 1)
-                    }
-                    placeView(member, mode: mode, isShowing: isShowing)
+                    content(member, isShowing)
+                        .frame(maxWidth: .infinity)
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func placeView(_ member: V2Place, mode: V2LayoutMode, isShowing: Bool) -> some View {
-        if member == .personal, mode != .outer {
-            VStack(spacing: 0) {
-                content(member, isShowing)
-                foot()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: V2RootMetrics.footHeight)
+            .overlay {
+                V2Fold(color: palette.tick)
+                    .allowsHitTesting(false)
             }
-        } else {
-            content(member, isShowing)
         }
     }
 
@@ -147,21 +155,95 @@ struct V2RootView<TopRow: View, Content: View, Foot: View>: View {
 }
 
 enum V2RootMetrics {
-    /// The outer display's trailing column: room for "Darkroom" in the place face plus margins.
+    /// The outer display's trailing column: room for "Darkroom" and "Activity" plus margins.
     static let columnWidth: CGFloat = 104
-    /// Personal's foot under the camera.
-    static let footHeight: CGFloat = 44
     /// The page ticks under the place names.
     static let tickSize = CGSize(width: 12, height: 1.5)
     static let tickGap: CGFloat = 5
 }
 
-/// The place names. The active one is in the serif at 15 in ink; the others are controls, system
-/// 13/600 in ink 3 (the handoff's "text is the control"). On the phone and the open display the
-/// names sit in a row with a tick per page under them; in the closed display's column they stack.
+/// The desk under everything: its colour, the grain over it (3% on Paper, 4% on Slate, never on a
+/// photograph), and on the camera one warm light leak from the top left (handoff 1, "Grain and
+/// light").
+struct V2Desktop: View {
+    let palette: V2Palette
+    var leak: Bool = false
+
+    var body: some View {
+        ZStack {
+            palette.background
+            Image(uiImage: V2Grain.tile)
+                .resizable(resizingMode: .tile)
+                .opacity(palette.isDark ? 0.04 : 0.03)
+                .blendMode(palette.isDark ? .screen : .multiply)
+            GeometryReader { proxy in
+                RadialGradient(colors: [V2Color.rgb(0xE9A05A, opacity: 0.32), V2Color.rgb(0xE9A05A, opacity: 0)],
+                               center: UnitPoint(x: 0.08, y: 0.06), startRadius: 0,
+                               endRadius: max(proxy.size.width, proxy.size.height) * 0.42)
+                    .scaleEffect(x: 1.5, y: 1, anchor: UnitPoint(x: 0.08, y: 0.06))
+            }
+            .opacity(leak ? 1 : 0)
+            .animation(.easeInOut(duration: 0.4), value: leak)
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+}
+
+/// A 256 pt noise tile, drawn once from a fixed seed so the grain never shimmers between launches.
+enum V2Grain {
+    static let tile: UIImage = {
+        let size = 256
+        var generator = SplitMix64(seed: 0x464C494D)
+        var pixels = [UInt8](repeating: 0, count: size * size)
+        for index in pixels.indices { pixels[index] = UInt8(truncatingIfNeeded: generator.next() >> 56) }
+        let provider = CGDataProvider(data: Data(pixels) as CFData)
+        guard let provider,
+              let image = CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 8,
+                                  bytesPerRow: size, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
+                                  decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { return UIImage() }
+        return UIImage(cgImage: image, scale: 1, orientation: .up)
+    }()
+
+    private struct SplitMix64 {
+        var state: UInt64
+        init(seed: UInt64) { state = seed }
+        mutating func next() -> UInt64 {
+            state &+= 0x9E3779B97F4A7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+            return z ^ (z >> 31)
+        }
+    }
+}
+
+/// Where the open display folds: a dashed line down the middle (board 15d). Drawn, not laid out.
+private struct V2Fold: View {
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            Path { path in
+                path.move(to: CGPoint(x: proxy.size.width / 2, y: 0))
+                path.addLine(to: CGPoint(x: proxy.size.width / 2, y: proxy.size.height))
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The place names. On the phone they spread across the width, the active one in the serif at 15
+/// in ink, the others system 13/600 in ink 3, ticks under them (prototype). On the Duo, closed and
+/// open, they are all system 13/600 and the active one is underlined 1.5 pt (handoff: "the active
+/// one is underlined"; board 15); open, Personal and Darkroom are one name.
 struct V2PlaceRow: View {
     let mode: V2LayoutMode
     let place: V2Place
+    var darkroomCount: Int? = nil
     let select: (V2Place) -> Void
 
     @Environment(\.v2Palette) private var palette
@@ -169,38 +251,80 @@ struct V2PlaceRow: View {
     var body: some View {
         let groups = mode.placeGroups
         let activePage = mode.page(of: place)
-        if mode == .outer {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(groups.indices, id: \.self) { index in
-                    ForEach(groups[index]) { name($0, active: index == activePage) }
-                }
-            }
-        } else {
-            VStack(spacing: 8) {
-                HStack(spacing: 22) {
+        switch mode {
+        case .phone:
+            VStack(spacing: 6) {
+                HStack {
                     ForEach(groups.indices, id: \.self) { index in
-                        HStack(spacing: 10) {
-                            ForEach(groups[index]) { name($0, active: index == activePage) }
-                        }
+                        if index > 0 { Spacer(minLength: 8) }
+                        serifName(groups[index][0], active: index == activePage)
                     }
                 }
                 ticks(count: groups.count, active: activePage)
             }
-            .frame(maxWidth: .infinity)
+        case .outer:
+            VStack(alignment: .trailing, spacing: 6) {
+                ForEach(groups.indices, id: \.self) { index in
+                    underlinedName(groups[index], active: index == activePage)
+                }
+            }
+        case .inner:
+            HStack(spacing: 18) {
+                ForEach(groups.indices, id: \.self) { index in
+                    underlinedName(groups[index], active: index == activePage)
+                }
+            }
         }
     }
 
-    private func name(_ member: V2Place, active: Bool) -> some View {
+    private func serifName(_ member: V2Place, active: Bool) -> some View {
         Button { select(member) } label: {
-            Text(member.title)
-                .font(active ? V2Type.serif(15, relativeTo: .subheadline) : V2Type.control())
-                .foregroundStyle(active ? palette.ink : palette.ink3)
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(member.title)
+                    .font(active ? V2Type.serif(15, relativeTo: .subheadline) : V2Type.control())
+                    .foregroundStyle(active ? palette.ink : palette.ink3)
+                if member == .darkroom, let darkroomCount, darkroomCount > 0 {
+                    Text("\(darkroomCount)")
+                        .font(V2Type.serif(active ? 15 : 13, italic: true, relativeTo: .subheadline))
+                        .foregroundStyle(palette.ink2)
+                }
+            }
+            .lineLimit(1)
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label(member))
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    private func underlinedName(_ group: [V2Place], active: Bool) -> some View {
+        let first = group[0]
+        let title = group.map(\.title).joined(separator: " and ")
+        return Button { select(first) } label: {
+            Text(title)
+                .font(V2Type.control())
+                .foregroundStyle(active ? palette.ink : palette.ink2)
                 .lineLimit(1)
+                .padding(.bottom, 3)
+                .overlay(alignment: .bottom) {
+                    if active {
+                        Rectangle().fill(palette.ink).frame(height: 1.5)
+                    }
+                }
                 .frame(minHeight: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(member == place ? .isSelected : [])
+        .accessibilityLabel(group.count == 1 ? label(first) : title)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    private func label(_ member: V2Place) -> String {
+        if member == .darkroom, let darkroomCount, darkroomCount > 0 {
+            return "Darkroom, \(darkroomCount) to sort"
+        }
+        return member.title
     }
 
     private func ticks(count: Int, active: Int) -> some View {

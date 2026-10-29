@@ -11,13 +11,27 @@ struct V2DemoHost: View {
     } ?? .personal
 
     var body: some View {
+        root.modifier(V2DemoFrame())
+    }
+
+    private var root: some View {
+        V2RootView(place: $place,
+                   darkroomCount: 4,
+                   content: { place, _ in V2DemoPlace(place: place) },
+                   columnFoot: { _ in V2RollsButton(hasUnwatched: true) {} })
+    }
+
+}
+
+/// `-v2DemoFrame 669x951` draws whatever it wraps at another display's size, scaled to fit, with
+/// the open display's size class when that is regular: for the arrangement the simulator cannot be
+/// folded into from the command line. Without the flag it changes nothing.
+struct V2DemoFrame: ViewModifier {
+    func body(content: Content) -> some View {
         if let frame = Self.frame {
-            // `-v2DemoFrame 669x951` draws the frame at another display's size, scaled to fit,
-            // with the open display's size class when that is regular: for the arrangement the
-            // simulator cannot be folded into from the command line.
             GeometryReader { proxy in
                 let scale = min(proxy.size.width / frame.size.width, proxy.size.height / frame.size.height)
-                root
+                content
                     .environment(\.horizontalSizeClass, frame.sizeClass)
                     .frame(width: frame.size.width, height: frame.size.height)
                     .scaleEffect(scale)
@@ -25,18 +39,11 @@ struct V2DemoHost: View {
             }
             .background(Color.black.ignoresSafeArea())
         } else {
-            root
+            content
         }
     }
 
-    private var root: some View {
-        V2RootView(place: $place,
-                   topRow: { V2TopRow() },
-                   content: { place, _ in V2DemoPlace(place: place) },
-                   foot: { V2RollsButton(hasUnwatched: true) {} })
-    }
-
-    private static var frame: (size: CGSize, sizeClass: UserInterfaceSizeClass)? {
+    static var frame: (size: CGSize, sizeClass: UserInterfaceSizeClass)? {
         guard let text = UserDefaults.standard.string(forKey: "v2DemoFrame") else { return nil }
         let parts = text.split(separator: "x").compactMap { Double($0) }
         guard parts.count == 2 else { return nil }

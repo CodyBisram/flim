@@ -27,45 +27,35 @@ enum V2PrintGeometry {
     }
 }
 
-/// One print: a cream card with an i-Type border, the photograph in a 3:4 window, the caption in
-/// the foot, and the date stamp burned into the window's bottom right in the bright stamp colour.
-/// The card is always cream, whatever the desk: "Prints are always cream. That part isn't a
-/// setting."
-struct V2Print<Photo: View>: View {
+/// The card every print is drawn on: cream, an i-Type border on three sides, the window and the
+/// foot. `V2Print` puts a photograph and its caption in it; the camera puts the viewfinder and its
+/// controls in it. The card is always cream, whatever the desk: "Prints are always cream. That
+/// part isn't a setting."
+struct V2PrintCard<Window: View, Foot: View>: View {
     let width: CGFloat
-    var caption: String?
-    /// The day the photograph was taken; nil leaves the window unstamped.
-    var date: Date?
     /// Rotation on the desk, a degree or two for a print lying loose.
     var tilt: Angle = .zero
     var showsShadow = true
-    @ViewBuilder var photo: () -> Photo
+    /// The border as a fraction of the width. The full-size print's 16 of 340 by default; the
+    /// feed's group print is drawn tighter (10 of 232).
+    var borderFraction: CGFloat = V2PrintGeometry.borderFraction
+    /// The foot as a fraction of the width.
+    var footFraction: CGFloat = V2PrintGeometry.footFraction
+    @ViewBuilder var window: () -> Window
+    @ViewBuilder var foot: () -> Foot
 
     @Environment(\.v2Palette) private var palette
-    @Environment(\.v2Stamp) private var stamp
 
     var body: some View {
-        let border = V2PrintGeometry.border(width: width)
-        let windowWidth = V2PrintGeometry.windowWidth(width: width)
-        let windowHeight = V2PrintGeometry.windowHeight(width: width)
-        let foot = V2PrintGeometry.foot(width: width)
-
+        let border = width * borderFraction
+        let windowWidth = width - border * 2
         VStack(spacing: 0) {
-            photo()
-                .frame(width: windowWidth, height: windowHeight)
+            window()
+                .frame(width: windowWidth, height: windowWidth * V2PrintGeometry.windowAspect)
                 .clipped()
-                .overlay(alignment: .bottomTrailing) {
-                    if let date {
-                        V2DateStamp(text: BrandedExport.dateText(.init(date: date)),
-                                    cellHeight: windowWidth * V2PrintGeometry.stampCellFraction,
-                                    stamp: stamp)
-                            .padding(.trailing, windowWidth * 0.04)
-                            .padding(.bottom, windowWidth * 0.035)
-                    }
-                }
                 .padding(.top, border)
-            footView(height: foot)
-                .frame(width: windowWidth, height: foot)
+            foot()
+                .frame(width: windowWidth, height: width * footFraction)
         }
         .frame(width: width)
         // The shadow belongs to the card alone. Hung on the whole print, SwiftUI shadows each
@@ -79,23 +69,53 @@ struct V2Print<Photo: View>: View {
                         radius: palette.shadowFar.radius, y: palette.shadowFar.y)
         )
         .rotationEffect(tilt)
-        .accessibilityElement(children: .combine)
     }
+}
 
-    private func footView(height: CGFloat) -> some View {
-        HStack {
-            if let caption, !caption.isEmpty {
-                // 17 pt italic at the full 340 pt print, scaled with the print so a small print's
-                // foot reads as the same handwriting, smaller.
-                Text(caption)
-                    .font(V2Type.serif(max(9, 17 * width / 340), italic: true))
-                    .foregroundStyle(V2Color.printInk)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+/// One print: the photograph in a 3:4 window, the caption in the foot, and the date stamp burned
+/// into the window's bottom right in the bright stamp colour.
+struct V2Print<Photo: View>: View {
+    let width: CGFloat
+    var caption: String?
+    /// The day the photograph was taken; nil leaves the window unstamped.
+    var date: Date?
+    var tilt: Angle = .zero
+    var showsShadow = true
+    @ViewBuilder var photo: () -> Photo
+
+    @Environment(\.v2Stamp) private var stamp
+
+    var body: some View {
+        let windowWidth = V2PrintGeometry.windowWidth(width: width)
+        V2PrintCard(width: width, tilt: tilt, showsShadow: showsShadow) {
+            photo()
+                .frame(width: windowWidth, height: V2PrintGeometry.windowHeight(width: width))
+                .clipped()
+                .overlay(alignment: .bottomTrailing) {
+                    if let date {
+                        V2DateStamp(text: BrandedExport.dateText(.init(date: date)),
+                                    cellHeight: windowWidth * V2PrintGeometry.stampCellFraction,
+                                    stamp: stamp)
+                            .padding(.trailing, windowWidth * 0.04)
+                            .padding(.bottom, windowWidth * 0.035)
+                    }
+                }
+        } foot: {
+            HStack {
+                if let caption, !caption.isEmpty {
+                    // 17 pt italic at the full 340 pt print, scaled with the print so a small
+                    // print's foot reads as the same handwriting, smaller.
+                    Text(caption)
+                        .font(V2Type.serif(max(9, 17 * width / 340), italic: true))
+                        .foregroundStyle(V2Color.printInk)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 4 * width / 340)
         }
-        .padding(.horizontal, 4 * width / 340)
+        .accessibilityElement(children: .combine)
     }
 }
 

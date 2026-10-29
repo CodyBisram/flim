@@ -275,28 +275,40 @@ struct MainTabView: View {
     }
 
     #if FLIM_V2
-    /// FLIM Beta's frame: Darkroom, Personal and Friends side by side, driving the same `selected`
-    /// the tab bar does (`V2Place.tab`). Rolls, the one tab that is not a place, open over the
-    /// camera from its foot as a sheet, and any route that picks the Rolls tab opens them the same way.
+    /// FLIM Beta's places (`V2Home`): Darkroom, Personal and Friends side by side, driving the same
+    /// `selected` the tab bar does. The Darkroom and Friends stacks stay here because the routes
+    /// below push onto them. Rolls, the one tab that is not a place, open over the camera as a
+    /// sheet, and any route that picks the Rolls tab opens them the same way.
     private var v2Places: some View {
-        V2RootView(
-            place: Binding(get: { V2Place.forTab(selected) },
-                           set: { selection.wrappedValue = $0.tab }),
+        V2Home(
+            selection: selection,
+            rollsHaveUnwatched: signals.rollsHaveUnwatched,
             onReselect: { selection.wrappedValue = $0.tab },
-            topRow: { V2TopRow() },
-            content: { place, isShowing in
-                switch place {
-                case .personal:
-                    // Built only on screen: the pager mounts its neighbours early, and the
-                    // camera starts its session (and asks for access) in `onAppear`. Leaving
-                    // Personal removes it, which stops the session in its `onDisappear`.
-                    if isShowing { CameraView() } else { Color.black }
-                case .darkroom: darkroomStack
-                case .friends: feedStack
+            openRolls: { selection.wrappedValue = V2Place.rollsTab },
+            darkroom: {
+                NavigationStack {
+                    V2DarkroomPlace(openSortDeckSignal: sortDeckSignal,
+                                    goToCamera: { selection.wrappedValue = V2Place.personal.tab },
+                                    openRolls: { selection.wrappedValue = V2Place.rollsTab })
                 }
             },
-            foot: {
-                V2RollsButton(hasUnwatched: signals.rollsHaveUnwatched) { selection.wrappedValue = V2Place.rollsTab }
+            friends: {
+                // Destinations inside the stack, on its content, as `feedStack` explains.
+                NavigationStack(path: $feedPath) {
+                    V2FriendsPlace(scrollToTop: scrollSignal[3, default: 0],
+                                   isFrontmost: selected == 3,
+                                   openProfile: { feedPath.append($0) },
+                                   openItem: { feedPath.append($0) })
+                        .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
+                        .navigationDestination(for: FeedItem.self) { item in
+                            let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
+                            PostDetailView(
+                                item: item,
+                                focusCommentsOnAppear: decision.shouldFocus,
+                                onCommentsFocusConsumed: { focusCommentsPostId = decision.nextFocusPostId }
+                            )
+                        }
+                }
             }
         )
         // A sheet, so a swipe down puts the shelf away and the camera is under it. Back to
