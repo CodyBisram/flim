@@ -50,6 +50,7 @@
 		1529DA83A8F81093027FE732 /* RollRevealCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3160152C151C46D58498F19D /* RollRevealCard.swift */; };
 		156318788528259D05333A6E /* RevealCoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E46251D578F2FFDDCF93A27 /* RevealCoverTests.swift */; };
 		156DA398EFD6BDBF436F2E46 /* Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCBDC1090FC4BA019AF8114 /* Usage.swift */; };
+		1572A0F9EF35E8CAEEA6BB7A /* V2Group.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08372C6B3E56E414F82301D9 /* V2Group.swift */; };
 		1593074B503C61FA6F13B497 /* V2TopRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EE27365D26E3AFBD717B256 /* V2TopRow.swift */; };
 		163187C149459D0EB94B1AF9 /* ChapterServiceEpochTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 572E1161E97E80829C3AC325 /* ChapterServiceEpochTests.swift */; };
 		1713A05A7A1BE842F4004BE9 /* DayContactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369D2DDC086E254594A3AC43 /* DayContactSheet.swift */; };
@@ -460,6 +461,7 @@
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
 		0637F7E13D1A6B414A60C262 /* OFL-ibmplexmono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-ibmplexmono.txt"; sourceTree = "<group>"; };
 		0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGlyphTests.swift; sourceTree = "<group>"; };
+		08372C6B3E56E414F82301D9 /* V2Group.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Group.swift; sourceTree = "<group>"; };
 		08D00F2FFF92C9AD0F31C66C /* V2Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Camera.swift; sourceTree = "<group>"; };
 		09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBarTests.swift; sourceTree = "<group>"; };
 		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
@@ -1057,6 +1059,7 @@
 				10B75AD91C0B29FD1EDD0513 /* V2Darkroom.swift */,
 				A6125E1C00C3AD4E405ED3CB /* V2DemoHost.swift */,
 				218E6E01A55818F620C9CDD5 /* V2Friends.swift */,
+				08372C6B3E56E414F82301D9 /* V2Group.swift */,
 				1BAF369BFC4F205D1801F501 /* V2Home.swift */,
 				72386D84C6F4111AF41C9B29 /* V2Layout.swift */,
 				CD816BEDD3994255482DE645 /* V2Print.swift */,
@@ -1948,6 +1951,7 @@
 				02BB099424B21668D5C6C633 /* V2Darkroom.swift in Sources */,
 				8BA578B057B0A9ABC4D68245 /* V2DemoHost.swift in Sources */,
 				D6534BACEE828AA207D6DFE0 /* V2Friends.swift in Sources */,
+				1572A0F9EF35E8CAEEA6BB7A /* V2Group.swift in Sources */,
 				B3F2F1CFE02454C3FBF7A9E6 /* V2Home.swift in Sources */,
 				35261E7F6A84FE744D6C09E5 /* V2Layout.swift in Sources */,
 				6268B0F95CE70FA2D1758B8F /* V2Print.swift in Sources */,

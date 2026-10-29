@@ -55,14 +55,12 @@ enum V2FeedGrouping {
 /// Friends: the feed as a desk of groups, newest first, with the caught-up seam where what is new
 /// ends (prototype, board 11). Open, the groups sit in two columns (board 15e).
 ///
-/// Opening a group goes print by print in the v2 design; until that screen lands, it opens the
-/// App Store app's post screen on the group's first print.
+/// Opening a group goes through it print by print (`V2GroupView`).
 struct V2FriendsPlace: View {
     var scrollToTop: Int = 0
     var isFrontmost: Bool = true
     /// Push onto the Friends stack.
     var openProfile: (ProfileRoute) -> Void
-    var openItem: (FeedItem) -> Void
 
     @Environment(\.v2LayoutMode) private var mode
     @Environment(\.v2Palette) private var palette
@@ -74,6 +72,14 @@ struct V2FriendsPlace: View {
     /// live marks, or reading a group would move the seam under you (the App Store feed's rule).
     @State private var unseenAtLoad: Set<UUID> = []
     @State private var loaded = false
+    /// The group opened print by print, as an index into the groups when it was opened.
+    @State private var opened: OpenedGroup?
+
+    private struct OpenedGroup: Identifiable {
+        let groups: [V2FeedGroup]
+        let index: Int
+        var id: UUID { groups[index].id }
+    }
 
     private var seen: FeedSeenStore { FeedSeenStore.shared }
 
@@ -113,8 +119,25 @@ struct V2FriendsPlace: View {
             }
         }
         .task(id: auth.currentUser?.id) { await load() }
+        #if DEBUG
+        // `-v2OpenGroup`: opens the first group at launch, for screenshots.
+        .task(id: isFrontmost) {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenGroup"), isFrontmost, opened == nil else { return }
+            try? await Task.sleep(for: .seconds(1))
+            let groups = self.groups
+            if !groups.isEmpty { opened = OpenedGroup(groups: groups, index: 0) }
+        }
+        #endif
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, isFrontmost { Task { await load() } }
+        }
+        .fullScreenCover(item: $opened) { opened in
+            V2GroupView(groups: opened.groups, index: opened.index) { self.opened = nil }
+                .environment(\.v2Palette, palette)
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
         .toolbar(.hidden, for: .navigationBar)
         // The desk shows through the stack, which otherwise paints its own background over it.
@@ -143,7 +166,7 @@ struct V2FriendsPlace: View {
                                 GridItem(.flexible(), spacing: 28, alignment: .top)],
                       alignment: .leading, spacing: 30) {
                 ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                    groupView(group, width: columnWidth)
+                    groupView(group, in: groups, at: index, width: columnWidth)
                         .onAppear { appeared(index: index, of: groups) }
                 }
             }
@@ -152,7 +175,7 @@ struct V2FriendsPlace: View {
                 ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                     VStack(alignment: .leading, spacing: 0) {
                         if index == seamIndex, index > 0 { seam.padding(.bottom, 22).padding(.top, -4) }
-                        groupView(group, width: width)
+                        groupView(group, in: groups, at: index, width: width)
                     }
                     .onAppear { appeared(index: index, of: groups) }
                 }
@@ -172,7 +195,7 @@ struct V2FriendsPlace: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func groupView(_ group: V2FeedGroup, width: CGFloat) -> some View {
+    private func groupView(_ group: V2FeedGroup, in groups: [V2FeedGroup], at index: Int, width: CGFloat) -> some View {
         let isNew = group.items.contains { unseenAtLoad.contains($0.id) }
         // The prototype's 232 lead print and 72 side prints beside it, scaled to the column.
         let lead = min(width * 232 / 354, 300)
@@ -203,7 +226,7 @@ struct V2FriendsPlace: View {
                         .accessibilityLabel("New")
                 }
             }
-            Button { openItem(lead0) } label: {
+            Button { opened = OpenedGroup(groups: groups, index: index) } label: {
                 HStack(alignment: .top, spacing: V2Metrics.gutter) {
                     V2PrintCard(width: lead, borderFraction: 10.0 / 232, footFraction: 27.0 / 232) {
                         V2Image(path: lead0.post.cardPath, maxPixel: lead * 1.4)
@@ -250,7 +273,7 @@ struct V2FriendsPlace: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel(group))
-            .accessibilityHint("Opens the first print")
+            .accessibilityHint("Opens their prints one at a time")
             .accessibilityAddTraits(.isButton)
         }
     }

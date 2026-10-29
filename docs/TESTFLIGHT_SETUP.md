@@ -270,7 +270,7 @@ tab bar for `V2Home` in `MainTabView`. Code outside `Flim/V2` that names a v2 ty
 under `#if FLIM_V2` (or `#if DEBUG`), or the App Store build stops compiling. `-v2Demo`
 (optionally `-v2DemoPlace darkroom|friends`) shows the frame on stand-in places without an
 account. The real places run without an account in the FLIM Beta scheme with `-chromePreviewDemo`
-(feed fixtures), plus `-v2DemoDarkroom` (a Darkroom stack and kept row), `-v2NoCamera` (no camera
+(feed fixtures), plus `-v2OpenGroup` (opens the first friend's group, `-v2GroupBack` on the back of its print), `-v2DemoDarkroom` (a Darkroom stack and kept row), `-v2NoCamera` (no camera
 session or access prompt) and `-seedDemo` or `-tabFeed` to open on Darkroom or Friends; their photos
 are `demo/pNN.jpg`, planted in the disk image cache by `scripts/plant_demo_images.py <simulator id>`. `-v2DemoFrame 890x626` (or `669x951`) draws
 either host at the Duo's open size, since the simulator cannot be unfolded from the command line.
