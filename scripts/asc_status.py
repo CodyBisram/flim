@@ -134,8 +134,9 @@ def beta_report():
         members = soft_get(f"/v1/betaGroups/{group['id']}/betaTesters?limit=200&fields[betaTesters]=state",
                            bearer)
         testers = len(members["data"]) if members else "?"
+        states = sorted({m["attributes"].get("state") for m in members["data"]}) if members else "?"
         print(f"ASC_BETA_GROUP {attrs.get('name')} internal={attrs.get('isInternalGroup')} "
-              f"all_builds={attrs.get('hasAccessToAllBuilds')} testers={testers}")
+              f"all_builds={attrs.get('hasAccessToAllBuilds')} testers={testers} states={states}")
 
 
 def main():
