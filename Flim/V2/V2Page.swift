@@ -9,6 +9,8 @@ import SwiftUI
 struct V2PageView: View {
     let userId: UUID
     var openInvite: Bool = false
+    /// Back, when the page is the root of a cover rather than pushed (a route's page).
+    var close: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -200,7 +202,7 @@ struct V2PageView: View {
     }
 
     private var backButton: some View {
-        Button { dismiss() } label: {
+        Button { if let close { close() } else { dismiss() } } label: {
             Text("Back").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain)

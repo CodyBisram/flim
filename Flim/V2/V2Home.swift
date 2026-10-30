@@ -6,9 +6,11 @@ import SwiftUI
 /// the App Store app's files.
 ///
 /// It drives the same tab selection the tab bar does (`V2Place.tab`), so every route that picks a
-/// tab lands in the matching place.
+/// tab lands in the matching place. A route to a print or a page covers the frame (`V2Route`),
+/// as every v2 screen past the places does.
 struct V2Home<Darkroom: View, Friends: View>: View {
     @Binding var selection: Int
+    @Binding var route: V2Route?
     var rollsHaveUnwatched: Bool
     var onReselect: (V2Place) -> Void = { _ in }
     var openRolls: () -> Void
@@ -80,6 +82,22 @@ struct V2Home<Darkroom: View, Friends: View>: View {
             if new < old { Task { await refreshUnsorted() } }
         }
         .onChange(of: selection) { _, _ in Task { await refreshUnsorted() } }
+        .fullScreenCover(item: $route) { route in
+            NavigationStack {
+                switch route {
+                case .print(let item, let onBack):
+                    V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0,
+                                startsOnBack: onBack, pushed: true) { self.route = nil }
+                case .page(let page):
+                    V2PageView(userId: page.id, openInvite: page.openInvite, close: { self.route = nil })
+                }
+            }
+            .modifier(V2DeskEnvironment())
+            .undoCapsuleHost()
+            #if DEBUG
+            .modifier(V2DemoFrame())
+            #endif
+        }
         .fullScreenCover(isPresented: Binding(get: { asksDesk }, set: { _ in })) {
             V2DeskChoice { deskAskedThisRun = true }
                 #if DEBUG
@@ -94,5 +112,19 @@ struct V2Home<Darkroom: View, Friends: View>: View {
         // A dropped read keeps the last count rather than flashing it away.
         guard let count = await photos.unsortedPhotoCount(userId: uid), AccountEpoch.isCurrent(epoch) else { return }
         unsortedCount = count
+    }
+}
+
+/// A route that covers v2's frame: a print (on its back when the route was about its thread) or
+/// someone's page.
+enum V2Route: Identifiable {
+    case print(FeedItem, onBack: Bool)
+    case page(ProfileRoute)
+
+    var id: String {
+        switch self {
+        case .print(let item, _): "print-\(item.id)"
+        case .page(let page): "page-\(page.id)-\(page.openInvite)"
+        }
     }
 }

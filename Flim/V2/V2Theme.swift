@@ -209,3 +209,17 @@ extension EnvironmentValues {
         set { self[V2StampKey.self] = newValue }
     }
 }
+
+/// The chosen desk and stamp, for a screen presented outside v2's frame (a route's cover): the
+/// frame sets them for everything inside it, but a cover presented from outside does not inherit.
+struct V2DeskEnvironment: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("v2Desk") private var deskRaw = V2Desk.system.rawValue
+    @AppStorage("accentColor") private var stampRaw = V2Stamp.amber.rawValue
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.v2Palette, V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: colorScheme))
+            .environment(\.v2Stamp, V2Stamp(rawValue: stampRaw) ?? .amber)
+    }
+}

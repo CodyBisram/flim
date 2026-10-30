@@ -169,6 +169,10 @@ struct MainTabView: View {
     /// Owned here (not in FeedView) so `profile` and `post` push destinations can push straight
     /// into a page or a post without the Feed tab needing to already be open.
     @State private var feedPath = NavigationPath()
+    #if FLIM_V2
+    /// FLIM Beta: a route to a print or a page covers v2's frame instead of pushing onto Friends.
+    @State private var v2Route: V2Route?
+    #endif
     /// Set alongside a `.post` push destination's `feedPath.append`, so a "someone commented"
     /// notification can land the comment composer already focused. Not part of `feedPath` itself:
     /// a `NavigationPath` element only carries what makes it Hashable, and a focus flag isn't part
@@ -282,6 +286,7 @@ struct MainTabView: View {
     private var v2Places: some View {
         V2Home(
             selection: selection,
+            route: $v2Route,
             rollsHaveUnwatched: signals.rollsHaveUnwatched,
             onReselect: { selection.wrappedValue = $0.tab },
             openRolls: { selection.wrappedValue = V2Place.rollsTab },
@@ -294,19 +299,10 @@ struct MainTabView: View {
             },
             friends: {
                 // Destinations inside the stack, on its content, as `feedStack` explains.
-                NavigationStack(path: $feedPath) {
+                NavigationStack {
                     V2FriendsPlace(scrollToTop: scrollSignal[3, default: 0],
-                                   isFrontmost: selected == 3,
-                                   openProfile: { feedPath.append($0) })
-                        .navigationDestination(for: ProfileRoute.self) { V2PageView(userId: $0.id, openInvite: $0.openInvite) }
-                        .navigationDestination(for: FeedItem.self) { item in
-                            let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
-                            PostDetailView(
-                                item: item,
-                                focusCommentsOnAppear: decision.shouldFocus,
-                                onCommentsFocusConsumed: { focusCommentsPostId = decision.nextFocusPostId }
-                            )
-                        }
+                                   isFrontmost: selected == 3 && v2Route == nil,
+                                   openProfile: { v2Route = .page($0) })
                 }
             }
         )
@@ -487,6 +483,13 @@ struct MainTabView: View {
             //                   `profile_chapters`/`chapter_photos` exist server-side.
             if args.contains("-seedDemo") { selected = 1 }
             if args.contains("-tabFeed") { selected = 3 }   // jump to Feed for screenshots
+            #if FLIM_V2
+            // `-v2RoutePost`: the route a comment push takes, onto the first fixture post.
+            if args.contains("-v2RoutePost"), let first = feed.feed.first {
+                selected = 3
+                v2Route = .print(first, onBack: true)
+            }
+            #endif
             if args.contains("-seedRoll") {
                 selected = 2
                 // `-seedRollCount <n>` : seed n developed photos instead of the default 6, for
@@ -642,6 +645,10 @@ struct MainTabView: View {
     /// state, by itself.
     private func route(to destination: PushDestination) {
         let serial = PendingPushDestination.beginRoute()
+        #if FLIM_V2
+        // A new route lands where it says, not under a print or page an earlier one opened.
+        v2Route = nil
+        #endif
         switch destination {
         case .camera:
             selected = 0
@@ -751,8 +758,12 @@ struct MainTabView: View {
                                                 isLatestTap: PendingPushDestination.isLatestRoute(serial)) {
                 case .open:
                     guard let item else { return }
+                    #if FLIM_V2
+                    v2Route = .print(item, onBack: comments)
+                    #else
                     focusCommentsPostId = comments ? postId : nil
                     feedPath.append(item)
+                    #endif
                 case .notFound:
                     // Deleted, moderated, or by someone blocked either way: the feed tab is already
                     // showing, so say why nothing opened rather than leaving the tap silent.
@@ -769,11 +780,19 @@ struct MainTabView: View {
             // UserPageView loads and fails safely on its own (a blocked or vanished account shows
             // its own real state, see `UserPageView.load()`), so there's nothing to pre-check here.
             selected = 3
+            #if FLIM_V2
+            v2Route = .page(ProfileRoute(id: userId))
+            #else
             feedPath.append(ProfileRoute(id: userId))
+            #endif
         case .invite:
             guard let uid = auth.currentUser?.id else { return }
             selected = 3
+            #if FLIM_V2
+            v2Route = .page(ProfileRoute(id: uid, openInvite: true))
+            #else
             feedPath.append(ProfileRoute(id: uid, openInvite: true))
+            #endif
         }
     }
 

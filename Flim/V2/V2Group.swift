@@ -14,6 +14,9 @@ struct V2GroupView: View {
     /// Just the print and its back, side by side, for a pane beside a list (Activity, open,
     /// board 16-1k). Its host provides the desk and the way out.
     var embedded = false
+    /// Pushed onto a navigation stack the host owns (a notification's route to a print), rather
+    /// than presented with a stack of its own.
+    var pushed = false
     var close: () -> Void = {}
 
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -66,8 +69,17 @@ struct V2GroupView: View {
         }
     }
 
+    @ViewBuilder
     private var full: some View {
-        NavigationStack {
+        if pushed {
+            screen
+        } else {
+            NavigationStack { screen }
+        }
+    }
+
+    private var screen: some View {
+        Group {
             GeometryReader { proxy in
                 let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
                 Group {
