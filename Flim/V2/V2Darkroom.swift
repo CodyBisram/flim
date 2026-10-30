@@ -363,7 +363,8 @@ enum V2DarkroomMetrics {
 }
 
 /// A photograph from storage, signed and cached the same way as everywhere else in the app
-/// (`CachedImage`, keyed on the storage path so a fresh token never refetches it).
+/// (`CachedImage`, keyed on the storage path so a fresh token never refetches it). It develops
+/// the first time it is seen (`V2Develop`).
 struct V2Image: View {
     let path: String?
     var maxPixel: CGFloat = 800
@@ -376,7 +377,7 @@ struct V2Image: View {
             .overlay {
                 if let path {
                     CachedImage(url: url, maxPixel: maxPixel, cacheKey: path) {
-                        $0.resizable().scaledToFill()
+                        $0.resizable().scaledToFill().modifier(V2Develop(key: path))
                     } placeholder: {
                         Color(white: 0.07)
                     }

@@ -5,8 +5,8 @@ import SwiftUI
 /// page is one month deep; earlier months are on the shelf.
 ///
 /// A print opens to its back, like any print. The months open the App Store app's chapter recap
-/// until the screening lands, and Appearance opens its settings until v2's lands. Boxing a month by
-/// hand and putting prints away need the server's half of product rule 4 first.
+/// until the screening lands. Boxing a month by hand and putting prints away need the server's
+/// half of product rule 4 first.
 struct V2PageView: View {
     let userId: UUID
     var openInvite: Bool = false
@@ -27,7 +27,7 @@ struct V2PageView: View {
     @State private var opened: FeedItem?
     @State private var openChapter: ChapterSummary?
     @State private var coverURLs: [String: URL] = [:]
-    @State private var showSettings = false
+    @State private var showAppearance = false
     @State private var showBadgePicker = false
     @State private var showInvite = false
     @State private var followList: FollowList?
@@ -87,12 +87,20 @@ struct V2PageView: View {
         .fullScreenCover(item: $openChapter) { chapter in
             ChapterRecapView(profileId: userId, chapter: chapter, chapterCoverURLs: coverURLs)
         }
-        .sheet(isPresented: $showSettings, onDismiss: { Task { await load() } }) { ProfileView() }
+        .navigationDestination(isPresented: $showAppearance) { V2AppearanceView() }
         .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
             BadgePickerSheet(onSaved: { Task { await load() } })
         }
         .sheet(isPresented: $showInvite) { InviteSheet() }
         .sheet(item: $followList) { FollowListView(userId: userId, mode: $0) }
+        #if DEBUG
+        // `-v2OpenAppearance`: opens Appearance from your page, for screenshots.
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenAppearance") else { return }
+            try? await Task.sleep(for: .seconds(0.8))
+            showAppearance = true
+        }
+        #endif
         .task {
             if openInvite, isSelf {
                 try? await Task.sleep(for: .milliseconds(400))
@@ -204,7 +212,7 @@ struct V2PageView: View {
     @ViewBuilder
     private var actionButton: some View {
         if isSelf {
-            Button { showSettings = true } label: {
+            Button { showAppearance = true } label: {
                 Text("Appearance").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
             }
             .buttonStyle(.plain)

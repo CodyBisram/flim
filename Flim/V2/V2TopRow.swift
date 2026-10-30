@@ -86,10 +86,10 @@ struct V2TopRow<Middle: View>: View {
         // `-v2OpenActivity` / `-v2OpenFind` / `-v2OpenPage`: opens one at launch, for screenshots.
         .task {
             let args = ProcessInfo.processInfo.arguments
-            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") || args.contains("-v2OpenPage") else { return }
+            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") || args.contains("-v2OpenPage") || args.contains("-v2OpenAppearance") else { return }
             try? await Task.sleep(for: .seconds(1.2))
             if args.contains("-v2OpenActivity") { showActivity = true }
-            else if args.contains("-v2OpenPage") { showPage = true }
+            else if args.contains("-v2OpenPage") || args.contains("-v2OpenAppearance") { showPage = true }
             else { showFind = true }
         }
         #endif

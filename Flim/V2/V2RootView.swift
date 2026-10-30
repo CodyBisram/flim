@@ -33,6 +33,7 @@ struct V2RootView<Content: View, Foot: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(V2Desk.storageKey) private var deskRaw = V2Desk.system.rawValue
+    @AppStorage(V2Settings.stampKey) private var stampRaw = V2Stamp.amber.rawValue
 
     private var palette: V2Palette {
         V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: colorScheme)
@@ -52,6 +53,7 @@ struct V2RootView<Content: View, Foot: View>: View {
         }
         .background { V2Desktop(palette: palette, leak: place == .personal) }
         .environment(\.v2Palette, palette)
+        .environment(\.v2Stamp, V2Stamp(rawValue: stampRaw) ?? .amber)
         .foregroundStyle(palette.ink)
     }
 
@@ -169,12 +171,15 @@ struct V2Desktop: View {
     let palette: V2Palette
     var leak: Bool = false
 
+    @AppStorage(V2Settings.grainKey) private var grain = true
+    @AppStorage(V2Settings.leakKey) private var leakEnabled = true
+
     var body: some View {
         ZStack {
             palette.background
             Image(uiImage: V2Grain.tile)
                 .resizable(resizingMode: .tile)
-                .opacity(palette.isDark ? 0.04 : 0.03)
+                .opacity(grain ? (palette.isDark ? 0.04 : 0.03) : 0)
                 .blendMode(palette.isDark ? .screen : .multiply)
             GeometryReader { proxy in
                 RadialGradient(colors: [V2Color.rgb(0xE9A05A, opacity: 0.32), V2Color.rgb(0xE9A05A, opacity: 0)],
@@ -182,8 +187,8 @@ struct V2Desktop: View {
                                endRadius: max(proxy.size.width, proxy.size.height) * 0.42)
                     .scaleEffect(x: 1.5, y: 1, anchor: UnitPoint(x: 0.08, y: 0.06))
             }
-            .opacity(leak ? 1 : 0)
-            .animation(.easeInOut(duration: 0.4), value: leak)
+            .opacity(leak && leakEnabled ? 1 : 0)
+            .animation(.easeInOut(duration: 0.4), value: leak && leakEnabled)
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
