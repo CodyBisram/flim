@@ -11,7 +11,8 @@ enum V2SortPile: CaseIterable {
 ///
 /// Each action is held until the next one, so Undo can take it back without a server round
 /// trip, then written exactly as the App Store deck writes it (`SortDeckView.commit`), with the
-/// same failure words. Writing on the back before posting makes the post's caption.
+/// same failure words. Writing on the back before posting makes the post's caption, and Tag people
+/// tags it. When the last print is sorted, this week's Spotlight is offered for what was posted.
 struct V2SortDeck: View {
     var close: () -> Void
 
@@ -30,7 +31,18 @@ struct V2SortDeck: View {
     @State private var drag: CGSize = .zero
     @State private var flying = false
     /// The last action, not yet written, so Undo can take it back.
-    @State private var held: (photo: Photo, pile: V2SortPile, caption: String?)?
+    @State private var held: (photo: Photo, pile: V2SortPile, caption: String?, tags: [PendingTag])?
+    /// People tagged on the top print, posted with it.
+    @State private var tags: [PendingTag] = []
+    @State private var tagging: Photo?
+    @State private var tagURL: URL?
+    /// The sort's posts, for the Spotlight sheet at its end (`SortDeckSession`, as the App Store
+    /// deck).
+    @State private var session = SortDeckSession()
+    @State private var sessionOffer: SpotlightSessionOffer?
+    @State private var shownOffer: SpotlightSessionOffer?
+    @State private var sessionPutUp = false
+    @State private var offeredThisSort = false
     /// Every sort this session, newest last, for the piles and the closing line.
     @State private var history: [(photo: Photo, pile: V2SortPile)] = []
     @State private var caption = ""
@@ -52,12 +64,25 @@ struct V2SortDeck: View {
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
         .task { await load() }
+        .sheet(item: $tagging) { photo in
+            TagPhotoSheet(url: tagURL, cacheKey: photo.viewPath, tags: $tags, rollId: photo.rollId)
+        }
+        .sheet(item: $sessionOffer, onDismiss: { sessionSheetClosed() }) { offer in
+            SpotlightSessionSheet(offer: offer, session: session, accessibilitySize: typeSize.isAccessibilitySize,
+                                  onPutUp: { await putUp($0, offer: offer) })
+                .onAppear { if shownOffer?.id != offer.id { shownOffer = offer } }
+        }
+        // The last print sorted on its own: offer this week's Spotlight, as the App Store deck
+        // does. Done never does.
+        .onChange(of: cards.isEmpty) { _, empty in
+            if empty, loaded, !history.isEmpty { offerSpotlight() }
+        }
         // Open, the deck sits in the Darkroom's half and leaves with it when you swipe to
         // Friends: what was held is written then, as Done would.
         .onDisappear {
             guard !closing, let last = held else { return }
             held = nil
-            Task { await commit(last.photo, last.pile, caption: last.caption) }
+            Task { await commit(last.photo, last.pile, caption: last.caption, tags: last.tags) }
         }
     }
 
@@ -87,6 +112,8 @@ struct V2SortDeck: View {
             .padding(.top, 8)
             Spacer(minLength: 12)
             deck(width: width)
+            tagRow
+                .padding(.top, 10)
             Spacer(minLength: 12)
             footer
                 .padding(.horizontal, V2Metrics.margin)
@@ -107,7 +134,12 @@ struct V2SortDeck: View {
                     deck(width: width)
                         .frame(maxWidth: .infinity)
                 }
-                pile(.delete)
+                HStack {
+                    pile(.delete)
+                    Spacer()
+                    tagRow
+                }
+                .padding(.horizontal, 12)
                 Spacer(minLength: 0)
                 footer
                     .padding(.horizontal, 12)
@@ -350,6 +382,22 @@ struct V2SortDeck: View {
             }
     }
 
+    /// Tag people on the top print; they go out with it if it is posted.
+    @ViewBuilder
+    private var tagRow: some View {
+        if let top = cards.first, !flying {
+            Button { openTagging(top) } label: {
+                Text(tags.isEmpty ? "Tag people" : (tags.count == 1 ? "1 tagged" : "\(tags.count) tagged"))
+                    .font(V2Type.control())
+                    .foregroundStyle(tags.isEmpty ? palette.ink2 : palette.ink)
+                    .underline(!tags.isEmpty)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Tags people on this print, posted with it")
+        }
+    }
+
     // MARK: Footer
 
     @ViewBuilder
@@ -387,14 +435,17 @@ struct V2SortDeck: View {
         withAnimation(.easeOut(duration: 0.28)) { drag = away }
         // The one before can no longer be undone: write it now, and hold this one.
         if let previous = held {
-            Task { await commit(previous.photo, previous.pile, caption: previous.caption) }
+            Task { await commit(previous.photo, previous.pile, caption: previous.caption, tags: previous.tags) }
         }
-        held = (photo, pile, pile == .post && !text.isEmpty ? text : nil)
+        let postTags = pile == .post ? tags : []
+        held = (photo, pile, pile == .post && !text.isEmpty ? text : nil, postTags)
+        if pile == .post { session.published(photo, isTagged: !postTags.isEmpty) }
         Task {
             try? await Task.sleep(for: .milliseconds(280))
             if let i = cards.firstIndex(where: { $0.id == photo.id }) { cards.remove(at: i) }
             history.append((photo, pile))
             caption = ""
+            tags = []
             drag = .zero
             flying = false
         }
@@ -406,6 +457,8 @@ struct V2SortDeck: View {
         held = nil
         if let i = history.lastIndex(where: { $0.photo.id == last.photo.id }) { history.remove(at: i) }
         caption = last.caption ?? ""
+        tags = last.tags
+        if last.pile == .post { session.undone(photoId: last.photo.id) }
         withAnimation(V2Motion.slide) { cards.insert(last.photo, at: 0) }
     }
 
@@ -416,13 +469,13 @@ struct V2SortDeck: View {
         let last = held
         held = nil
         Task {
-            if let last { await commit(last.photo, last.pile, caption: last.caption) }
+            if let last { await commit(last.photo, last.pile, caption: last.caption, tags: last.tags) }
             close()
         }
     }
 
     /// As `SortDeckView.commit`, with its words.
-    private func commit(_ photo: Photo, _ pile: V2SortPile, caption: String?) async {
+    private func commit(_ photo: Photo, _ pile: V2SortPile, caption: String?, tags: [PendingTag] = []) async {
         guard let uid = auth.currentUser?.id else { return }
         switch pile {
         case .keep:
@@ -430,11 +483,21 @@ struct V2SortDeck: View {
         case .post:
             await photos.markSorted(photoId: photo.id)
             do {
-                _ = try await feed.createPost(photo: photo, caption: caption, userId: uid)
+                let created = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                session.landed(photoId: photo.id, post: created.post)
+                if shouldWarnThatTagsDidNotSave(created.tagsSaved) {
+                    Haptics.error()
+                    problem = "Posted, but the tags didn't save. Try again from Edit tags."
+                }
             } catch {
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()
                 problem = "Couldn't post that one. It's in your Darkroom, post it from there."
+                session.failed(photoId: photo.id)
+                if let offer = sessionOffer, session.offered(offer).isEmpty {
+                    session.emptiedByFailures = true
+                    sessionOffer = nil
+                }
             }
         case .delete:
             if await photos.deletePhoto(photo) == false {
@@ -447,6 +510,64 @@ struct V2SortDeck: View {
                 }
             }
         }
+    }
+
+    private func openTagging(_ photo: Photo) {
+        Haptics.tap()
+        writing = false
+        Task {
+            tagURL = await feed.signedURL(for: photo.viewPath)
+            tagging = photo
+        }
+    }
+
+    // MARK: Spotlight at the end of a sort (as `SortDeckView.finishSession`)
+
+    /// Writes what is held, then offers this week's Spotlight for what the sort posted, once.
+    private func offerSpotlight() {
+        guard !offeredThisSort, let uid = auth.currentUser?.id else { return }
+        offeredThisSort = true
+        let last = held
+        held = nil
+        let commitHeld = Task {
+            if let last { await commit(last.photo, last.pile, caption: last.caption, tags: last.tags) }
+        }
+        // A new account's first sort goes straight on, with no sheet (the App Store deck's rule).
+        guard !NewAccountIntro.skipsSessionSheet(userId: uid, createdAt: auth.currentUser?.createdAt),
+              session.hasCandidate(viewerId: uid) else { return }
+        Task {
+            if feed.currentSpotlightEntry == nil { await feed.refreshOwnSpotlightEntry() }
+            _ = await commitHeld.value
+            guard let entry = feed.currentSpotlightEntry,
+                  var offer = session.offer(entry: entry, viewerId: uid, ledger: SpotlightSessionLedger.load(userId: uid))
+            else { return }
+            offer.firstTime = !SpotlightFirstTime.hasSeen(userId: uid)
+            for frame in session.offered(offer) where session.urls[frame.photo.id] == nil {
+                session.urls[frame.photo.id] = await feed.signedURL(for: frame.photo.viewPath)
+            }
+            sessionPutUp = false
+            session.kindOverride = nil
+            session.emptiedByFailures = false
+            sessionOffer = offer
+        }
+    }
+
+    private func putUp(_ post: Post, offer: SpotlightSessionOffer) async -> SpotlightPutUpOutcome {
+        let outcome = await feed.putUpFromSessionSheet(post, offer: offer, session: session, userId: auth.currentUser?.id)
+        if case .up = outcome { sessionPutUp = true }
+        return outcome
+    }
+
+    /// Records what the sheet showed (a decline only when the person said no), as the App Store
+    /// deck's ledger does, so the same frames are not offered again.
+    private func sessionSheetClosed() {
+        if let uid = auth.currentUser?.id, let offer = shownOffer {
+            var ledger = SpotlightSessionLedger.load(userId: uid)
+            ledger.recordClosed(weekKey: offer.weekKey, shownPostIds: session.offered(offer).compactMap { $0.post?.id },
+                                declined: !sessionPutUp && !session.emptiedByFailures)
+            SpotlightSessionLedger.save(ledger, userId: uid)
+        }
+        shownOffer = nil
     }
 
     private func load() async {
