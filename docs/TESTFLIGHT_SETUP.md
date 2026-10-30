@@ -281,3 +281,8 @@ copies them; pushes stay off until then).
 
 v2 database changes stay additive (new tables and columns the App Store app ignores), because v2
 will one day run on the production database while people are still on v1.
+
+v2's server changes live in `supabase/migrations-v2`, applied to the FLIM Dev project only, each
+with a `.test.sql` that runs in one transaction and rolls back. Most are additive; the friends
+change (posts visible only between people who follow each other, product rule 2) is not, and
+goes to production only with the v2 launch.

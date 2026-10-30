@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Find: a name, or a roll code (prototype; board 16-1j). Empty, it lists the people you follow;
+/// Find: a name, or a roll code (prototype; board 16-1j). Empty, it lists your friends;
 /// typing searches everyone by name, and six letters and digits that look like a roll code offer
 /// to join that roll. Invite opens your invite.
 struct V2FindView: View {
@@ -42,7 +42,8 @@ struct V2FindView: View {
         .task {
             guard let me = auth.currentUser?.id else { return }
             if feed.followingIds.isEmpty { await feed.loadFollowing(userId: me) }
-            friends = await feed.fetchFollowingProfiles(of: me)
+            if feed.followerIds.isEmpty { await feed.loadFollowers(userId: me) }
+            if let mutual = await V2Server.friends(of: me) { friends = mutual }
         }
         .task(id: query) { await search() }
     }
@@ -207,18 +208,21 @@ struct V2FindView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if feed.isFollowing(person.id) {
-                Text("friend")
-                    .font(V2Type.control(.caption))
-                    .foregroundStyle(palette.ink3)
-            } else {
+            let friendship = V2Friendship.of(person.id, feed: feed)
+            if let action = friendship.action {
                 Button { follow(person) } label: {
-                    Text("Follow")
+                    Text(action)
                         .font(V2Type.control(.caption))
-                        .underline()
+                        .foregroundStyle(friendship.canAct ? palette.ink : palette.ink3)
+                        .underline(friendship.canAct)
                         .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
+                .disabled(!friendship.canAct)
+            } else {
+                Text("friend")
+                    .font(V2Type.control(.caption))
+                    .foregroundStyle(palette.ink3)
             }
         }
         .padding(.vertical, 12)

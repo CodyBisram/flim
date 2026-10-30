@@ -237,7 +237,7 @@ struct V2ActivityView: View {
             .buttonStyle(.plain)
             if case .follow = item.kind, let actor = item.actor, !feed.isFollowing(actor.id) {
                 Button { follow(actor) } label: {
-                    Text("Follow back")
+                    Text("Add")
                         .font(V2Type.control(.caption))
                         .foregroundStyle(V2Color.printInk)
                         .underline()
@@ -267,7 +267,7 @@ struct V2ActivityView: View {
         let body: Text
         if let actor = item.actor {
             body = Text(actor.username ?? actor.name).font(V2Type.serif(15, bold: true, relativeTo: .body))
-                + Text(" " + activityActionText(item.kind)).font(V2Type.serif(15, relativeTo: .body))
+                + Text(" " + sentenceText(item, actor: actor)).font(V2Type.serif(15, relativeTo: .body))
         } else if case .spotlight(let week) = item.kind {
             body = Text(activityActionText(item.kind) + ". ").font(V2Type.serif(15, relativeTo: .body))
                 + Text(SpotlightWeekLabel.sentence(week)).font(V2Type.serif(15, italic: true, relativeTo: .body))
@@ -279,6 +279,13 @@ struct V2ActivityView: View {
             .lineSpacing(3)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The App Store Activity's sentence, except a follow, which in v2 is a friend request
+    /// (product rule 2).
+    private func sentenceText(_ item: ActivityItem, actor: UserProfile) -> String {
+        guard case .follow = item.kind else { return activityActionText(item.kind) }
+        return V2Friendship.of(actor.id, feed: feed) == .friends ? "is your friend now" : "asked to be friends"
     }
 
     // MARK: Actions
@@ -330,6 +337,7 @@ struct V2ActivityView: View {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
         let queriedAt = Date()
         if feed.followingIds.isEmpty { await feed.loadFollowing(userId: uid) }
+        if feed.followerIds.isEmpty { await feed.loadFollowers(userId: uid) }
         let fetched = await feed.fetchActivity(userId: uid)
         if !(feed.activityError != nil && fetched.isEmpty && !items.isEmpty) { items = fetched }
         loaded = true

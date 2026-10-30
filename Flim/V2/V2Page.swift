@@ -41,7 +41,9 @@ struct V2PageView: View {
         return userId == auth.currentUser?.id
     }
     /// Your page, or a page you follow: its prints and its month are yours to see.
-    private var canSeePrints: Bool { isSelf || feed.isFollowing(userId) }
+    /// Your page, or a friend's (both follow each other, product rule 2).
+    private var canSeePrints: Bool { isSelf || friendship == .friends }
+    private var friendship: V2Friendship { V2Friendship.of(userId, feed: feed) }
 
     private var chapters: [ChapterSummary] {
         (chapterService.chaptersByProfile[userId] ?? []).sorted { $0.monthStart > $1.monthStart }
@@ -268,16 +270,19 @@ struct V2PageView: View {
                     if canSeePrints {
                         Text("\(posts.count) \(posts.count == 1 ? "print" : "prints") · ")
                     }
-                    if isSelf || feed.isFollowing(userId) {
+                    if isSelf || friendship == .friends {
                         Button { followList = .following } label: {
                             Text(following == 1 ? "1 friend" : "\(following) friends")
                                 .underline(color: palette.ink3)
                         }
                         .buttonStyle(.plain)
                     } else if !posts.isEmpty {
-                        // With nothing tagged, the face-down prints below carry Follow.
-                        Button { follow() } label: { Text("Follow").underline() }
-                            .buttonStyle(.plain)
+                        // With nothing tagged, the face-down prints below carry the button.
+                        if let action = friendship.action {
+                            Button { follow() } label: { Text(action).underline() }
+                                .buttonStyle(.plain)
+                                .disabled(!friendship.canAct)
+                        }
                     }
                 }
                 .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
@@ -383,7 +388,7 @@ struct V2PageView: View {
 
     @ViewBuilder
     private var month: some View {
-        if loaded, !isSelf, !feed.isFollowing(userId), !feed.isBlocked(userId), posts.isEmpty {
+        if loaded, !isSelf, friendship != .friends, !feed.isBlocked(userId), posts.isEmpty {
             faceDown
         } else if loaded, days.isEmpty {
             VStack(spacing: 14) {
@@ -447,12 +452,16 @@ struct V2PageView: View {
             Text("\(name)'s prints are face down.")
                 .font(V2Type.serif(20, relativeTo: .title3))
                 .multilineTextAlignment(.center)
-            Text("Follow \(name) and this page turns over.")
+            Text(friendship == .asked
+                 ? "You asked. Once \(name) says yes, this page turns over."
+                 : (friendship == .theyAsked
+                    ? "\(name) asked to be friends. Accept and this page turns over."
+                    : "Friends see each other's desks. Add \(name) and, once they say yes, this page turns over."))
                 .font(V2Type.serif(14, italic: true, relativeTo: .callout))
                 .foregroundStyle(palette.ink2)
                 .multilineTextAlignment(.center)
             Button { follow() } label: {
-                Text("Follow")
+                Text(friendship.action ?? "Friends")
                     .font(V2Type.control(.subheadline))
                     .foregroundStyle(palette.background)
                     .padding(.horizontal, 26)
@@ -460,6 +469,8 @@ struct V2PageView: View {
                     .background(palette.ink, in: RoundedRectangle(cornerRadius: V2Metrics.radius))
             }
             .buttonStyle(.plain)
+            .disabled(!friendship.canAct)
+            .opacity(friendship.canAct ? 1 : 0.5)
         }
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity)
@@ -571,20 +582,20 @@ struct V2PageView: View {
         if profile == nil { profile = feed.knownProfile(id: userId) }
         async let p = feed.fetchProfile(id: userId)
         async let ps = feed.fetchUserPosts(userId: userId)
-        async let fg = feed.followingCount(userId)
+        async let fg = V2Server.friends(of: userId)
         async let bd = feed.fetchProfileBadges(userId)
         async let eb: [String]? = isSelf ? await feed.fetchOwnEffectiveDisplayedBadgeIds() : nil
         let fetchedProfile = await p
         let fetchedPosts = await ps
-        let count = await fg
+        let friendRows = await fg
         let fetchedBadges = await bd
         let ids = await eb
         guard AccountEpoch.isCurrent(epoch) else { return }
         if let fetchedProfile { profile = fetchedProfile }
         if let fetchedPosts {
-            // Not followed: only the posts you are tagged in, as the App Store page filters them
-            // (the server already limits them; this is the client's half of the same rule).
-            if !isSelf, !feed.isFollowing(userId), let me = auth.currentUser?.id {
+            // Not friends: only the posts you are tagged in (the server already limits them;
+            // this is the client's half of the same rule).
+            if !isSelf, V2Friendship.of(userId, feed: feed) != .friends, let me = auth.currentUser?.id {
                 let tagged = await feed.postIdsTagging(me, in: fetchedPosts.map(\.id))
                 guard AccountEpoch.isCurrent(epoch) else { return }
                 posts = fetchedPosts.filter { tagged.contains($0.id) }
@@ -592,7 +603,9 @@ struct V2PageView: View {
                 posts = fetchedPosts
             }
         }
-        following = count
+        if let friendRows { following = friendRows.count }
+        if let me = auth.currentUser?.id, feed.followerIds.isEmpty { await feed.loadFollowers(userId: me) }
+        if let me = auth.currentUser?.id, feed.followingIds.isEmpty { await feed.loadFollowing(userId: me) }
         badges = fetchedBadges
         displayedIds = ids
         loaded = true
