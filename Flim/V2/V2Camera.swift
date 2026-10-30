@@ -66,15 +66,54 @@ final class V2Camera {
 
     func stop() {
         model.stopRunning()
+        // A countdown must not fire into a stopped session (as `CameraView.onDisappear`).
+        countdown = nil
     }
 
     // MARK: Controls
 
+    /// The self-timer: off, 3 or 10 seconds. The App Store camera's key, so the choice carries.
+    var timerSeconds: Int = UserDefaults.standard.integer(forKey: V2Camera.timerKey) {
+        didSet { UserDefaults.standard.set(timerSeconds, forKey: Self.timerKey) }
+    }
+    static let timerKey = "selfTimerSeconds"
+    /// Seconds left on a running self-timer.
+    var countdown: Int?
+
+    /// Takes the picture, or starts the self-timer; pressed again during a countdown, cancels it
+    /// (as `CameraView.shutter`).
     func shutter() {
+        if countdown != nil { countdown = nil; return }
+        guard !model.isInterrupted else { Haptics.error(); return }
+        if timerSeconds > 0 { startCountdown() } else { capture() }
+    }
+
+    func cycleTimer() {
+        timerSeconds = timerSeconds == 0 ? 3 : (timerSeconds == 3 ? 10 : 0)
+        Haptics.tap()
+    }
+
+    private func capture() {
         guard !model.isInterrupted else { Haptics.error(); return }
         Haptics.shutter()
         // No app shutter sound: AVCapturePhotoOutput plays the system one at the real capture.
         model.capturePhoto()
+    }
+
+    private func startCountdown() {
+        var remaining = timerSeconds
+        withAnimation(.snappy) { countdown = remaining }
+        Task { @MainActor in
+            while remaining > 0 {
+                Haptics.tap()
+                try? await Task.sleep(for: .seconds(1))
+                guard countdown != nil else { return }   // cancelled
+                remaining -= 1
+                withAnimation(.snappy) { countdown = remaining }
+            }
+            countdown = nil
+            capture()
+        }
     }
 
     func toggleFlash() {
@@ -300,6 +339,16 @@ struct V2PersonalPlace: View {
                     .accessibilityAddTraits(active ? .isSelected : [])
                 }
                 Spacer(minLength: 8)
+                Button { camera.cycleTimer() } label: {
+                    Text(camera.timerSeconds == 0 ? "timer off" : "\(camera.timerSeconds)s")
+                        .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+                        .foregroundStyle(camera.timerSeconds == 0 ? V2Color.printInk3 : V2Color.printInk)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Self timer")
+                .accessibilityValue(camera.timerSeconds == 0 ? "Off" : "\(camera.timerSeconds) seconds")
                 if camera.model.isFlashSupported {
                     Button { camera.toggleFlash() } label: {
                         Text(camera.flashOn ? "flash on" : "flash off")
@@ -356,6 +405,20 @@ struct V2PersonalPlace: View {
                         .allowsHitTesting(false)
                 }
                 .overlay { interrupted }
+                // The self-timer counting down, in the stamp's segment type.
+                .overlay {
+                    if let countdown = camera.countdown, countdown > 0 {
+                        Text("\(countdown)")
+                            .font(V2Type.data(96))
+                            .foregroundStyle(V2Color.print)
+                            .shadow(color: .black.opacity(0.45), radius: 10)
+                            .transition(.scale.combined(with: .opacity))
+                            .id(countdown)
+                            .allowsHitTesting(false)
+                            .accessibilityLabel("\(countdown)")
+                    }
+                }
+                .onChange(of: camera.model.isInterrupted) { _, now in if now { camera.countdown = nil } }
                 .animation(.easeOut(duration: 0.2), value: camera.model.isInterrupted)
                 .background(Color.black)
         }
