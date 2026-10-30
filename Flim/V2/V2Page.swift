@@ -34,10 +34,15 @@ struct V2PageView: View {
 
     private var isSelf: Bool {
         #if DEBUG
-        if auth.currentUser == nil, ProcessInfo.processInfo.arguments.contains("-v2DemoPage") { return true }
+        if auth.currentUser == nil, ProcessInfo.processInfo.arguments.contains("-v2DemoPage") {
+            return !ProcessInfo.processInfo.arguments.contains("-v2DemoStranger")
+        }
         #endif
         return userId == auth.currentUser?.id
     }
+    /// Your page, or a page you follow: its prints and its month are yours to see.
+    private var canSeePrints: Bool { isSelf || feed.isFollowing(userId) }
+
     private var chapters: [ChapterSummary] {
         (chapterService.chaptersByProfile[userId] ?? []).sorted { $0.monthStart > $1.monthStart }
     }
@@ -138,7 +143,7 @@ struct V2PageView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     nameBlock
-                    shelf.padding(.top, 26)
+                    if canSeePrints || !chapters.isEmpty { shelf.padding(.top, 26) }
                     Rectangle().fill(palette.ink3.opacity(0.35)).frame(height: 1).padding(.top, 22)
                     month.padding(.top, 22)
                     closing.padding(.top, 34)
@@ -158,7 +163,7 @@ struct V2PageView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     nameBlock
-                    shelf.padding(.top, 20)
+                    if canSeePrints || !chapters.isEmpty { shelf.padding(.top, 20) }
                     month.padding(.top, 22)
                     closing.padding(.top, 30)
                 }
@@ -259,14 +264,18 @@ struct V2PageView: View {
                     .minimumScaleFactor(0.8)
                     .accessibilityAddTraits(.isHeader)
                 HStack(spacing: 0) {
-                    Text("\(posts.count) \(posts.count == 1 ? "print" : "prints") · ")
+                    // A stranger's count is not known, only what you are tagged in: no number.
+                    if canSeePrints {
+                        Text("\(posts.count) \(posts.count == 1 ? "print" : "prints") · ")
+                    }
                     if isSelf || feed.isFollowing(userId) {
                         Button { followList = .following } label: {
                             Text(following == 1 ? "1 friend" : "\(following) friends")
                                 .underline(color: palette.ink3)
                         }
                         .buttonStyle(.plain)
-                    } else {
+                    } else if !posts.isEmpty {
+                        // With nothing tagged, the face-down prints below carry Follow.
                         Button { follow() } label: { Text("Follow").underline() }
                             .buttonStyle(.plain)
                     }
@@ -304,7 +313,7 @@ struct V2PageView: View {
             }
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
-                    currentBox
+                    if canSeePrints { currentBox }
                     ForEach(chapters) { chapter in
                         Button { openChapter = chapter } label: { monthPrint(chapter, width: 72) }
                             .buttonStyle(.plain)
@@ -325,7 +334,7 @@ struct V2PageView: View {
                 .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
                 .foregroundStyle(palette.ink3)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 10)], alignment: .leading, spacing: 12) {
-                currentBox
+                if canSeePrints { currentBox }
                 ForEach(chapters) { chapter in
                     Button { openChapter = chapter } label: { monthPrint(chapter, width: 72) }
                         .buttonStyle(.plain)
@@ -374,7 +383,9 @@ struct V2PageView: View {
 
     @ViewBuilder
     private var month: some View {
-        if loaded, days.isEmpty {
+        if loaded, !isSelf, !feed.isFollowing(userId), !feed.isBlocked(userId), posts.isEmpty {
+            faceDown
+        } else if loaded, days.isEmpty {
             VStack(spacing: 14) {
                 Text(chapters.isEmpty && posts.isEmpty ? "Nothing on your page yet." : "\(Date.now.formatted(.dateTime.month(.wide))) starts here.")
                     .font(V2Type.serif(22, relativeTo: .title2))
@@ -414,6 +425,44 @@ struct V2PageView: View {
                 }
             }
         }
+    }
+
+    /// A stranger's page (board 6b): prints face down, there but not shown, until you follow.
+    /// The best-looking empty state on purpose: it is what a new person sees most.
+    private var faceDown: some View {
+        let name = profile?.name ?? "Their"
+        return VStack(spacing: 18) {
+            ZStack {
+                ForEach(0..<5, id: \.self) { i in
+                    Rectangle()
+                        .fill(V2Color.printBack)
+                        .frame(width: 96, height: 128)
+                        .shadow(color: palette.shadowNear.color, radius: palette.shadowNear.radius, y: palette.shadowNear.y)
+                        .rotationEffect(.degrees(Double(i - 2) * 5))
+                        .offset(x: CGFloat(i - 2) * 30, y: CGFloat(abs(i - 2)) * 6)
+                }
+            }
+            .frame(height: 160)
+            .accessibilityHidden(true)
+            Text("\(name)'s prints are face down.")
+                .font(V2Type.serif(20, relativeTo: .title3))
+                .multilineTextAlignment(.center)
+            Text("Follow \(name) and this page turns over.")
+                .font(V2Type.serif(14, italic: true, relativeTo: .callout))
+                .foregroundStyle(palette.ink2)
+                .multilineTextAlignment(.center)
+            Button { follow() } label: {
+                Text("Follow")
+                    .font(V2Type.control(.subheadline))
+                    .foregroundStyle(palette.background)
+                    .padding(.horizontal, 26)
+                    .frame(minHeight: 44)
+                    .background(palette.ink, in: RoundedRectangle(cornerRadius: V2Metrics.radius))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity)
     }
 
     private func pagePrint(_ post: Post) -> some View {
@@ -509,7 +558,8 @@ struct V2PageView: View {
         if ProcessInfo.processInfo.arguments.contains("-v2DemoPage") {
             let demo = V2PageFixture.make(userId: userId, feed: feed.feed)
             profile = demo.profile
-            posts = demo.posts
+            // `-v2DemoStranger`: someone you don't follow, for the face-down page.
+            posts = ProcessInfo.processInfo.arguments.contains("-v2DemoStranger") ? [] : demo.posts
             following = 7
             badges = demo.badges
             displayedIds = demo.badges.map(\.id)
@@ -531,7 +581,17 @@ struct V2PageView: View {
         let ids = await eb
         guard AccountEpoch.isCurrent(epoch) else { return }
         if let fetchedProfile { profile = fetchedProfile }
-        if let fetchedPosts { posts = fetchedPosts }
+        if let fetchedPosts {
+            // Not followed: only the posts you are tagged in, as the App Store page filters them
+            // (the server already limits them; this is the client's half of the same rule).
+            if !isSelf, !feed.isFollowing(userId), let me = auth.currentUser?.id {
+                let tagged = await feed.postIdsTagging(me, in: fetchedPosts.map(\.id))
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                posts = fetchedPosts.filter { tagged.contains($0.id) }
+            } else {
+                posts = fetchedPosts
+            }
+        }
         following = count
         badges = fetchedBadges
         displayedIds = ids
