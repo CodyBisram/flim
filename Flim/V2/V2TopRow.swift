@@ -53,7 +53,7 @@ struct V2TopRow<Middle: View>: View {
         .fullScreenCover(isPresented: $showPage) {
             if let uid = pageUserId {
                 NavigationStack { V2PageView(userId: uid) }
-                    .environment(\.v2Palette, palette)
+                    .modifier(V2DeskEnvironment())
                     .undoCapsuleHost()
                     #if DEBUG
                     .modifier(V2DemoFrame())
@@ -62,7 +62,7 @@ struct V2TopRow<Middle: View>: View {
         }
         .fullScreenCover(isPresented: $showFind) {
             V2FindView { showFind = false }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
                 #if DEBUG
                 .modifier(V2DemoFrame())
@@ -76,7 +76,7 @@ struct V2TopRow<Middle: View>: View {
                                      userId: uid)
                 unreadActivity = 0
             }, close: { showActivity = false })
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
                 #if DEBUG
                 .modifier(V2DemoFrame())

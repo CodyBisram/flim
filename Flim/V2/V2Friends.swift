@@ -133,7 +133,7 @@ struct V2FriendsPlace: View {
         }
         .fullScreenCover(item: $opened) { opened in
             V2GroupView(groups: opened.groups, index: opened.index) { self.opened = nil }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
                 #if DEBUG
                 .modifier(V2DemoFrame())

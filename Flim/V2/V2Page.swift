@@ -81,7 +81,7 @@ struct V2PageView: View {
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(item: $opened) { item in
             V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0) { opened = nil }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
         }
         .fullScreenCover(item: $openChapter) { chapter in

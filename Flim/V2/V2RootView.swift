@@ -52,7 +52,7 @@ struct V2RootView<Content: View, Foot: View>: View {
             .environment(\.v2LayoutMode, mode)
         }
         .background { V2Desktop(palette: palette, leak: place == .personal) }
-        .environment(\.v2Palette, palette)
+        .modifier(V2DeskEnvironment())
         .environment(\.v2Stamp, V2Stamp(rawValue: stampRaw) ?? .amber)
         .foregroundStyle(palette.ink)
     }

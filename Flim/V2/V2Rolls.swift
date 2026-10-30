@@ -64,7 +64,7 @@ struct V2RollsView: View {
                 showNewRoll = false
                 if let roll { open(roll) }
             }
-            .environment(\.v2Palette, palette)
+            .modifier(V2DeskEnvironment())
             #if DEBUG
             .modifier(V2DemoFrame())
             #endif

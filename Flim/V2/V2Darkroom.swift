@@ -66,7 +66,7 @@ struct V2DarkroomPlace: View {
         .fullScreenCover(isPresented: Binding(get: { showSortDeck && mode != .inner },
                                               set: { if !$0 { showSortDeck = false } })) {
             V2SortDeck { closeSortDeck() }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 #if DEBUG
                 .modifier(V2DemoFrame())
                 #endif
@@ -77,7 +77,7 @@ struct V2DarkroomPlace: View {
         }
         .fullScreenCover(isPresented: $showKept) {
             NavigationStack { V2KeptView() }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
                 #if DEBUG
                 .modifier(V2DemoFrame())

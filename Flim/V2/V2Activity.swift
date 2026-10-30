@@ -55,7 +55,7 @@ struct V2ActivityView: View {
         .fullScreenCover(item: $opened) { print in
             V2GroupView(groups: [V2FeedGroup(author: print.item.author, items: [print.item])], index: 0,
                         startsOnBack: print.onBack) { opened = nil }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
         }
         .task { await load() }

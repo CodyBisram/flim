@@ -101,7 +101,7 @@ struct V2RollPrints: View {
         .fullScreenCover(item: $opened) { opened in
             V2RollPrintView(roll: roll, prints: prints, names: names, index: opened.index,
                             startsOnBack: opened.onBack) { self.opened = nil }
-                .environment(\.v2Palette, palette)
+                .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
                 #if DEBUG
                 .modifier(V2DemoFrame())
