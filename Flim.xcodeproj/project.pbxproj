@@ -301,6 +301,7 @@
 		BF7CC543E4B4AA9122A6A435 /* FlimAccentPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605C13CF0D2D65A1EA8701FF /* FlimAccentPalette.swift */; };
 		BFA4DE1D87D9EC471A05BC06 /* FilmStripGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F468E30E62ADA6EFE45C5 /* FilmStripGrid.swift */; };
 		C148F7BA4A414882FA46D506 /* ReviewPromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EACE56C8FD4EC6E75942072 /* ReviewPromptTests.swift */; };
+		C1DEFCC86B7878795ECF25B3 /* V2Spotlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D431746A80DFF3B6CEEB80 /* V2Spotlight.swift */; };
 		C284CAB6E1E4B68DD90A2B20 /* EmojiSuggestionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41A387A8908C61FB39ABB6DB /* EmojiSuggestionTests.swift */; };
 		C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A093E4509E9F7972F5B26E7 /* MainTabView.swift */; };
 		C5019D33058E6895C02A2BF7 /* DarkroomRackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA9C65A961FE978AB5AB452 /* DarkroomRackView.swift */; };
@@ -831,6 +832,7 @@
 		F285153E18C4C15E482E0B0A /* FeedUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedUnitTests.swift; sourceTree = "<group>"; };
 		F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPView.swift; sourceTree = "<group>"; };
 		F41D0B57C8881A275E755159 /* SortDeckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortDeckView.swift; sourceTree = "<group>"; };
+		F4D431746A80DFF3B6CEEB80 /* V2Spotlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Spotlight.swift; sourceTree = "<group>"; };
 		F5CAA36062D7683ED55FDF32 /* ShutterWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShutterWidget.swift; sourceTree = "<group>"; };
 		F5D1A9AE30FF1FDFE402E79C /* RollRevealAutoPresentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAutoPresentTests.swift; sourceTree = "<group>"; };
 		F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureIntent.swift; sourceTree = "<group>"; };
@@ -1094,6 +1096,7 @@
 				2928E619BCF982F02F1A1705 /* V2RootView.swift */,
 				B94FF92D938AF73D30FA11FA /* V2Screening.swift */,
 				1E93C775AC47DCC965A02272 /* V2SortDeck.swift */,
+				F4D431746A80DFF3B6CEEB80 /* V2Spotlight.swift */,
 				76460B44FFEC9EF9911DEF8B /* V2Theme.swift */,
 				5EE27365D26E3AFBD717B256 /* V2TopRow.swift */,
 			);
@@ -1996,6 +1999,7 @@
 				7F118DDF7705EF44EBD6A3CD /* V2RootView.swift in Sources */,
 				A43BE7C34FD59ED6FAAD93D4 /* V2Screening.swift in Sources */,
 				DC112CF5ABA2C28997F84EAE /* V2SortDeck.swift in Sources */,
+				C1DEFCC86B7878795ECF25B3 /* V2Spotlight.swift in Sources */,
 				E5178A4606D32719792DEC50 /* V2Theme.swift in Sources */,
 				1593074B503C61FA6F13B497 /* V2TopRow.swift in Sources */,
 				FCA334B4E2EBB1ABDA1D7663 /* VersionGateBlockingView.swift in Sources */,

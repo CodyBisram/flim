@@ -74,6 +74,8 @@ struct V2FriendsPlace: View {
     @State private var loaded = false
     /// The group opened print by print, as an index into the groups when it was opened.
     @State private var opened: OpenedGroup?
+    @State private var showSpotlight = false
+    @State private var spotlightItem: FeedItem?
 
     private struct OpenedGroup: Identifiable {
         let groups: [V2FeedGroup]
@@ -97,6 +99,8 @@ struct V2FriendsPlace: View {
                     VStack(alignment: .leading, spacing: 0) {
                         header(groups)
                             .id("top")
+                        V2SpotlightStrip(openFrame: openSpotlightFrame, openAll: { showSpotlight = true })
+                            .padding(.top, 18)
                         if groups.isEmpty, loaded, !feed.isLoadingFeed {
                             empty
                                 .padding(.top, 18)
@@ -130,6 +134,19 @@ struct V2FriendsPlace: View {
         #endif
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, isFrontmost { Task { await load() } }
+        }
+        .fullScreenCover(isPresented: $showSpotlight) {
+            V2SpotlightView { showSpotlight = false }
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
+        }
+        .fullScreenCover(item: $spotlightItem) { item in
+            V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0) { spotlightItem = nil }
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
         }
         .fullScreenCover(item: $opened) { opened in
             V2GroupView(groups: opened.groups, index: opened.index) { self.opened = nil }
@@ -344,7 +361,26 @@ struct V2FriendsPlace: View {
 
     // MARK: Loading and seen
 
+    private func openSpotlightFrame(_ frame: SpotlightFrame) {
+        Haptics.tap()
+        Task {
+            if case .item(let item) = await feed.openSpotlightFrame(frame) { spotlightItem = item }
+        }
+    }
+
     private func load() async {
+        #if DEBUG
+        // `-v2DemoSpotlight`: the Spotlight fixtures' weeks in the strip, for screenshots.
+        if ProcessInfo.processInfo.arguments.contains("-v2DemoSpotlight") {
+            SpotlightPreviewFixtures.seed(into: feed)
+            await SpotlightPreviewFixtures.plantImages(into: feed)
+            if ProcessInfo.processInfo.arguments.contains("-v2OpenSpotlight") { showSpotlight = true }
+        } else {
+            Task { await feed.loadSpotlightStrip() }
+        }
+        #else
+        Task { await feed.loadSpotlightStrip() }
+        #endif
         guard let uid = auth.currentUser?.id else { return }
         await seen.awaitPull()
         await feed.loadFeed(currentUserId: uid)
