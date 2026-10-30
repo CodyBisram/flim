@@ -200,6 +200,7 @@ struct V2RollPrintView: View {
     @State private var draft = ""
     @State private var replyParentId: UUID?
     @State private var sending = false
+    @State private var sharing = false
     @FocusState private var composing: Bool
 
     private var photo: Photo { prints[min(index, prints.count - 1)] }
@@ -238,6 +239,11 @@ struct V2RollPrintView: View {
                         .foregroundStyle(palette.ink2)
                         .lineLimit(1)
                     Spacer(minLength: 8)
+                    Button { sharing = true } label: {
+                        Text("Share").font(V2Type.control(.caption)).foregroundStyle(palette.ink2).frame(minHeight: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Share this print")
                     if !open {
                         Text("\(index + 1) / \(prints.count)").font(V2Type.data(10)).tracking(1).foregroundStyle(palette.ink3)
                     }
@@ -286,6 +292,11 @@ struct V2RollPrintView: View {
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
         .onAppear { showsBack = startsOnBack }
+        .sheet(isPresented: $sharing) {
+            V2SharePrintView(print: V2ShareablePrint(path: photo.viewPath, takenAt: photo.takenAt, caption: photo.caption,
+                                                     handle: names[photo.userId].map { $0 == "you" ? (auth.currentUser?.username ?? "you") : $0 } ?? roll.name))
+                .modifier(V2DeskEnvironment())
+        }
         .task(id: photo.id) { await loadPrint() }
     }
 

@@ -31,6 +31,7 @@ struct V2GroupView: View {
     @State private var replyParentId: UUID?
     @State private var sending = false
     @State private var profile: ProfileRoute?
+    @State private var sharing = false
     @FocusState private var composing: Bool
 
     /// The prototype's quick four, under the print.
@@ -60,7 +61,17 @@ struct V2GroupView: View {
             #if DEBUG
             // `-v2GroupBack`: opens on the back of the print, for screenshots.
             if ProcessInfo.processInfo.arguments.contains("-v2GroupBack") { showsBack = true }
+            // `-v2OpenShare`: opens Share this print, for screenshots.
+            if ProcessInfo.processInfo.arguments.contains("-v2OpenShare") {
+                Task { try? await Task.sleep(for: .seconds(0.8)); sharing = true }
+            }
             #endif
+        }
+        .sheet(isPresented: $sharing) {
+            V2SharePrintView(print: V2ShareablePrint(path: item.post.cardPath, takenAt: item.post.takenAt,
+                                                     caption: item.post.caption,
+                                                     handle: group.author.username ?? group.author.name))
+                .modifier(V2DeskEnvironment())
         }
         .onChange(of: index) { _, _ in
             frame = 0
@@ -252,12 +263,17 @@ struct V2GroupView: View {
     }
 
     private var subheader: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(V2FeedGrouping.span(group, now: .distantFuture))
                 .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
                 .foregroundStyle(palette.ink2)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            Button { sharing = true } label: {
+                Text("Share").font(V2Type.control(.caption)).foregroundStyle(palette.ink2).frame(minHeight: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share this print")
             counter
         }
     }
