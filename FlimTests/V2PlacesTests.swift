@@ -138,4 +138,11 @@ struct V2PlacesTests {
         #expect(V2ScreeningView.number(12) == "twelve")
         #expect(V2ScreeningView.number(40) == "40")
     }
+
+    @Test("a Spotlight week is stamped with its ISO week, and a bad key stamps nothing")
+    func spotlightStamp() {
+        #expect(V2SpotlightWeek.stamp("2026-09-21") == "WK 39")
+        #expect(V2SpotlightWeek.stamp("2026-01-05") == "WK 2")
+        #expect(V2SpotlightWeek.stamp("not-a-week") == "")
+    }
 }
