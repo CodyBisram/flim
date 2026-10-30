@@ -96,7 +96,8 @@ final class V2Camera {
     static let firstShotKey = "v2FirstShotTaken"
 
     private func capture() {
-        guard !model.isInterrupted else { Haptics.error(); return }
+        // Nothing to shoot with yet (access not asked, or the session still starting).
+        guard !model.isInterrupted, model.session.isRunning else { Haptics.error(); return }
         UserDefaults.standard.set(true, forKey: Self.firstShotKey)
         Haptics.shutter()
         // No app shutter sound: AVCapturePhotoOutput plays the system one at the real capture.
@@ -222,6 +223,9 @@ struct V2PersonalPlace: View {
     // The camera asks for access in `start()`, so it waits for onboarding, as `CameraView` does.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage(V2Camera.firstShotKey) private var firstShotTaken = false
+    /// Camera access not asked yet: the window asks first, in the app's words, and the system
+    /// dialog follows the tap (board 12b). Onboarding usually asks first, so this is rare.
+    @State private var asksForCamera = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -233,10 +237,11 @@ struct V2PersonalPlace: View {
         }
         .onAppear {
             camera.attach(auth: auth, photos: photos, rolls: rolls, notifications: notifications)
-            if hasOnboarded { camera.start() }
+            asksForCamera = AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined
+            if hasOnboarded, !asksForCamera { camera.start() }
         }
         .onChange(of: hasOnboarded) { _, done in
-            if done { camera.start() }
+            if done, !asksForCamera { camera.start() }
         }
         .onDisappear { camera.stop() }
         .onReceive(NotificationCenter.default.publisher(for: .selectCameraRoll)) { note in
@@ -387,7 +392,12 @@ struct V2PersonalPlace: View {
 
     @ViewBuilder
     private var viewfinder: some View {
-        if camera.model.permission == .denied {
+        if asksForCamera {
+            V2CameraAsk {
+                asksForCamera = false
+                camera.start()
+            }
+        } else if camera.model.permission == .denied {
             V2CameraDenied()
         } else {
             CameraPreview(session: camera.model.session, camera: camera.model, onShutter: { camera.shutter() })
@@ -568,6 +578,43 @@ struct V2Shutter: View {
         .opacity(camera.model.isInterrupted ? 0.35 : 1)
         .accessibilityLabel("Take photo")
         .accessibilityHint(camera.model.isInterrupted ? "Camera unavailable" : "")
+    }
+}
+
+/// The window before camera access is asked (board 12b): the blank print reads as part of the
+/// camera, before the system dialog.
+private struct V2CameraAsk: View {
+    var allow: () -> Void
+
+    var body: some View {
+        ZStack {
+            V2Color.box
+            VStack(spacing: 12) {
+                Text("\(AppInfo.appName) needs the camera.")
+                    .font(V2Type.serif(22, relativeTo: .title2))
+                    .multilineTextAlignment(.center)
+                Text("Only while you're shooting. Nothing leaves your phone until you post it.")
+                    .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+                    .foregroundStyle(V2Color.printInk2)
+                    .multilineTextAlignment(.center)
+                Button(action: allow) {
+                    Text("Allow camera")
+                        .font(V2Type.control(.subheadline))
+                        .foregroundStyle(V2Color.print)
+                        .padding(.horizontal, 22)
+                        .frame(minHeight: 44)
+                        .background(V2Color.printInk, in: RoundedRectangle(cornerRadius: V2Metrics.radius))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+                Text("If you said no before: Settings, \(AppInfo.appName), Camera.")
+                    .font(.system(.caption2))
+                    .foregroundStyle(V2Color.printInk3)
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(V2Color.printInk)
+            .padding(.horizontal, 24)
+        }
     }
 }
 
