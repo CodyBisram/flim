@@ -50,7 +50,10 @@ struct V2RollsView: View {
             if roll.isDeveloped {
                 // A route to one photo and its thread (a comment push) goes to the roll's prints;
                 // otherwise an opened roll plays its screening.
-                if pendingPhotoIntent.wrappedValue?.rollId == roll.id {
+                // A route to one photo's thread, or a roll whose screening has played (the reveal is
+                // one-shot, `rollRevealSeen`), goes to its prints; otherwise it plays.
+                if pendingPhotoIntent.wrappedValue?.rollId == roll.id
+                    || UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)") {
                     V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
                 } else {
                     V2RollScreening(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
@@ -546,6 +549,8 @@ struct V2NewRollView: View {
     /// Start the next roll for everyone in this one (the screening's "Start another with these
     /// six"): the server invites them all (`start_follow_up_roll`).
     var followUpOf: Roll? = nil
+    /// A roll invite's code (a link or a push): filled in, ready to Join.
+    var joinCode: String = ""
     /// The roll made or joined, or nil for Cancel.
     var done: (Roll?) -> Void
 
@@ -603,6 +608,10 @@ struct V2NewRollView: View {
         .foregroundStyle(palette.ink)
         .onAppear {
             if name.isEmpty, let followUpOf { name = Roll.followUpName(after: followUpOf.name) }
+            if code.isEmpty, !joinCode.isEmpty {
+                code = String(joinCode.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(6))
+                focus = .code
+            }
         }
     }
 

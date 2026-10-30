@@ -325,8 +325,12 @@ struct MainTabView: View {
             #endif
                 // The join sheet a roll invite opens, hosted here while Rolls are up: one
                 // presenter cannot show a second sheet over its own.
-                .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
-                    JoinRollView(initialCode: inviteCode ?? "")
+                .fullScreenCover(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
+                    V2NewRollView(joinCode: inviteCode ?? "") { joined in
+                        inviteCode = nil
+                        if let joined { rollsPath = [joined] }
+                    }
+                    .modifier(V2DeskEnvironment())
                 }
         }
     }
@@ -394,7 +398,12 @@ struct MainTabView: View {
             JoinRollView(initialCode: inviteCode ?? "")
         }
         .sheet(item: $spotlightSheet) { route in
+            #if FLIM_V2
+            V2SpotlightView { spotlightSheet = nil }
+                .modifier(V2DeskEnvironment())
+            #else
             SpotlightWeeksSheet(focusWeek: route.focusWeek)
+            #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .openRollInvite)) { note in
             selected = 2   // Rolls tab

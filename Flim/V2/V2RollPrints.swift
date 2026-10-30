@@ -23,6 +23,7 @@ struct V2RollPrints: View {
     @State private var loaded = false
     @State private var opened: Opened?
     @State private var showMore = false
+    @State private var replaying = false
 
     struct Opened: Identifiable {
         let index: Int
@@ -45,10 +46,19 @@ struct V2RollPrints: View {
         } content: {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    Text(summary)
-                        .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
-                        .foregroundStyle(palette.ink2)
-                        .padding(.top, 8)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(summary)
+                            .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+                            .foregroundStyle(palette.ink2)
+                        Spacer(minLength: 8)
+                        if !prints.isEmpty {
+                            Button { replaying = true } label: {
+                                Text("Play it again").font(V2Type.control(.caption)).underline().frame(minHeight: 32)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 8)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 28, alignment: .topLeading),
                                              count: sizeClass == .regular ? 2 : 1),
                               alignment: .leading, spacing: 0) {
@@ -84,6 +94,9 @@ struct V2RollPrints: View {
         }
         .navigationDestination(isPresented: $showMore) {
             RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+        }
+        .fullScreenCover(isPresented: $replaying) {
+            V2ScreeningView(source: .roll(roll), close: { replaying = false })
         }
         .fullScreenCover(item: $opened) { opened in
             V2RollPrintView(roll: roll, prints: prints, names: names, index: opened.index,
