@@ -26,18 +26,7 @@ struct V2InviteView: View {
     private var codeWorks: Bool { remaining != 0 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Text("Back").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Text("Invite").font(V2Type.serif(15, relativeTo: .subheadline)).accessibilityAddTraits(.isHeader)
-                Spacer()
-                Text("Back").font(V2Type.control()).hidden()
-            }
-            .padding(.horizontal, V2Metrics.margin)
+        V2Screen(title: "Invite", onBack: { dismiss() }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(headline)
@@ -97,9 +86,6 @@ struct V2InviteView: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background { V2Desktop(palette: palette) }
-        .foregroundStyle(palette.ink)
-        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showQR) {
             if let code { V2InviteQR(url: AppInfo.personalInviteURL(code: code)).modifier(V2DeskEnvironment()) }
         }

@@ -218,6 +218,7 @@
 		81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B10C6663F963898FEE63F64 /* FlimAppTests.swift */; };
 		82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6254E85A41574632F3716FF3 /* EditCaptionSheet.swift */; };
 		8367D6A66980D7D9FCB79346 /* AccountScopeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728F3D27D8AE07F8B3F3435C /* AccountScopeHook.swift */; };
+		8510D0EB79E9C3C8EC9AA156 /* V2Screen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63751A27E9080A12224E3AEE /* V2Screen.swift */; };
 		87AB22662BAFF452175C23C6 /* ContrastTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECB660B4FF8C9C77820A49F /* ContrastTests.swift */; };
 		87F89CC920B065DCA5560F77 /* NotificationPermissionEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3262E790C5DB22687DA92F08 /* NotificationPermissionEventTests.swift */; };
 		8949D087000E8F654F9E93EC /* BadgeSwapLineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12F1117E64BF0C3FA394F98A /* BadgeSwapLineTests.swift */; };
@@ -632,6 +633,7 @@
 		633F468E30E62ADA6EFE45C5 /* FilmStripGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStripGrid.swift; sourceTree = "<group>"; };
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
 		635F41BDBDCA4E6DD118E4DE /* MentionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MentionsTests.swift; sourceTree = "<group>"; };
+		63751A27E9080A12224E3AEE /* V2Screen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Screen.swift; sourceTree = "<group>"; };
 		64805C0EDB37CD85F9616D39 /* NewAccountIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAccountIntro.swift; sourceTree = "<group>"; };
 		64F58EA5779DD43E35F781DB /* PendingRollInviteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRollInviteTests.swift; sourceTree = "<group>"; };
 		659573B57F39ED8C122771FD /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
@@ -1104,6 +1106,7 @@
 				D673C1DC2CBC5574E659BC42 /* V2RollPrints.swift */,
 				BC3E401EA648351322B4A1E3 /* V2Rolls.swift */,
 				2928E619BCF982F02F1A1705 /* V2RootView.swift */,
+				63751A27E9080A12224E3AEE /* V2Screen.swift */,
 				B94FF92D938AF73D30FA11FA /* V2Screening.swift */,
 				DAEBCCB56C1B9F4147A491FE /* V2Seals.swift */,
 				EA4E9E80825C6F956A87A3AC /* V2SharePrint.swift */,
@@ -2011,6 +2014,7 @@
 				5598E7A344FEE8CBEF2985AA /* V2RollPrints.swift in Sources */,
 				B13F5EAE490EDDCB7596A07B /* V2Rolls.swift in Sources */,
 				7F118DDF7705EF44EBD6A3CD /* V2RootView.swift in Sources */,
+				8510D0EB79E9C3C8EC9AA156 /* V2Screen.swift in Sources */,
 				A43BE7C34FD59ED6FAAD93D4 /* V2Screening.swift in Sources */,
 				05BE00F5BA69AD156CAFA1E4 /* V2Seals.swift in Sources */,
 				CD4C7088D3957C4840C9F2DC /* V2SharePrint.swift in Sources */,

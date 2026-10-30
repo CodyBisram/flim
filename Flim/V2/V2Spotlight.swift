@@ -120,22 +120,38 @@ struct V2SpotlightView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = min(300, V2PrintGeometry.width(fitting: CGSize(width: proxy.size.width - 100,
-                                                                       height: proxy.size.height - 360)))
-            VStack(spacing: 0) {
-                HStack {
-                    Button(action: close) {
-                        Text("Back").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer(minLength: 8)
-                    Text("Spotlight").font(V2Type.serif(15, relativeTo: .subheadline)).accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 8)
-                    Text("Back").font(V2Type.control()).hidden()
+        V2Screen(title: "Spotlight", onBack: close) {
+            // Closed, the main action is last in the column (round 16); elsewhere it is the
+            // button under the frames.
+            V2ClosedOnly { putUpWord }
+        } content: {
+            GeometryReader { proxy in
+                let width = min(300, V2PrintGeometry.width(fitting: CGSize(width: proxy.size.width - 100,
+                                                                           height: proxy.size.height - 300)))
+                VStack(spacing: 0) {
+                    ScrollView { scrollBody(width: width) }
+                        .scrollIndicators(.hidden)
+                    V2ClosedOnly(hidesWhenClosed: true) { putUpButton }
                 }
-                .padding(.horizontal, V2Metrics.margin)
-                ScrollView {
+            }
+        }
+        .task {
+            if feed.spotlightStripWeeks.isEmpty { await feed.loadSpotlightStrip() }
+            _ = await feed.loadSpotlightPastWeeks(reset: true)
+        }
+        .fullScreenCover(item: $opened) { item in
+            V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0) { opened = nil }
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
+        }
+        .sheet(isPresented: $showPicker) {
+            V2SpotlightPicker()
+                .modifier(V2DeskEnvironment())
+        }
+    }
+
+    @ViewBuilder
+    private func scrollBody(width: CGFloat) -> some View {
                     VStack(spacing: 18) {
                         if let week = weeks.first {
                             Text("Chosen by the team at \(AppInfo.appName).")
@@ -187,40 +203,32 @@ struct V2SpotlightView: View {
                         }
                     }
                     .padding(.vertical, 12)
-                }
-                .scrollIndicators(.hidden)
-                VStack(spacing: 8) {
-                    Button { showPicker = true } label: {
-                        Text("Put up one of yours")
-                            .font(V2Type.control(.subheadline))
-                            .foregroundStyle(palette.background)
-                            .frame(maxWidth: 360, minHeight: 48)
-                            .background(palette.ink, in: RoundedRectangle(cornerRadius: V2Metrics.radius))
-                    }
-                    .buttonStyle(.plain)
-                    Text("one a week, from what you posted")
-                        .font(.system(.caption))
-                        .foregroundStyle(palette.ink2)
-                }
-                .padding(.horizontal, V2Metrics.margin)
-                .padding(.bottom, 12)
+    }
+
+    /// The main action under the frames; closed, it moves into the column as a word.
+    private var putUpButton: some View {
+        VStack(spacing: 8) {
+            Button { showPicker = true } label: {
+                Text("Put up one of yours")
+                    .font(V2Type.control(.subheadline))
+                    .foregroundStyle(palette.background)
+                    .frame(maxWidth: 360, minHeight: 48)
+                    .background(palette.ink, in: RoundedRectangle(cornerRadius: V2Metrics.radius))
             }
+            .buttonStyle(.plain)
+            Text("one a week, from what you posted")
+                .font(.system(.caption))
+                .foregroundStyle(palette.ink2)
         }
-        .background { V2Desktop(palette: palette) }
-        .foregroundStyle(palette.ink)
-        .task {
-            if feed.spotlightStripWeeks.isEmpty { await feed.loadSpotlightStrip() }
-            _ = await feed.loadSpotlightPastWeeks(reset: true)
+        .padding(.horizontal, V2Metrics.margin)
+        .padding(.bottom, 12)
+    }
+
+    private var putUpWord: some View {
+        Button { showPicker = true } label: {
+            Text("Put one up").font(V2Type.control()).underline().frame(minHeight: 44)
         }
-        .fullScreenCover(item: $opened) { item in
-            V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0) { opened = nil }
-                .modifier(V2DeskEnvironment())
-                .undoCapsuleHost()
-        }
-        .sheet(isPresented: $showPicker) {
-            V2SpotlightPicker()
-                .modifier(V2DeskEnvironment())
-        }
+        .buttonStyle(.plain)
     }
 
     private var before: some View {

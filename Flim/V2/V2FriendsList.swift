@@ -20,27 +20,15 @@ struct V2FriendsList: View {
     private var isSelf: Bool { userId == auth.currentUser?.id }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Text("Back").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
+        V2Screen(title: loaded ? (people.count == 1 ? "1 friend" : "\(people.count) friends") : "Friends",
+                 onBack: { dismiss() }) {
+            if isSelf {
+                Button { showInvite = true } label: {
+                    Text("Invite").font(V2Type.control()).frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
-                Spacer()
-                Text(loaded ? (people.count == 1 ? "1 friend" : "\(people.count) friends") : "Friends")
-                    .font(V2Type.serif(15, relativeTo: .subheadline))
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                if isSelf {
-                    Button { showInvite = true } label: {
-                        Text("Invite").font(V2Type.control()).frame(minHeight: 44)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text("Invite").font(V2Type.control()).hidden()
-                }
             }
-            .padding(.horizontal, V2Metrics.margin)
+        } content: {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(people) { person in row(person) }
@@ -58,9 +46,6 @@ struct V2FriendsList: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background { V2Desktop(palette: palette) }
-        .foregroundStyle(palette.ink)
-        .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $profile) { V2PageView(userId: $0.id) }
         .fullScreenCover(isPresented: $showInvite) {
             NavigationStack { V2InviteView() }.modifier(V2DeskEnvironment())

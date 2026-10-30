@@ -24,21 +24,12 @@ struct V2SealsDrawer: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Text("Back").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Text("Seals").font(V2Type.serif(15, relativeTo: .subheadline)).accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button { dismiss() } label: {
-                    Text("Done").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+        V2Screen(title: "Seals", onBack: { dismiss() }) {
+            Button { dismiss() } label: {
+                Text("Done").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
             }
-            .padding(.horizontal, V2Metrics.margin)
+            .buttonStyle(.plain)
+        } content: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("One leads your page. Tap to choose it.")
@@ -106,8 +97,6 @@ struct V2SealsDrawer: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background { V2Desktop(palette: palette) }
-        .foregroundStyle(palette.ink)
         .task { await load() }
     }
 
