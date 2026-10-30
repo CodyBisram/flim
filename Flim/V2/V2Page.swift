@@ -88,8 +88,13 @@ struct V2PageView: View {
             V2ScreeningView(source: .month(profileId: userId, chapter: chapter), close: { openChapter = nil })
         }
         .navigationDestination(isPresented: $showAppearance) { V2AppearanceView() }
-        .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
-            BadgePickerSheet(onSaved: { Task { await load() } })
+        .fullScreenCover(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
+            V2SealsDrawer(signupNumber: profile?.signupOrdinal)
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
         .fullScreenCover(isPresented: $showInvite) {
             NavigationStack { V2InviteView() }
@@ -103,9 +108,11 @@ struct V2PageView: View {
         // `-v2OpenAppearance` / `-v2OpenInvite`: opens one from your page, for screenshots.
         .task {
             let args = ProcessInfo.processInfo.arguments
-            guard args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") else { return }
+            guard args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals") else { return }
             try? await Task.sleep(for: .seconds(0.8))
-            if args.contains("-v2OpenInvite") { showInvite = true } else { showAppearance = true }
+            if args.contains("-v2OpenInvite") { showInvite = true }
+            else if args.contains("-v2OpenSeals") { showBadgePicker = true }
+            else { showAppearance = true }
         }
         #endif
         .task {
@@ -536,9 +543,15 @@ struct V2PageView: View {
 struct V2Seal: View {
     let badge: ProfileBadge
     var signupNumber: Int?
+    /// Not yet earned: the shape pressed blind, no ink, no date (board 7a). Only ever drawn in
+    /// your own drawer.
+    var blind = false
+
+    @Environment(\.v2Palette) private var palette
 
     var body: some View {
-        let style = Self.style(badge.kind.tier)
+        let style = Self.style(badge.kind.tier, slate: palette.isDark)
+        let ink = blind ? palette.tick : style.ink
         VStack(spacing: 1) {
             Text(Self.ringLine(badge))
                 .font(V2Type.data(6.5))
@@ -548,22 +561,24 @@ struct V2Seal: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .dynamicTypeSize(.large)
-            Text(bottom)
+            Text(blind ? " " : bottom)
                 .font(V2Type.data(6.5))
                 .tracking(0.65)
         }
         .padding(.horizontal, 4)
-        .foregroundStyle(style.ink)
+        .foregroundStyle(ink)
         .frame(width: style.size.width, height: style.size.height)
-        .background { style.shape.stroke(style.ink, lineWidth: 1.5) }
+        .background { style.shape.stroke(ink, lineWidth: 1.5) }
+        // Blind embossing: a light edge under the pressed shape.
+        .shadow(color: blind ? .white.opacity(palette.isDark ? 0.06 : 0.6) : .clear, radius: 0, x: 0.5, y: 0.8)
         .rotationEffect(.degrees(-8))
         .opacity(0.9)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Seal: \(badge.kind.label)")
+        .accessibilityLabel(blind ? "\(badge.kind.label), not yet earned" : "Seal: \(badge.kind.label)")
     }
 
     private var middle: String {
-        if badge.kind == .founding100, let signupNumber { return "No \(signupNumber)" }
+        if badge.kind == .founding100 { return signupNumber.map { "No \($0)" } ?? "100" }
         return badge.kind.label
     }
 
@@ -584,16 +599,21 @@ struct V2Seal: View {
     /// The prototype's five shapes and inks: founding round in gold (the only gold in the app),
     /// gold a laurel round in rose, silver a shield in violet, bronze a lozenge in teal, accent a
     /// square in sepia.
-    private static func style(_ tier: ProfileBadgeTier) -> Style {
+    /// On Slate the inks lift to the brighter set so they stay legible (board 7a, "Colour rules").
+    private static func style(_ tier: ProfileBadgeTier, slate: Bool) -> Style {
         switch tier {
-        case .founding: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Circle()), ink: V2Color.rgb(0xA88C38), middle: 15)
-        case .gold: Style(size: CGSize(width: 58, height: 58), shape: AnyShape(Circle()), ink: V2Color.rgb(0xD46A7E), middle: 11)
+        case .founding: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Circle()),
+                              ink: V2Color.rgb(slate ? 0xD4B65A : 0xA88C38), middle: 15)
+        case .gold: Style(size: CGSize(width: 58, height: 58), shape: AnyShape(Circle()),
+                          ink: V2Color.rgb(slate ? 0xF5738C : 0xD46A7E), middle: 11)
         case .silver: Style(size: CGSize(width: 51, height: 57),
                             shape: AnyShape(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 26,
                                                                    bottomTrailingRadius: 26, topTrailingRadius: 5)),
-                            ink: V2Color.rgb(0x8C74D6), middle: 12)
-        case .bronze: Style(size: CGSize(width: 66, height: 46), shape: AnyShape(Capsule()), ink: V2Color.rgb(0x3FA898), middle: 11)
-        case .accent: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Rectangle()), ink: V2Color.rgb(0x5E534A), middle: 10)
+                            ink: V2Color.rgb(slate ? 0xA88CFA : 0x8C74D6), middle: 12)
+        case .bronze: Style(size: CGSize(width: 66, height: 46), shape: AnyShape(Capsule()),
+                            ink: V2Color.rgb(slate ? 0x59D1BF : 0x3FA898), middle: 11)
+        case .accent: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Rectangle()),
+                            ink: V2Color.rgb(slate ? 0xB9AEA3 : 0x5E534A), middle: 10)
         }
     }
 
