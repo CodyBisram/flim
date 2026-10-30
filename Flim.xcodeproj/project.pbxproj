@@ -177,6 +177,7 @@
 		658E404079ECBDF7043F42D0 /* MentionSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC2BCF4765864C0FBC18FD1 /* MentionSuggestions.swift */; };
 		66801953743EB7F02EC5C0D7 /* V2PlacesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 040E2B0F85351FE337645FA2 /* V2PlacesTests.swift */; };
 		677E53FF7558F00EF53191E1 /* PendingInviteRedeemedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39BF564647A39785A6BD0AB9 /* PendingInviteRedeemedTests.swift */; };
+		68346D96BB33A843D38C1724 /* V2Kept.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8C1E52CFE3BE8098B0FA1E /* V2Kept.swift */; };
 		685DE6BACAD623191FBC51C4 /* TabSymbolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4533452338409BD1B9FE46AD /* TabSymbolTests.swift */; };
 		68FF7D104A8EF2C313166D40 /* ProfileIdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFDDFBCCC6F6F043DCE3C4D7 /* ProfileIdentityView.swift */; };
 		6900F8DCFB1185B1776341D4 /* LibreCaslonText-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1CC6E7CDB2754ABADFBD442 /* LibreCaslonText-Variable.ttf */; };
@@ -587,6 +588,7 @@
 		4E0F438C8D66777D1E2AFB3D /* OptimisticRollbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticRollbackTests.swift; sourceTree = "<group>"; };
 		4E46251D578F2FFDDCF93A27 /* RevealCoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealCoverTests.swift; sourceTree = "<group>"; };
 		4E4F627F67108FD7C9956074 /* InviteReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteReminderTests.swift; sourceTree = "<group>"; };
+		4E8C1E52CFE3BE8098B0FA1E /* V2Kept.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Kept.swift; sourceTree = "<group>"; };
 		4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CubeLUT.swift; sourceTree = "<group>"; };
 		512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandedExport.swift; sourceTree = "<group>"; };
 		5187733F2549E32AAD048816 /* CommentPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentPreviewTests.swift; sourceTree = "<group>"; };
@@ -1081,6 +1083,7 @@
 				218E6E01A55818F620C9CDD5 /* V2Friends.swift */,
 				08372C6B3E56E414F82301D9 /* V2Group.swift */,
 				1BAF369BFC4F205D1801F501 /* V2Home.swift */,
+				4E8C1E52CFE3BE8098B0FA1E /* V2Kept.swift */,
 				72386D84C6F4111AF41C9B29 /* V2Layout.swift */,
 				D028B0B44A491F8A3620A197 /* V2Page.swift */,
 				CD816BEDD3994255482DE645 /* V2Print.swift */,
@@ -1981,6 +1984,7 @@
 				D6534BACEE828AA207D6DFE0 /* V2Friends.swift in Sources */,
 				1572A0F9EF35E8CAEEA6BB7A /* V2Group.swift in Sources */,
 				B3F2F1CFE02454C3FBF7A9E6 /* V2Home.swift in Sources */,
+				68346D96BB33A843D38C1724 /* V2Kept.swift in Sources */,
 				35261E7F6A84FE744D6C09E5 /* V2Layout.swift in Sources */,
 				6B5DD943677EA9D86E9EFA51 /* V2Page.swift in Sources */,
 				6268B0F95CE70FA2D1758B8F /* V2Print.swift in Sources */,

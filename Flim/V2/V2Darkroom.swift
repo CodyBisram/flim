@@ -3,7 +3,7 @@ import SwiftUI
 /// The Darkroom: what developed and waits to be sorted, as a stack of prints, and the last few
 /// you kept (prototype, board 15d's right half). Tapping the stack opens the sort deck.
 ///
-/// "Kept" opens the App Store app's Darkroom for now.
+/// "Kept" opens everything kept, by month and day (`V2KeptView`).
 struct V2DarkroomPlace: View {
     /// Signals from routes that open the sort deck (a push, the camera's old "to sort"), as the
     /// App Store Darkroom takes them.
@@ -50,6 +50,12 @@ struct V2DarkroomPlace: View {
         }
         .onChange(of: openSortDeckSignal) { _, _ in showSortDeck = true }
         #if DEBUG
+        // `-v2OpenKept`: opens Kept at launch, for screenshots.
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenKept") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            showKept = true
+        }
         // `-v2OpenSort`: opens the sort deck at launch, for screenshots.
         .task {
             guard ProcessInfo.processInfo.arguments.contains("-v2OpenSort") else { return }
@@ -69,8 +75,13 @@ struct V2DarkroomPlace: View {
                                        set: { pagerStart = $0?.index })) { start in
             PhotoPagerView(photos: kept, startIndex: start.index, signedURLs: [:])
         }
-        .navigationDestination(isPresented: $showKept) {
-            DarkroomView()
+        .fullScreenCover(isPresented: $showKept) {
+            NavigationStack { V2KeptView() }
+                .environment(\.v2Palette, palette)
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
         .toolbar(.hidden, for: .navigationBar)
         // The desk shows through the stack, which otherwise paints its own background over it.
