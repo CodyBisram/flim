@@ -51,7 +51,7 @@ struct V2RollsView: View {
                 // A route to one photo and its thread (a comment push) goes to the roll's prints;
                 // otherwise an opened roll plays its screening.
                 if pendingPhotoIntent.wrappedValue?.rollId == roll.id {
-                    RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                    V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
                 } else {
                     V2RollScreening(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
                 }
@@ -802,8 +802,8 @@ struct V2NewRollView: View {
     }
 }
 
-/// An opened roll pushed onto the Rolls stack: its screening, with its prints in full (the App
-/// Store roll screen) as the way on at the end.
+/// An opened roll pushed onto the Rolls stack: its screening, with its prints in full
+/// (`V2RollPrints`) as the way on at the end.
 struct V2RollScreening: View {
     let roll: Roll
     var pendingPhotoIntent: Binding<RollPhotoIntent?>
@@ -813,8 +813,16 @@ struct V2RollScreening: View {
 
     var body: some View {
         V2ScreeningView(source: .roll(roll), close: { dismiss() }, seeAll: { showAll = true })
+            #if DEBUG
+            // `-v2OpenRollPrints`: straight on to the roll's prints, for screenshots.
+            .task {
+                guard ProcessInfo.processInfo.arguments.contains("-v2OpenRollPrints") else { return }
+                try? await Task.sleep(for: .seconds(1))
+                showAll = true
+            }
+            #endif
             .navigationDestination(isPresented: $showAll) {
-                RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
             }
     }
 }
