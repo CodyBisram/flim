@@ -122,4 +122,20 @@ struct V2PlacesTests {
         #expect(V2RollTime.clock(Self.at(18, day: 28), now: now, calendar: Self.calendar).hasPrefix("TOMORROW "))
         #expect(V2RollTime.clock(Self.at(22), now: now, calendar: Self.calendar).hasPrefix("TONIGHT "))
     }
+
+    @Test("every badge has a seal ring line, under twelve characters as the handoff asks")
+    func sealRingLines() {
+        for kind in ProfileBadgeKind.allCases {
+            let line = V2Seal.ringLine(ProfileBadge(id: kind.rawValue, kind: kind, earnedAt: Self.at(12)))
+            #expect(!line.isEmpty, "\(kind) has no ring line")
+            #expect(line.count <= 12, "\(kind)'s ring line \(line) is too long")
+        }
+    }
+
+    @Test("the screening spells small counts and keeps large ones as figures")
+    func screeningNumbers() {
+        #expect(V2ScreeningView.number(4) == "four")
+        #expect(V2ScreeningView.number(12) == "twelve")
+        #expect(V2ScreeningView.number(40) == "40")
+    }
 }
