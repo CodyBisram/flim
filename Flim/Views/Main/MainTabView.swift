@@ -293,6 +293,7 @@ struct MainTabView: View {
             darkroom: {
                 NavigationStack {
                     V2DarkroomPlace(openSortDeckSignal: sortDeckSignal,
+                                    openPhotoId: $openPhotoId,
                                     goToCamera: { selection.wrappedValue = V2Place.personal.tab },
                                     openRolls: { selection.wrappedValue = V2Place.rollsTab })
                 }

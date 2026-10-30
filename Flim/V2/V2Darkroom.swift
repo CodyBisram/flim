@@ -8,6 +8,9 @@ struct V2DarkroomPlace: View {
     /// Signals from routes that open the sort deck (a push, the camera's old "to sort"), as the
     /// App Store Darkroom takes them.
     var openSortDeckSignal: Int = 0
+    /// A route to one photo (a "developed" push): opened in the full viewer, as the App Store
+    /// Darkroom does (`DarkroomView.openRequestedPhoto`).
+    var openPhotoId: Binding<UUID?> = .constant(nil)
     var goToCamera: () -> Void
     var openRolls: () -> Void
 
@@ -24,6 +27,7 @@ struct V2DarkroomPlace: View {
     @State private var showSortDeck = false
     @State private var showKept = false
     @State private var pagerStart: Int?
+    @State private var routedPhoto: Photo?
 
     var body: some View {
         GeometryReader { proxy in
@@ -49,6 +53,11 @@ struct V2DarkroomPlace: View {
             if new < old { Task { await reload() } }
         }
         .onChange(of: openSortDeckSignal) { _, _ in showSortDeck = true }
+        .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
+        .onAppear { openRequestedPhoto() }
+        .fullScreenCover(item: $routedPhoto) { photo in
+            PhotoPagerView(photos: [photo], signedURLs: [:])
+        }
         #if DEBUG
         // `-v2OpenKept`: opens Kept at launch, for screenshots.
         .task {
@@ -86,6 +95,31 @@ struct V2DarkroomPlace: View {
         .toolbar(.hidden, for: .navigationBar)
         // The desk shows through the stack, which otherwise paints its own background over it.
         .containerBackground(.clear, for: .navigation)
+    }
+
+    /// As `DarkroomView.openRequestedPhoto`: a lookup that could not reach the server is held and
+    /// routed again when the connection returns.
+    private func openRequestedPhoto() {
+        guard let id = openPhotoId.wrappedValue else { return }
+        openPhotoId.wrappedValue = nil
+        if let loaded = kept.first(where: { $0.id == id }) {
+            routedPhoto = loaded
+            return
+        }
+        let epoch = AccountEpoch.current
+        let serial = PendingPushDestination.routeSerial
+        Task {
+            var photo: Photo?
+            var lookupError: Error?
+            do { photo = try await photos.lookUpPhoto(id: id) } catch { lookupError = error }
+            switch PushLookupOutcome.decide(found: photo != nil, error: lookupError,
+                                            accountIsCurrent: AccountEpoch.isCurrent(epoch),
+                                            isLatestTap: PendingPushDestination.isLatestRoute(serial)) {
+            case .open: routedPhoto = photo
+            case .hold: PendingPushDestination.hold(.photo(photoId: id))
+            case .notFound, .drop: break
+            }
+        }
     }
 
     private func closeSortDeck() {
