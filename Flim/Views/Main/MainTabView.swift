@@ -316,6 +316,8 @@ struct MainTabView: View {
                             push: { rollsPath.append($0) },
                             close: { selected = V2Place.personal.tab })
             }
+            // Presented from outside v2's frame, so it takes the desk and stamp itself.
+            .modifier(V2DeskEnvironment())
             .undoCapsuleHost()
             #if DEBUG
             .modifier(V2DemoFrame())
