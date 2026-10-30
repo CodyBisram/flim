@@ -79,6 +79,7 @@
 		29A5B8A988AD5C1A12DA61E2 /* RollActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DE0ABF140C6FF15019136C /* RollActivityWidgetBundle.swift */; };
 		2A7FAAE8795A64DA148B28AA /* ChapterStatsDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 547E0898469C3526450EDAE4 /* ChapterStatsDecodingTests.swift */; };
 		2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */; };
+		2B05E5BBE2A0CF1BA8043BDD /* V2FriendsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB5A71F6387A5BA41AB7275 /* V2FriendsList.swift */; };
 		2BDA5A1144B0E5B71C8C0FA6 /* PushImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD80D7153DB42CFC6CFE90A /* PushImageTests.swift */; };
 		2C583C092A9F7DD0DF092B52 /* ShutterWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5CAA36062D7683ED55FDF32 /* ShutterWidget.swift */; };
 		2CAFA5D0F336FEEF6B862BFD /* RollDrainPaginationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBCA4037C38CEF7977543BAB /* RollDrainPaginationTests.swift */; };
@@ -849,6 +850,7 @@
 		F9A012D0BAB9CB711302A0A8 /* RollActivityWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RollActivityWidget.entitlements; sourceTree = "<group>"; };
 		FA04DBB3261C344B5DD64806 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		FA57412BE95150F69BC6A903 /* ChapterPreviewDemoHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterPreviewDemoHost.swift; sourceTree = "<group>"; };
+		FAB5A71F6387A5BA41AB7275 /* V2FriendsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2FriendsList.swift; sourceTree = "<group>"; };
 		FBCA4037C38CEF7977543BAB /* RollDrainPaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDrainPaginationTests.swift; sourceTree = "<group>"; };
 		FC61300D9F1F110EB65F4A89 /* InviteQuotaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteQuotaTests.swift; sourceTree = "<group>"; };
 		FCECA298D090FCA6707ED245 /* FeedServiceTaggedReactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceTaggedReactionTests.swift; sourceTree = "<group>"; };
@@ -1091,6 +1093,7 @@
 				0CA8CC252CF277D4D6AABC7F /* V2DeskChoice.swift */,
 				CA3E329261894266915EE609 /* V2Find.swift */,
 				218E6E01A55818F620C9CDD5 /* V2Friends.swift */,
+				FAB5A71F6387A5BA41AB7275 /* V2FriendsList.swift */,
 				08372C6B3E56E414F82301D9 /* V2Group.swift */,
 				1BAF369BFC4F205D1801F501 /* V2Home.swift */,
 				167507591B71F3BF9B6DD8C5 /* V2Invite.swift */,
@@ -1997,6 +2000,7 @@
 				7BED941340C284E8487B4CBA /* V2DeskChoice.swift in Sources */,
 				0D9AE40E044C8A28EAF0A8EE /* V2Find.swift in Sources */,
 				D6534BACEE828AA207D6DFE0 /* V2Friends.swift in Sources */,
+				2B05E5BBE2A0CF1BA8043BDD /* V2FriendsList.swift in Sources */,
 				1572A0F9EF35E8CAEEA6BB7A /* V2Group.swift in Sources */,
 				B3F2F1CFE02454C3FBF7A9E6 /* V2Home.swift in Sources */,
 				EDFAF78CE4DF0C690F70ECDE /* V2Invite.swift in Sources */,

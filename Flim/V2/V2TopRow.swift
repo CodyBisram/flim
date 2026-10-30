@@ -86,10 +86,10 @@ struct V2TopRow<Middle: View>: View {
         // `-v2OpenActivity` / `-v2OpenFind` / `-v2OpenPage`: opens one at launch, for screenshots.
         .task {
             let args = ProcessInfo.processInfo.arguments
-            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") || args.contains("-v2OpenPage") || args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals") else { return }
+            guard args.contains("-v2OpenActivity") || args.contains("-v2OpenFind") || args.contains("-v2OpenPage") || args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals") || args.contains("-v2OpenFriendsList") else { return }
             try? await Task.sleep(for: .seconds(1.2))
             if args.contains("-v2OpenActivity") { showActivity = true }
-            else if args.contains("-v2OpenPage") || args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals") { showPage = true }
+            else if args.contains("-v2OpenPage") || args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals") || args.contains("-v2OpenFriendsList") { showPage = true }
             else { showFind = true }
         }
         #endif

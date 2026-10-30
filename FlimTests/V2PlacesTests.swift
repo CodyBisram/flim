@@ -145,4 +145,13 @@ struct V2PlacesTests {
         #expect(V2SpotlightWeek.stamp("2026-01-05") == "WK 2")
         #expect(V2SpotlightWeek.stamp("not-a-week") == "")
     }
+
+    @Test("a friend's live line: when they last shot this week, else quiet")
+    func friendsLiveLine() {
+        let now = Self.at(22)
+        #expect(V2FriendsList.liveLine(Self.at(19), now: now, calendar: Self.calendar) == "shot tonight")
+        #expect(V2FriendsList.liveLine(Self.at(9, day: 26), now: now, calendar: Self.calendar) == "shot yesterday")
+        #expect(V2FriendsList.liveLine(Self.at(9, day: 18), now: now, calendar: Self.calendar) == "quiet this week")
+        #expect(V2FriendsList.liveLine(nil, now: now, calendar: Self.calendar) == "quiet this week")
+    }
 }

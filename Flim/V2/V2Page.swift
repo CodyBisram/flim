@@ -103,14 +103,16 @@ struct V2PageView: View {
                 .modifier(V2DemoFrame())
                 #endif
         }
-        .sheet(item: $followList) { FollowListView(userId: userId, mode: $0) }
+        .navigationDestination(item: $followList) { _ in V2FriendsList(userId: userId) }
         #if DEBUG
         // `-v2OpenAppearance` / `-v2OpenInvite`: opens one from your page, for screenshots.
         .task {
             let args = ProcessInfo.processInfo.arguments
-            guard args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals") else { return }
+            guard args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") || args.contains("-v2OpenSeals")
+                    || args.contains("-v2OpenFriendsList") else { return }
             try? await Task.sleep(for: .seconds(0.8))
             if args.contains("-v2OpenInvite") { showInvite = true }
+            else if args.contains("-v2OpenFriendsList") { followList = .following }
             else if args.contains("-v2OpenSeals") { showBadgePicker = true }
             else { showAppearance = true }
         }
