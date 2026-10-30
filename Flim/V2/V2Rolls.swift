@@ -543,6 +543,9 @@ struct V2SealedRollView: View {
 /// New roll, and join by code (prototype; board 12a, 16-1c, 16-1d): name it, choose when it
 /// opens, and Start; or type a code. Who is in comes by invite from the roll once it exists.
 struct V2NewRollView: View {
+    /// Start the next roll for everyone in this one (the screening's "Start another with these
+    /// six"): the server invites them all (`start_follow_up_roll`).
+    var followUpOf: Roll? = nil
     /// The roll made or joined, or nil for Cancel.
     var done: (Roll?) -> Void
 
@@ -552,6 +555,8 @@ struct V2NewRollView: View {
     @Environment(RollService.self) private var rolls
 
     @State private var name = ""
+    /// One request per screen, so a retried Start never makes a second roll.
+    @State private var followUpRequest = UUID()
     @State private var opens = V2RollTime.Choice.tomorrow
     @State private var code = ""
     @State private var working = false
@@ -584,7 +589,7 @@ struct V2NewRollView: View {
                                 form
                                 preview
                                 hint
-                                codeRow
+                                if followUpOf == nil { codeRow }
                             }
                         }
                         .scrollDismissesKeyboard(.interactively)
@@ -596,6 +601,9 @@ struct V2NewRollView: View {
         }
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
+        .onAppear {
+            if name.isEmpty, let followUpOf { name = Roll.followUpName(after: followUpOf.name) }
+        }
     }
 
     private var header: some View {
@@ -652,7 +660,7 @@ struct V2NewRollView: View {
                     .accessibilityAddTraits(opens == choice ? .isSelected : [])
                 }
             }
-            if sizeClass == .regular {
+            if sizeClass == .regular, followUpOf == nil {
                 codeRow.padding(.top, 30)
             }
             if let problem {
@@ -702,7 +710,8 @@ struct V2NewRollView: View {
     }
 
     private var hint: some View {
-        Text("Everyone shoots into it. Nobody sees inside until it opens.")
+        Text(followUpOf.map { "Everyone from \($0.name) is invited. Nobody sees inside until it opens." }
+             ?? "Everyone shoots into it. Nobody sees inside until it opens.")
             .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
             .foregroundStyle(palette.ink2)
             .multilineTextAlignment(.center)
@@ -764,7 +773,11 @@ struct V2NewRollView: View {
         let when = opens.date()
         Task {
             do {
-                var roll = try await rolls.createRoll(name: trimmedName, createdBy: uid)
+                var roll = if let followUpOf {
+                    try await rolls.startFollowUpRoll(parent: followUpOf, name: trimmedName, request: followUpRequest)
+                } else {
+                    try await rolls.createRoll(name: trimmedName, createdBy: uid)
+                }
                 // The server opens a new roll twelve hours after it starts; move it to the choice.
                 if abs(roll.revealAt.timeIntervalSince(when)) > 60,
                    let moved = try? await rolls.setRevealAt(rollId: roll.id, to: when) {
@@ -810,9 +823,18 @@ struct V2RollScreening: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var showAll = false
+    @State private var startAnother = false
 
     var body: some View {
-        V2ScreeningView(source: .roll(roll), close: { dismiss() }, seeAll: { showAll = true })
+        V2ScreeningView(source: .roll(roll), close: { dismiss() }, seeAll: { showAll = true },
+                        startAnother: { startAnother = true })
+            .fullScreenCover(isPresented: $startAnother) {
+                V2NewRollView(followUpOf: roll) { made in
+                    startAnother = false
+                    if made != nil { dismiss() }
+                }
+                .modifier(V2DeskEnvironment())
+            }
             #if DEBUG
             // `-v2OpenRollPrints`: straight on to the roll's prints, for screenshots.
             .task {

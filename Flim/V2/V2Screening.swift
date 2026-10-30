@@ -32,6 +32,8 @@ struct V2ScreeningView: View {
     var close: () -> Void
     /// The closing card's way on, beside Play again: for a roll, its prints in full.
     var seeAll: (() -> Void)?
+    /// A roll's next one, for everyone in it ("Start another with these six").
+    var startAnother: (() -> Void)?
 
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -370,6 +372,16 @@ struct V2ScreeningView: View {
             }
             .padding(.horizontal, V2Metrics.margin)
             .padding(.top, 24)
+            if case .roll = source, let startAnother, people > 1 {
+                Button(action: startAnother) {
+                    Text("Start another with these \(Self.number(people))")
+                        .font(V2Type.control())
+                        .underline()
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+            }
             Spacer(minLength: 12)
             HStack {
                 Button { replay() } label: {
