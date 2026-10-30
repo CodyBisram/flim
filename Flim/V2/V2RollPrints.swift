@@ -37,22 +37,12 @@ struct V2RollPrints: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Text("Back").font(V2Type.control()).frame(minHeight: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer(minLength: 8)
-                Text(roll.name).font(V2Type.serif(15, relativeTo: .subheadline)).lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                Button { showMore = true } label: {
-                    Text("More").font(V2Type.control()).foregroundStyle(palette.ink3).frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
+        V2Screen(title: roll.name, onBack: { dismiss() }) {
+            Button { showMore = true } label: {
+                Text("More").font(V2Type.control()).foregroundStyle(palette.ink3).frame(minHeight: 44)
             }
-            .padding(.horizontal, V2Metrics.margin)
+            .buttonStyle(.plain)
+        } content: {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text(summary)
@@ -92,9 +82,6 @@ struct V2RollPrints: View {
             .scrollIndicators(.hidden)
             .refreshable { await load() }
         }
-        .background { V2Desktop(palette: palette) }
-        .foregroundStyle(palette.ink)
-        .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(isPresented: $showMore) {
             RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
         }
