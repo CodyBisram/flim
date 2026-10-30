@@ -37,7 +37,7 @@ struct V2ActivityView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
                 Group {
                     switch mode {
                     case .phone: phone

@@ -219,6 +219,7 @@
 		82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6254E85A41574632F3716FF3 /* EditCaptionSheet.swift */; };
 		8367D6A66980D7D9FCB79346 /* AccountScopeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728F3D27D8AE07F8B3F3435C /* AccountScopeHook.swift */; };
 		8510D0EB79E9C3C8EC9AA156 /* V2Screen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63751A27E9080A12224E3AEE /* V2Screen.swift */; };
+		87568EF0BD598743BDC3D1ED /* V2FlowsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 081F4059E80A5C95CCB5D97A /* V2FlowsUITests.swift */; };
 		87AB22662BAFF452175C23C6 /* ContrastTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECB660B4FF8C9C77820A49F /* ContrastTests.swift */; };
 		87F89CC920B065DCA5560F77 /* NotificationPermissionEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3262E790C5DB22687DA92F08 /* NotificationPermissionEventTests.swift */; };
 		8949D087000E8F654F9E93EC /* BadgeSwapLineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12F1117E64BF0C3FA394F98A /* BadgeSwapLineTests.swift */; };
@@ -477,6 +478,7 @@
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
 		0637F7E13D1A6B414A60C262 /* OFL-ibmplexmono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-ibmplexmono.txt"; sourceTree = "<group>"; };
 		0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGlyphTests.swift; sourceTree = "<group>"; };
+		081F4059E80A5C95CCB5D97A /* V2FlowsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2FlowsUITests.swift; sourceTree = "<group>"; };
 		08372C6B3E56E414F82301D9 /* V2Group.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Group.swift; sourceTree = "<group>"; };
 		08D00F2FFF92C9AD0F31C66C /* V2Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Camera.swift; sourceTree = "<group>"; };
 		09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBarTests.swift; sourceTree = "<group>"; };
@@ -1043,6 +1045,7 @@
 				A3CDB5E87575F8455D173AF4 /* ChromeScreenshotUITests.swift */,
 				4A67344782B4FE71ABC8BBD1 /* FeedCommentsReturnUITests.swift */,
 				78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */,
+				081F4059E80A5C95CCB5D97A /* V2FlowsUITests.swift */,
 			);
 			path = FlimUITests;
 			sourceTree = "<group>";
@@ -2051,6 +2054,7 @@
 				B34922D1031DDD9B32AE7E0B /* ChromeScreenshotUITests.swift in Sources */,
 				571CFC27DC155BF450C24645 /* FeedCommentsReturnUITests.swift in Sources */,
 				B4474A58359A89EEFA669FE9 /* ShareSheetUITests.swift in Sources */,
+				87568EF0BD598743BDC3D1ED /* V2FlowsUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

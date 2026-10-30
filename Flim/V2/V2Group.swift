@@ -92,7 +92,7 @@ struct V2GroupView: View {
     private var screen: some View {
         Group {
             GeometryReader { proxy in
-                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
                 Group {
                     switch mode {
                     case .phone: phone(proxy.size)

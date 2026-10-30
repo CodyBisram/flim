@@ -28,7 +28,7 @@ struct V2DeskChoice: View {
                 .transition(.opacity)
         } else {
             GeometryReader { proxy in
-                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
                 if mode == .inner {
                     halves
                 } else {

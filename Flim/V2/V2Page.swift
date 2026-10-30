@@ -71,7 +71,7 @@ struct V2PageView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
             Group {
                 switch mode {
                 case .phone: phone

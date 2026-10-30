@@ -62,6 +62,15 @@ enum V2LayoutMode: Equatable {
         return size.height / size.width < shortAspectThreshold ? .outer : .phone
     }
 
+    /// From a view's geometry, judged on its full height: the keyboard shrinks the view but not the
+    /// display, and judging the shrunk size turned a phone with its keyboard up into the closed
+    /// Duo, rebuilding the screen and losing what was being typed.
+    static func resolve(horizontalSizeClass: UserInterfaceSizeClass?, proxy: GeometryProxy) -> V2LayoutMode {
+        let full = CGSize(width: proxy.size.width + proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing,
+                          height: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom)
+        return resolve(horizontalSizeClass: horizontalSizeClass, size: full)
+    }
+
     /// Between the Duo's outer display (about 1.45) and the shortest current iPhone (about 2.1).
     static let shortAspectThreshold: CGFloat = 1.75
 

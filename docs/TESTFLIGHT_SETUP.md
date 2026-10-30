@@ -274,7 +274,7 @@ account. The real places run without an account in the FLIM Beta scheme with `-c
 session or access prompt) and `-seedDemo` or `-tabFeed` to open on Darkroom or Friends; their photos
 are `demo/pNN.jpg`, planted in the disk image cache by `scripts/plant_demo_images.py <simulator id>`. `-v2DemoFrame 890x626` (or `669x951`) draws
 either host at the Duo's open size, since the simulator cannot be unfolded from the command line.
-The iPhone Duo simulator needs the iOS 27.1 runtime.
+The iPhone Duo simulator needs the iOS 27.1 runtime. `FlimUITests/V2FlowsUITests` drives these screens by tap and drag: `xcodebuild test -scheme FlimUITests -configuration Debug-Beta -only-testing:FlimUITests/V2FlowsUITests` on an iPhone simulator.
 
 Still to do: set the APNs key secrets on the beta project so FLIM Beta gets pushes (the owner
 copies them; pushes stay off until then).

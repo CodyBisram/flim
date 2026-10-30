@@ -55,7 +55,7 @@ struct V2SortDeck: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
             Group {
                 if mode == .outer { column(proxy.size) } else { stacked(proxy.size) }
             }

@@ -32,7 +32,7 @@ struct V2RollsView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
             Group {
                 switch mode {
                 case .phone: phone
@@ -572,7 +572,7 @@ struct V2NewRollView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
             Group {
                 if mode == .inner {
                     VStack(spacing: 0) {

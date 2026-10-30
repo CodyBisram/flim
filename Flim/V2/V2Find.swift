@@ -27,7 +27,7 @@ struct V2FindView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
                 Group {
                     if mode == .outer { outer } else { stacked }
                 }
