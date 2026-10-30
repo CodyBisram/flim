@@ -21,6 +21,17 @@ struct V2Home<Darkroom: View, Friends: View>: View {
 
     @State private var camera = V2Camera()
     @State private var unsortedCount: Int?
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @AppStorage(V2DeskChoice.askedKey) private var deskAsked = false
+
+    /// The desk question, once, after onboarding.
+    private var asksDesk: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-v2AskDesk") { return !deskAskedThisRun }
+        #endif
+        return hasOnboarded && !deskAsked
+    }
+    @State private var deskAskedThisRun = false
 
     var body: some View {
         #if DEBUG
@@ -69,6 +80,12 @@ struct V2Home<Darkroom: View, Friends: View>: View {
             if new < old { Task { await refreshUnsorted() } }
         }
         .onChange(of: selection) { _, _ in Task { await refreshUnsorted() } }
+        .fullScreenCover(isPresented: Binding(get: { asksDesk }, set: { _ in })) {
+            V2DeskChoice { deskAskedThisRun = true }
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
+        }
     }
 
     private func refreshUnsorted() async {

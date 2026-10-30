@@ -203,6 +203,7 @@
 		7AE89B5CC82BB5360D81F3B5 /* RollRevealCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3160152C151C46D58498F19D /* RollRevealCard.swift */; };
 		7AEA70DB953FC0E2CA354145 /* RevealDeadFrameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E4DBE18F0676BDDE852EDD /* RevealDeadFrameTests.swift */; };
 		7B26E64E08E3681DA77C073A /* FeedbackSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A251B6DCFD8210DF89FD18B3 /* FeedbackSheet.swift */; };
+		7BED941340C284E8487B4CBA /* V2DeskChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA8CC252CF277D4D6AABC7F /* V2DeskChoice.swift */; };
 		7CC65D898130236C8681AB7A /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 659573B57F39ED8C122771FD /* AvatarView.swift */; };
 		7D066E10F05CBEEF091EC904 /* LookRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F74C74BB63D759AD36FD8F /* LookRegressionTests.swift */; };
 		7DC664470EFC8E313FEAAE3B /* CommentThreadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1125F53475E0D5FCE1C5ACC2 /* CommentThreadsTests.swift */; };
@@ -472,6 +473,7 @@
 		09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBarTests.swift; sourceTree = "<group>"; };
 		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		0B10C6663F963898FEE63F64 /* FlimAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimAppTests.swift; sourceTree = "<group>"; };
+		0CA8CC252CF277D4D6AABC7F /* V2DeskChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2DeskChoice.swift; sourceTree = "<group>"; };
 		0F444E23E43188221328A495 /* RollsPathActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsPathActionTests.swift; sourceTree = "<group>"; };
 		0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedView.swift; sourceTree = "<group>"; };
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
@@ -1072,6 +1074,7 @@
 				556D287CC8849392F658D37C /* V2Controls.swift */,
 				10B75AD91C0B29FD1EDD0513 /* V2Darkroom.swift */,
 				A6125E1C00C3AD4E405ED3CB /* V2DemoHost.swift */,
+				0CA8CC252CF277D4D6AABC7F /* V2DeskChoice.swift */,
 				CA3E329261894266915EE609 /* V2Find.swift */,
 				218E6E01A55818F620C9CDD5 /* V2Friends.swift */,
 				08372C6B3E56E414F82301D9 /* V2Group.swift */,
@@ -1970,6 +1973,7 @@
 				CA066C41373973A4AB0F71B0 /* V2Controls.swift in Sources */,
 				02BB099424B21668D5C6C633 /* V2Darkroom.swift in Sources */,
 				8BA578B057B0A9ABC4D68245 /* V2DemoHost.swift in Sources */,
+				7BED941340C284E8487B4CBA /* V2DeskChoice.swift in Sources */,
 				0D9AE40E044C8A28EAF0A8EE /* V2Find.swift in Sources */,
 				D6534BACEE828AA207D6DFE0 /* V2Friends.swift in Sources */,
 				1572A0F9EF35E8CAEEA6BB7A /* V2Group.swift in Sources */,
