@@ -129,7 +129,7 @@ final class V2FlowsUITests: XCTestCase {
         let app = launch(["-v2DemoActivity", "-v2OpenActivity"])
         XCTAssertTrue(app.buttons["Clear"].waitForExistence(timeout: 20))
         // A slip's sentence is the label of the button it sits in.
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'started following you'")).firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'asked to be friends'")).firstMatch.exists)
         app.buttons["Clear"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Nothing new.'")).firstMatch.waitForExistence(timeout: 5))
     }
