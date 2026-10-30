@@ -365,6 +365,7 @@
 		EB68FF079329A5B42211E166 /* RevealCover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C2F70774B76385A97528D7 /* RevealCover.swift */; };
 		ECB291D20750FCD7921496FF /* SortDeckComposeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1023C54C67509092736FA8F3 /* SortDeckComposeSheet.swift */; };
 		ECCE9AA4B362458687B4C9B1 /* SignedURLStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */; };
+		EDFAF78CE4DF0C690F70ECDE /* V2Invite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 167507591B71F3BF9B6DD8C5 /* V2Invite.swift */; };
 		EE2C34B9DA378C8A9829E963 /* SoundFX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C3947082A0D5033379C318 /* SoundFX.swift */; };
 		EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */; };
 		F15C4CF69166348822131747 /* LookRenditionSweep.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53325DF6E6AAFC6CD2ACBB6 /* LookRenditionSweep.swift */; };
@@ -493,6 +494,7 @@
 		13908485780BB9C4EFD57B07 /* RollDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDecodingTests.swift; sourceTree = "<group>"; };
 		147B2BC0EFA598B20C13C00A /* VersionGateBlockingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionGateBlockingView.swift; sourceTree = "<group>"; };
 		14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantFilmProcessor.swift; sourceTree = "<group>"; };
+		167507591B71F3BF9B6DD8C5 /* V2Invite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Invite.swift; sourceTree = "<group>"; };
 		17436C2A3F9564EB8D028D07 /* flim.cube */ = {isa = PBXFileReference; path = flim.cube; sourceTree = "<group>"; };
 		17748DA0845B5512541A214D /* FeedServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceTests.swift; sourceTree = "<group>"; };
 		185C74A36D5ECA241AD360AA /* CommentThreads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentThreads.swift; sourceTree = "<group>"; };
@@ -1087,6 +1089,7 @@
 				218E6E01A55818F620C9CDD5 /* V2Friends.swift */,
 				08372C6B3E56E414F82301D9 /* V2Group.swift */,
 				1BAF369BFC4F205D1801F501 /* V2Home.swift */,
+				167507591B71F3BF9B6DD8C5 /* V2Invite.swift */,
 				4E8C1E52CFE3BE8098B0FA1E /* V2Kept.swift */,
 				72386D84C6F4111AF41C9B29 /* V2Layout.swift */,
 				D028B0B44A491F8A3620A197 /* V2Page.swift */,
@@ -1990,6 +1993,7 @@
 				D6534BACEE828AA207D6DFE0 /* V2Friends.swift in Sources */,
 				1572A0F9EF35E8CAEEA6BB7A /* V2Group.swift in Sources */,
 				B3F2F1CFE02454C3FBF7A9E6 /* V2Home.swift in Sources */,
+				EDFAF78CE4DF0C690F70ECDE /* V2Invite.swift in Sources */,
 				68346D96BB33A843D38C1724 /* V2Kept.swift in Sources */,
 				35261E7F6A84FE744D6C09E5 /* V2Layout.swift in Sources */,
 				6B5DD943677EA9D86E9EFA51 /* V2Page.swift in Sources */,

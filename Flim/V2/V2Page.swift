@@ -91,14 +91,21 @@ struct V2PageView: View {
         .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
             BadgePickerSheet(onSaved: { Task { await load() } })
         }
-        .sheet(isPresented: $showInvite) { InviteSheet() }
+        .fullScreenCover(isPresented: $showInvite) {
+            NavigationStack { V2InviteView() }
+                .modifier(V2DeskEnvironment())
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
+        }
         .sheet(item: $followList) { FollowListView(userId: userId, mode: $0) }
         #if DEBUG
-        // `-v2OpenAppearance`: opens Appearance from your page, for screenshots.
+        // `-v2OpenAppearance` / `-v2OpenInvite`: opens one from your page, for screenshots.
         .task {
-            guard ProcessInfo.processInfo.arguments.contains("-v2OpenAppearance") else { return }
+            let args = ProcessInfo.processInfo.arguments
+            guard args.contains("-v2OpenAppearance") || args.contains("-v2OpenInvite") else { return }
             try? await Task.sleep(for: .seconds(0.8))
-            showAppearance = true
+            if args.contains("-v2OpenInvite") { showInvite = true } else { showAppearance = true }
         }
         #endif
         .task {
