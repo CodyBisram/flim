@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// First run's one v2 question (board 9b, 16-1n, 16-1o): where your prints lie. Tapping a desk
-/// chooses it and carries on; "Match my phone" follows the system. Shown once, after onboarding,
-/// to anyone who has not chosen a desk yet. Open, each half of the screen is one desk.
+/// First run's v2 questions (board 9b, 16-1n, 16-1o): where your prints lie, then your stamp.
+/// Tapping a desk chooses it and carries on; "Match my phone" follows the system. The stamp is
+/// shown on a real print with amber preselected. Shown once, after onboarding, to anyone who has
+/// not chosen a desk yet. Open, each half of the screen is one desk.
 struct V2DeskChoice: View {
     var chosen: () -> Void
 
@@ -13,17 +14,30 @@ struct V2DeskChoice: View {
     /// Set once a desk has been chosen here, so the question is asked once.
     static let askedKey = "v2DeskAsked"
 
+    #if DEBUG
+    // `-v2AskStamp`: opens on the stamp step, for screenshots.
+    @State private var pickingStamp = ProcessInfo.processInfo.arguments.contains("-v2AskStamp")
+    #else
+    @State private var pickingStamp = false
+    #endif
+
     var body: some View {
-        GeometryReader { proxy in
-            let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
-            if mode == .inner {
-                halves
-            } else {
-                cards(mode)
+        if pickingStamp {
+            V2StampChoice { chosen() }
+                .modifier(V2DeskEnvironment())
+                .transition(.opacity)
+        } else {
+            GeometryReader { proxy in
+                let mode = V2LayoutMode.resolve(horizontalSizeClass: sizeClass, size: proxy.size)
+                if mode == .inner {
+                    halves
+                } else {
+                    cards(mode)
+                }
             }
+            // Open, the two desks run to the screen's edges.
+            .ignoresSafeArea(edges: sizeClass == .regular ? .all : [])
         }
-        // Open, the two desks run to the screen's edges.
-        .ignoresSafeArea(edges: sizeClass == .regular ? .all : [])
     }
 
     private var system: V2Palette { V2Palette.of(.system, scheme: colorScheme) }
@@ -182,6 +196,78 @@ struct V2DeskChoice: View {
         Haptics.tap()
         deskRaw = desk.rawValue
         UserDefaults.standard.set(true, forKey: Self.askedKey)
-        chosen()
+        withAnimation(.easeInOut(duration: 0.35)) { pickingStamp = true }
+    }
+}
+
+/// Your stamp (board 9b, screen 3): the colour burned into every print you take, shown on a real
+/// print, amber preselected. It is the App Store app's accent, so it carries everywhere.
+private struct V2StampChoice: View {
+    var done: () -> Void
+
+    @Environment(\.v2Palette) private var palette
+    @AppStorage(V2Settings.stampKey) private var stampRaw = V2Stamp.amber.rawValue
+
+    private var stamp: V2Stamp { V2Stamp(rawValue: stampRaw) ?? .amber }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("Your stamp.")
+                .font(V2Type.serif(30, relativeTo: .largeTitle))
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, 70)
+            Text("Burned into every print you take. Friends see it too.")
+                .font(V2Type.serif(15, italic: true, relativeTo: .body))
+                .foregroundStyle(palette.ink2)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+                .padding(.horizontal, V2Metrics.margin)
+            Spacer(minLength: 20)
+            V2PrintCard(width: 230, tilt: .degrees(-2)) {
+                LinearGradient(colors: [V2Color.rgb(0xE9A05A), V2Color.rgb(0x3A2A22)], startPoint: .top, endPoint: .bottom)
+                    .overlay(alignment: .bottomTrailing) {
+                        V2DateStamp(text: BrandedExport.dateText(.init(date: .now)), cellHeight: 230 * 0.045, stamp: stamp)
+                            .padding(12)
+                    }
+            } foot: { Color.clear }
+            .accessibilityHidden(true)
+            Spacer(minLength: 20)
+            HStack(spacing: 14) {
+                ForEach(V2Stamp.allCases, id: \.self) { option in
+                    Button { stampRaw = option.rawValue; Haptics.tap() } label: {
+                        Circle()
+                            .fill(palette.isDark ? option.bright : option.paperColor)
+                            .frame(width: 34, height: 34)
+                            .overlay { if option == stamp { Circle().stroke(palette.ink, lineWidth: 1.5).padding(-5) } }
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option.rawValue.capitalized)
+                    .accessibilityAddTraits(option == stamp ? .isSelected : [])
+                }
+            }
+            Text(stamp == .amber ? "amber, the one most people keep" : stamp.rawValue)
+                .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+                .foregroundStyle(palette.ink3)
+                .padding(.top, 10)
+            Spacer(minLength: 20)
+            Button { Haptics.tap(); done() } label: {
+                Text("Keep \(stamp.rawValue)")
+                    .font(V2Type.control(.subheadline))
+                    .foregroundStyle(palette.background)
+                    .frame(maxWidth: 360, minHeight: 48)
+                    .background(palette.ink, in: RoundedRectangle(cornerRadius: V2Metrics.radius))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, V2Metrics.margin)
+            Text("change it any time")
+                .font(.system(.caption))
+                .foregroundStyle(palette.ink2)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { V2Desktop(palette: palette) }
+        .foregroundStyle(palette.ink)
     }
 }

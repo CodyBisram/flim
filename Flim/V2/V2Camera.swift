@@ -93,8 +93,11 @@ final class V2Camera {
         Haptics.tap()
     }
 
+    static let firstShotKey = "v2FirstShotTaken"
+
     private func capture() {
         guard !model.isInterrupted else { Haptics.error(); return }
+        UserDefaults.standard.set(true, forKey: Self.firstShotKey)
         Haptics.shutter()
         // No app shutter sound: AVCapturePhotoOutput plays the system one at the real capture.
         model.capturePhoto()
@@ -218,6 +221,7 @@ struct V2PersonalPlace: View {
     @Environment(NetworkMonitor.self) private var network
     // The camera asks for access in `start()`, so it waits for onboarding, as `CameraView` does.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @AppStorage(V2Camera.firstShotKey) private var firstShotTaken = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -484,6 +488,9 @@ struct V2PersonalPlace: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Shoots into Personal again")
+        } else if !firstShotTaken {
+            // The first print is the tutorial: one line, until it is taken (board 9b).
+            footerText("Take one. You'll see it in a while.")
         } else {
             TimelineView(.everyMinute) { context in
                 footerText(V2Clock.dayPart(context.date))
