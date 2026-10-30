@@ -512,7 +512,8 @@ struct V2PersonalPlace: View {
         Text(text)
             .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
             .foregroundStyle(palette.ink3)
-            .lineLimit(2)
+            .lineLimit(3)
+            .minimumScaleFactor(0.8)
             .multilineTextAlignment(mode == .phone ? .center : .leading)
     }
 

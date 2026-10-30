@@ -259,10 +259,22 @@ struct V2PlaceRow: View {
         switch mode {
         case .phone:
             VStack(spacing: 6) {
-                HStack {
-                    ForEach(groups.indices, id: \.self) { index in
-                        if index > 0 { Spacer(minLength: 8) }
-                        serifName(groups[index][0], active: index == activePage)
+                // At the largest text sizes the three names no longer fit across: the place you
+                // are in stays named, with its neighbours one tap away either side.
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        ForEach(groups.indices, id: \.self) { index in
+                            if index > 0 { Spacer(minLength: 8) }
+                            serifName(groups[index][0], active: index == activePage)
+                                .fixedSize()
+                        }
+                    }
+                    HStack {
+                        neighbour(groups, page: activePage - 1, arrow: "‹")
+                        Spacer(minLength: 8)
+                        serifName(groups[activePage][0], active: true)
+                        Spacer(minLength: 8)
+                        neighbour(groups, page: activePage + 1, arrow: "›")
                     }
                 }
                 ticks(count: groups.count, active: activePage)
@@ -301,6 +313,24 @@ struct V2PlaceRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label(member))
         .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func neighbour(_ groups: [[V2Place]], page: Int, arrow: String) -> some View {
+        if groups.indices.contains(page) {
+            let member = groups[page][0]
+            Button { select(member) } label: {
+                Text(arrow)
+                    .font(V2Type.control(.title3))
+                    .foregroundStyle(palette.ink3)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label(member))
+        } else {
+            Color.clear.frame(width: 44, height: 44)
+        }
     }
 
     private func underlinedName(_ group: [V2Place], active: Bool) -> some View {
