@@ -4,8 +4,7 @@ import SwiftUI
 /// top, the shelf of months in their boxes under it, then this month by day. Product rule 3: a
 /// page is one month deep; earlier months are on the shelf.
 ///
-/// A print opens to its back, like any print. The months open the App Store app's chapter recap
-/// until the screening lands. Boxing a month by hand and putting prints away need the server's
+/// A print opens to its back, like any print, and a month plays its screening. Boxing a month by hand and putting prints away need the server's
 /// half of product rule 4 first.
 struct V2PageView: View {
     let userId: UUID
@@ -26,7 +25,6 @@ struct V2PageView: View {
     @State private var loaded = false
     @State private var opened: FeedItem?
     @State private var openChapter: ChapterSummary?
-    @State private var coverURLs: [String: URL] = [:]
     @State private var showAppearance = false
     @State private var showBadgePicker = false
     @State private var showInvite = false
@@ -85,7 +83,7 @@ struct V2PageView: View {
                 .undoCapsuleHost()
         }
         .fullScreenCover(item: $openChapter) { chapter in
-            ChapterRecapView(profileId: userId, chapter: chapter, chapterCoverURLs: coverURLs)
+            V2ScreeningView(source: .month(profileId: userId, chapter: chapter), close: { openChapter = nil })
         }
         .navigationDestination(isPresented: $showAppearance) { V2AppearanceView() }
         .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
@@ -110,7 +108,6 @@ struct V2PageView: View {
         }
         .task {
             await chapterService.fetchChapters(for: userId)
-            coverURLs = await feed.signedURLs(for: chapters.compactMap(\.coverPaths.first))
         }
     }
 

@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The rolls shelf (board 4a, 16-1a, 16-1b; prototype): rolls still developing stand as sealed
 /// boxes with their clocks, opened ones as their prints. A sealed roll opens to its box; an opened
-/// one to the App Store app's roll screen until the screening lands. Open, the shelf narrows to
-/// the left and the chosen roll fills the right.
+/// one plays its screening, and its prints in full are one tap from the end of it. Open, the shelf
+/// narrows to the left and the chosen roll fills the right.
 ///
 /// It declares the roll destination itself (`Roll`), so a route that pushes a roll onto the
 /// Rolls path lands on the right screen, sealed or opened, as it does in the App Store app.
@@ -48,7 +48,13 @@ struct V2RollsView: View {
         .containerBackground(.clear, for: .navigation)
         .navigationDestination(for: Roll.self) { roll in
             if roll.isDeveloped {
-                RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                // A route to one photo and its thread (a comment push) goes to the roll's prints;
+                // otherwise an opened roll plays its screening.
+                if pendingPhotoIntent.wrappedValue?.rollId == roll.id {
+                    RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                } else {
+                    V2RollScreening(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                }
             } else {
                 V2SealedRollView(roll: roll)
             }
@@ -313,6 +319,11 @@ struct V2RollsView: View {
             shots = Dictionary(uniqueKeysWithValues: rolls.rolls.enumerated().map { ($1.id, [7, 5, 4][$0 % 3]) })
             // `-v2OpenSealed`: opens the sealed roll, for screenshots.
             if ProcessInfo.processInfo.arguments.contains("-v2OpenSealed"), let first = sealed.first {
+                try? await Task.sleep(for: .seconds(0.8))
+                open(first)
+            }
+            // `-v2OpenScreening`: plays the first opened roll's screening.
+            if ProcessInfo.processInfo.arguments.contains("-v2OpenScreening"), let first = opened.first {
                 try? await Task.sleep(for: .seconds(0.8))
                 open(first)
             }
@@ -788,6 +799,23 @@ struct V2NewRollView: View {
                 working = false
             }
         }
+    }
+}
+
+/// An opened roll pushed onto the Rolls stack: its screening, with its prints in full (the App
+/// Store roll screen) as the way on at the end.
+struct V2RollScreening: View {
+    let roll: Roll
+    var pendingPhotoIntent: Binding<RollPhotoIntent?>
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var showAll = false
+
+    var body: some View {
+        V2ScreeningView(source: .roll(roll), close: { dismiss() }, seeAll: { showAll = true })
+            .navigationDestination(isPresented: $showAll) {
+                RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+            }
     }
 }
 
