@@ -96,6 +96,17 @@ enum V2Server {
         } catch { return false }
     }
 
+    /// Each boxed month's chosen cover the caller may see, by month (`public.month_box_covers`).
+    static func monthBoxCovers(user: UUID) async -> [String: String]? {
+        struct Row: Decodable { let month_start: String; let cover_path: String? }
+        guard let rows: [Row] = try? await supabase.rpc("month_box_covers", params: ["p_user": user]).execute().value else {
+            return nil
+        }
+        return Dictionary(rows.compactMap { row in row.cover_path.map { (row.month_start, $0) } }, uniquingKeysWith: { a, _ in a })
+    }
+
+    static func monthKey(_ date: Date) -> String { dayString(date) }
+
     // MARK: Who is in
 
     /// Invites friends into a roll the caller is in; returns how many invitations went out.

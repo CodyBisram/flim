@@ -188,6 +188,7 @@
 		6A97E2EC893F397E17CACACB /* ChapterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D753E9424F92B5D4815D51 /* ChapterService.swift */; };
 		6B257D4605E1FA791E7A4846 /* SquareCropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059C902C744871D28E4F21AF /* SquareCropSheet.swift */; };
 		6B5DD943677EA9D86E9EFA51 /* V2Page.swift in Sources */ = {isa = PBXBuildFile; fileRef = D028B0B44A491F8A3620A197 /* V2Page.swift */; };
+		6C4E5E59763D1217CEB41857 /* V2Month.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FFB41A3A23B7A00F0719EB3 /* V2Month.swift */; };
 		6C50D39EB462572B6B30D84E /* DiscoverRankingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFA17FAFB068881D6A5AF5E /* DiscoverRankingTests.swift */; };
 		6E4F8F019D7C5799B1A69B24 /* ActivationEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */; };
 		6E78458BFD1351B8EC1E1117 /* RestorableOverrideTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B6A3822D00FEFEAFA5350A4 /* RestorableOverrideTests.swift */; };
@@ -703,6 +704,7 @@
 		8EDAF1C30F86C4126A7783EC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8F63FE0C12738AE1D18422EB /* DiscoverRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverRanking.swift; sourceTree = "<group>"; };
 		8F9C44C207C08D9E8F263DDF /* FlashFalloffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashFalloffTests.swift; sourceTree = "<group>"; };
+		8FFB41A3A23B7A00F0719EB3 /* V2Month.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Month.swift; sourceTree = "<group>"; };
 		91F74C74BB63D759AD36FD8F /* LookRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookRegressionTests.swift; sourceTree = "<group>"; };
 		9249229E385AAD5E2A06EBB0 /* FeedUnitCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedUnitCard.swift; sourceTree = "<group>"; };
 		926C9898A856538F285EE968 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -1106,6 +1108,7 @@
 				167507591B71F3BF9B6DD8C5 /* V2Invite.swift */,
 				4E8C1E52CFE3BE8098B0FA1E /* V2Kept.swift */,
 				72386D84C6F4111AF41C9B29 /* V2Layout.swift */,
+				8FFB41A3A23B7A00F0719EB3 /* V2Month.swift */,
 				D028B0B44A491F8A3620A197 /* V2Page.swift */,
 				CD816BEDD3994255482DE645 /* V2Print.swift */,
 				D673C1DC2CBC5574E659BC42 /* V2RollPrints.swift */,
@@ -2015,6 +2018,7 @@
 				EDFAF78CE4DF0C690F70ECDE /* V2Invite.swift in Sources */,
 				68346D96BB33A843D38C1724 /* V2Kept.swift in Sources */,
 				35261E7F6A84FE744D6C09E5 /* V2Layout.swift in Sources */,
+				6C4E5E59763D1217CEB41857 /* V2Month.swift in Sources */,
 				6B5DD943677EA9D86E9EFA51 /* V2Page.swift in Sources */,
 				6268B0F95CE70FA2D1758B8F /* V2Print.swift in Sources */,
 				5598E7A344FEE8CBEF2985AA /* V2RollPrints.swift in Sources */,

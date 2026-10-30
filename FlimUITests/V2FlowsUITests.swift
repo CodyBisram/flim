@@ -220,4 +220,24 @@ final class V2FlowsUITests: XCTestCase {
         XCTAssertTrue(text(app, "Couldn't save that. Your seal is unchanged.").waitForExistence(timeout: 10),
                       "a failed save should say so and put the seal back")
     }
+
+    func testAMonthBoxEditsAndShowsWhatFriendsSee() {
+        let app = launch(["-v2DemoPage", "-v2OpenPage", "-v2OpenMonth"])
+        let edit = app.buttons["Edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 20), "the month never opened:\n\(app.debugDescription)")
+        edit.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Tap a print to make it the cover.'")).firstMatch.exists)
+        // Without an account the write is refused: the print must come back out and say so.
+        // The month's own prints, not the page's under the cover: the first one on screen.
+        let candidates = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'Print from' AND NOT (label CONTAINS 'cover')")).allElementsBoundByIndex
+        guard let print = candidates.first(where: { $0.isHittable }) else {
+            return XCTFail("no print of the month on screen:\n\(app.debugDescription)")
+        }
+        print.press(forDuration: 0.8)
+        XCTAssertTrue(app.staticTexts["Couldn't save that. The print is as it was."].waitForExistence(timeout: 10))
+        app.buttons["Done"].tap()
+        app.buttons["See it as friends do"].tap()
+        XCTAssertTrue(app.buttons["See it as you do"].waitForExistence(timeout: 3))
+    }
 }

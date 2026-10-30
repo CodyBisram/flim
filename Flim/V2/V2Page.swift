@@ -4,8 +4,8 @@ import SwiftUI
 /// top, the shelf of months in their boxes under it, then this month by day. Product rule 3: a
 /// page is one month deep; earlier months are on the shelf.
 ///
-/// A print opens to its back, like any print, and a month plays its screening. Boxing a month by hand and putting prints away need the server's
-/// half of product rule 4 first.
+/// A print opens to its back, like any print. A month opens as its box: played, and on your own,
+/// its cover chosen and prints put away (product rule 4).
 struct V2PageView: View {
     let userId: UUID
     var openInvite: Bool = false
@@ -27,6 +27,8 @@ struct V2PageView: View {
     @State private var loaded = false
     @State private var opened: FeedItem?
     @State private var openChapter: ChapterSummary?
+    /// Covers chosen by hand, by month ("yyyy-MM-01"), where the caller may see them.
+    @State private var chosenCovers: [String: String] = [:]
     @State private var showAppearance = false
     @State private var showBadgePicker = false
     @State private var showInvite = false
@@ -92,7 +94,11 @@ struct V2PageView: View {
                 .undoCapsuleHost()
         }
         .fullScreenCover(item: $openChapter) { chapter in
-            V2ScreeningView(source: .month(profileId: userId, chapter: chapter), close: { openChapter = nil })
+            NavigationStack {
+                V2MonthView(profileId: userId, chapter: chapter, isSelf: isSelf) { openChapter = nil }
+            }
+            .modifier(V2DeskEnvironment())
+            .undoCapsuleHost()
         }
         .navigationDestination(isPresented: $showAppearance) { V2AppearanceView() }
         .fullScreenCover(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
@@ -132,7 +138,20 @@ struct V2PageView: View {
             await load()
         }
         .task {
+            #if DEBUG
+            // `-v2DemoPage`: the chapters fixture, made of the demo prints, for the shelf and boxes.
+            if ProcessInfo.processInfo.arguments.contains("-v2DemoPage") {
+                let seed = V2DarkroomFixture.make().kept
+                chapterService.installDemoFixture(profileId: userId, from: seed)
+                if ProcessInfo.processInfo.arguments.contains("-v2OpenMonth") {
+                    try? await Task.sleep(for: .seconds(0.8))
+                    openChapter = chapters.first
+                }
+                return
+            }
+            #endif
             await chapterService.fetchChapters(for: userId)
+            if let covers = await V2Server.monthBoxCovers(user: userId) { chosenCovers = covers }
         }
     }
 
@@ -375,7 +394,7 @@ struct V2PageView: View {
 
     private func monthPrint(_ chapter: ChapterSummary, width: CGFloat) -> some View {
         V2PrintCard(width: width, borderFraction: 5.0 / 72, footFraction: 21.0 / 72) {
-            V2Image(path: chapter.coverPaths.first, maxPixel: width * 2)
+            V2Image(path: chosenCovers[V2Server.monthKey(chapter.monthStart)] ?? chapter.coverPaths.first, maxPixel: width * 2)
         } foot: {
             Text(chapter.monthStart.formatted(.dateTime.month(.abbreviated)))
                 .font(V2Type.serif(11, relativeTo: .caption2))

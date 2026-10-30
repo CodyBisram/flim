@@ -192,7 +192,15 @@ struct V2RollsView: View {
     private var shelf: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if rolls.rolls.isEmpty {
+                if !rolls.followUpInvites.isEmpty {
+                    sectionTitle("Invited")
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(rolls.followUpInvites) { roll in invitation(roll) }
+                    }
+                    .padding(.top, 14)
+                    .padding(.bottom, 30)
+                }
+                if rolls.rolls.isEmpty, rolls.followUpInvites.isEmpty {
                     empty
                         .padding(.top, 12)
                 }
@@ -223,6 +231,48 @@ struct V2RollsView: View {
         }
         .scrollIndicators(.hidden)
         .refreshable { await load() }
+    }
+
+    /// A roll someone put you in: Join takes the code, Not now drops the invitation.
+    private func invitation(_ roll: Roll) -> some View {
+        HStack(spacing: 18) {
+            V2RollBox(roll: roll, width: 72)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(roll.name).font(V2Type.serif(17, relativeTo: .headline)).lineLimit(2)
+                Text("opens \(V2RollTime.label(roll.revealAt))")
+                    .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
+                    .foregroundStyle(palette.ink3)
+                HStack(spacing: 16) {
+                    Button { join(roll) } label: {
+                        Text("Join").font(V2Type.control()).underline().frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        guard let me = auth.currentUser?.id else { return }
+                        Task { await rolls.dismissFollowUpInvite(roll, userId: me) }
+                    } label: {
+                        Text("Not now").font(V2Type.control()).foregroundStyle(palette.ink3).frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func join(_ roll: Roll) {
+        guard let me = auth.currentUser?.id else { return }
+        Haptics.tap()
+        Task {
+            if let joined = try? await rolls.joinRoll(inviteCode: roll.inviteCode, userId: me) {
+                CameraRollSelection.select(joined, for: me)
+                Haptics.success()
+                await rolls.fetchFollowUpInvites()
+                open(joined)
+            } else {
+                Haptics.error()
+            }
+        }
     }
 
     private func sectionTitle(_ text: String) -> some View {
@@ -335,6 +385,7 @@ struct V2RollsView: View {
         #endif
         guard let uid = auth.currentUser?.id else { return }
         try? await rolls.fetchRolls(for: uid)
+        await rolls.fetchFollowUpInvites()
         await withTaskGroup(of: (UUID, Int).self) { group in
             for roll in rolls.rolls {
                 group.addTask { (roll.id, await photos.rollTotalShotCount(rollId: roll.id)) }
@@ -558,8 +609,12 @@ struct V2NewRollView: View {
     @Environment(\.v2Palette) private var palette
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
+    @Environment(FeedService.self) private var feed
 
     @State private var name = ""
+    /// Who's in: friends to invite once the roll exists (board 12a).
+    @State private var friends: [UserProfile] = []
+    @State private var invited: Set<UUID> = []
     /// One request per screen, so a retried Start never makes a second roll.
     @State private var followUpRequest = UUID()
     @State private var opens = V2RollTime.Choice.tomorrow
@@ -606,6 +661,17 @@ struct V2NewRollView: View {
         }
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
+        .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-v2DemoRolls") {
+                var seen = Set<UUID>()
+                friends = feed.feed.map(\.author).filter { seen.insert($0.id).inserted }
+                return
+            }
+            #endif
+            guard followUpOf == nil, let me = auth.currentUser?.id else { return }
+            if let mutual = await V2Server.friends(of: me) { friends = mutual }
+        }
         .onAppear {
             if name.isEmpty, let followUpOf { name = Roll.followUpName(after: followUpOf.name) }
             if code.isEmpty, !joinCode.isEmpty {
@@ -652,6 +718,34 @@ struct V2NewRollView: View {
                 .submitLabel(.done)
                 .frame(minHeight: 46)
                 .overlay(alignment: .bottom) { Rectangle().fill(palette.ink).frame(height: 1.5) }
+            if followUpOf == nil, !friends.isEmpty {
+                label("Who's in").padding(.top, 26)
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(friends) { friend in
+                            let chosen = invited.contains(friend.id)
+                            Button {
+                                Haptics.tap()
+                                if chosen { invited.remove(friend.id) } else { invited.insert(friend.id) }
+                            } label: {
+                                VStack(spacing: 5) {
+                                    AvatarView(path: friend.avatarPath, name: friend.username, size: 44)
+                                        .overlay { if chosen { Circle().stroke(palette.ink, lineWidth: 1.5).padding(-3) } }
+                                        .opacity(chosen ? 1 : 0.55)
+                                    Text(friend.username ?? friend.name)
+                                        .font(.system(.caption2))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: 56)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(chosen ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .scrollIndicators(.hidden)
+            }
             label("Opens").padding(.top, 26)
             HStack(spacing: 22) {
                 ForEach(V2RollTime.Choice.available(), id: \.self) { choice in
@@ -705,14 +799,21 @@ struct V2NewRollView: View {
             .tracking(1.3)
             .foregroundStyle(V2Color.rgb(0x8F5F22))
             .padding(12)
-            Text(trimmedName.isEmpty ? "Untitled" : trimmedName)
-                .font(V2Type.serif(20, relativeTo: .title3))
-                .foregroundStyle(V2Color.printInk)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, 10)
-                .padding(.top, 96)
+            VStack(spacing: 8) {
+                Text(trimmedName.isEmpty ? "Untitled" : trimmedName)
+                    .font(V2Type.serif(20, relativeTo: .title3))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                if !invited.isEmpty {
+                    Text("\(V2ScreeningView.number(invited.count + 1)) of you")
+                        .font(V2Type.serif(12, italic: true, relativeTo: .caption))
+                        .foregroundStyle(V2Color.printInk2)
+                }
+            }
+            .foregroundStyle(V2Color.printInk)
+            .padding(.horizontal, 10)
+            .padding(.top, 96)
         }
         .frame(width: 180, height: 220)
         .accessibilityHidden(true)
@@ -794,6 +895,8 @@ struct V2NewRollView: View {
                                 createdAt: roll.createdAt, coverPath: roll.coverPath, revealAt: moved,
                                 parentRollId: roll.parentRollId)
                 }
+                // Who's in: they are invited, and join it themselves.
+                if !invited.isEmpty { _ = await V2Server.invite(Array(invited), to: roll.id) }
                 CameraRollSelection.select(roll, for: uid)
                 Haptics.success()
                 done(roll)
