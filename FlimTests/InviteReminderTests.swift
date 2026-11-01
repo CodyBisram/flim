@@ -19,6 +19,8 @@ struct InviteReminderTests {
 
     @Test("shows once per account, waits behind another top line, and stays up for the launch once shown")
     func showsOnce() {
+        newAccountIntroStoreLock.lock()
+        defer { newAccountIntroStoreLock.unlock() }
         let suite = "InviteReminderTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

@@ -2,6 +2,11 @@ import Testing
 import Foundation
 @testable import Flim
 
+/// Guards every test in this file and in InviteReminderTests.swift that swaps the process-global
+/// `NewAccountIntro.store`: Swift Testing runs suites concurrently by default, so without this
+/// one suite's restore-via-defer can run while another suite is still mid-swap.
+let newAccountIntroStoreLock = NSLock()
+
 struct NewAccountIntroTests {
     private let cutoff = ISO8601DateFormatter().date(from: "2026-09-08T00:00:00Z")!
 
@@ -22,6 +27,8 @@ struct NewAccountIntroTests {
 
     @Test("a line shows once per account per surface, then never")
     func lineShowsOnce() {
+        newAccountIntroStoreLock.lock()
+        defer { newAccountIntroStoreLock.unlock() }
         let suite = "NewAccountIntroTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -89,6 +96,8 @@ struct NewAccountIntroTests {
 
     @Test("the inviter and the one-shot states are kept per account")
     func inviterAndOneShots() {
+        newAccountIntroStoreLock.lock()
+        defer { newAccountIntroStoreLock.unlock() }
         let defaults = UserDefaults(suiteName: "NewAccountIntroTests2.\(UUID().uuidString)")!
         let previous = NewAccountIntro.store
         NewAccountIntro.store = defaults
@@ -109,6 +118,8 @@ struct NewAccountIntroTests {
 
     @Test("a new account's first sort ends with no Spotlight sheet; every later sort may offer it")
     func firstSortSkipsTheSessionSheet() {
+        newAccountIntroStoreLock.lock()
+        defer { newAccountIntroStoreLock.unlock() }
         let defaults = UserDefaults(suiteName: "NewAccountIntroTests4.\(UUID().uuidString)")!
         let previous = NewAccountIntro.store
         NewAccountIntro.store = defaults
@@ -130,6 +141,8 @@ struct NewAccountIntroTests {
 
     @Test("a cohort-code arrival is offered Find friends once; a personal invite never is")
     func campaignArrivalIsOfferedDiscoverOnce() {
+        newAccountIntroStoreLock.lock()
+        defer { newAccountIntroStoreLock.unlock() }
         let defaults = UserDefaults(suiteName: "NewAccountIntroTests3.\(UUID().uuidString)")!
         let previous = NewAccountIntro.store
         NewAccountIntro.store = defaults
@@ -196,6 +209,8 @@ struct NewAccountIntroTests {
 
     @Test("the Spotlight announcement shows once per account, to old accounts too, and waits for the first-visit line")
     func announcementShowsOnce() {
+        newAccountIntroStoreLock.lock()
+        defer { newAccountIntroStoreLock.unlock() }
         let suite = "NewAccountIntroTests.announce.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
