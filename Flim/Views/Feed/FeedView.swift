@@ -137,9 +137,12 @@ struct FeedView: View {
         SpotlightWeek.visible(feed.spotlightStripWeeks, blocked: feed.blockedIds)
     }
 
-    /// A week nobody here has opened yet is pinned at the top of the feed.
+    /// A pinned week's own strip keeps rendering at the top until the next full snapshot settles
+    /// it elsewhere, even once opened (see `SpotlightSlot.slot`'s `pinned` doc). This has to agree
+    /// with that, not with `seenSpotlight`, or opening the strip reveals the closing row directly
+    /// above a strip still sitting at the top.
     private var spotlightStripHoldsTop: Bool {
-        visibleSpotlightWeeks.contains { spotlightSlots[$0.weekKey] == .top && !seenSpotlight.contains($0.weekKey) }
+        visibleSpotlightWeeks.contains { spotlightSlots[$0.weekKey] == .top }
     }
 
     // RETENTION CLEARING WAS REMOVED HERE (2026-08-28). The feed no longer takes anything away.
