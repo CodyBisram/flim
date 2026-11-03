@@ -435,6 +435,11 @@ struct SpotlightWeeksSheet: View {
     @State private var toast: String?
     @State private var toastDismiss: Task<Void, Never>?
     @State private var sharing: SpotlightShareRoute?
+    /// The callout at the top, decided when the opening load lands (again once a pushed week has
+    /// been paged to, just before the sheet scrolls there), then held. Read live from the
+    /// ever-growing archive, a chosen frame surfacing on a later page inserted it above wherever
+    /// the reader had scrolled.
+    @State private var callout: SpotlightShareRoute?
     @Environment(AuthService.self) private var auth
 
     private var weeks: [SpotlightWeek] {
@@ -464,9 +469,9 @@ struct SpotlightWeeksSheet: View {
                             .padding(.top, 8)
                             .padding(.bottom, 18)
 
-                        if let ownChosen {
-                            SpotlightChosenCallout(frame: ownChosen.frame, weekKey: ownChosen.weekKey) {
-                                sharing = ownChosen
+                        if let callout {
+                            SpotlightChosenCallout(frame: callout.frame, weekKey: callout.weekKey) {
+                                sharing = callout
                             }
                             .padding(.bottom, 22)
                         }
@@ -523,6 +528,7 @@ struct SpotlightWeeksSheet: View {
                 .task {
                     failed = !(await feed.loadSpotlightPastWeeks(reset: true))
                     loaded = true
+                    callout = ownChosen
                     guard let focusWeek else { return }
                     // The week a push names can sit past the first page; page forward, bounded.
                     // A call made while the sentinel's page is loading waits for that page, so
@@ -534,6 +540,7 @@ struct SpotlightWeeksSheet: View {
                         pages += 1
                     }
                     guard weeks.contains(where: { $0.weekKey == focusWeek }) else { return }
+                    callout = ownChosen
                     try? await Task.sleep(for: .milliseconds(150))
                     // Reduce Motion lands on the week without the scroll animating there.
                     withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(focusWeek, anchor: .top) }
