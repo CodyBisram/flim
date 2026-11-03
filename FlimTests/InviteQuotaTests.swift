@@ -29,4 +29,15 @@ struct InviteQuotaTests {
         #expect(AuthService.InviteQuota.remaining(3) == .remaining(3))
         #expect(AuthService.InviteQuota.remaining(3) != .remaining(2))
     }
+
+    @Test("a failed refresh never replaces a known answer; a real one always does")
+    func failedReadKeepsWhatIsKnown() {
+        // The feed's reload refreshes the quota fail-soft. Writing `.unknown` over a known
+        // `.remaining(0)` brought the dead "Invite someone" button back after one failed read.
+        #expect(AuthService.InviteQuota.remaining(0).updated(with: .unknown) == .remaining(0))
+        #expect(AuthService.InviteQuota.unlimited.updated(with: .unknown) == .unlimited)
+        #expect(AuthService.InviteQuota.unknown.updated(with: .unknown) == .unknown)
+        #expect(AuthService.InviteQuota.remaining(0).updated(with: .remaining(2)) == .remaining(2))
+        #expect(AuthService.InviteQuota.remaining(2).updated(with: .remaining(0)) == .remaining(0))
+    }
 }

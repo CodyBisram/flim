@@ -346,6 +346,11 @@ final class AuthService {
         /// Never render a number for this. Not zero: showing "0 invites left" to someone whose
         /// request merely failed would tell them they are out when they are not.
         case unknown
+
+        /// What a fresh read for the SAME account leaves standing: a failed read (`.unknown`)
+        /// never replaces an answer already known, or one failed refresh turns a known
+        /// `.remaining(0)` back into a "maybe" and brings back an invite button whose code is dead.
+        func updated(with fresh: InviteQuota) -> InviteQuota { fresh == .unknown ? self : fresh }
     }
 
     /// One invite the caller has already spent, and who it went to.

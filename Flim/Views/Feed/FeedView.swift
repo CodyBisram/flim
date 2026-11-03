@@ -659,7 +659,13 @@ struct FeedView: View {
         let owner = auth.currentUser?.id
         let quota = await auth.ownInviteQuota()
         guard let owner, auth.currentUser?.id == owner else { return }
-        inviteQuota = quota
+        storeInviteQuota(quota, for: owner)
+    }
+
+    /// Keeps a fresh read, unless it failed (`.unknown`) and this account's answer is already
+    /// known: a failed refresh must not bring back a dead "Invite someone" button.
+    private func storeInviteQuota(_ quota: AuthService.InviteQuota, for owner: UUID) {
+        inviteQuota = inviteQuotaOwner == owner ? inviteQuota.updated(with: quota) : quota
         inviteQuotaOwner = owner
     }
 
@@ -671,7 +677,8 @@ struct FeedView: View {
             .spotlight, userId: uid, usageKnown: feed.ownSpotlightEntryIsCurrent,
             firstVisitLineShowing: otherTopLineShowing, alreadyUsed: spotlightAlreadyUsed) != nil
         guard NewAccountIntro.InviteReminder.shouldShow(userId: uid, quota: inviteQuota,
-                                                        otherTopLineShowing: otherTopLineShowing || spotlightUp),
+                                                        otherTopLineShowing: otherTopLineShowing || spotlightUp,
+                                                        otherTopLinesKnown: feed.ownSpotlightEntryIsCurrent),
               let line = NewAccountIntro.InviteReminder.line(for: inviteQuota)
         else { return nil }
         return (uid, line.headline, line.detail)
@@ -1012,8 +1019,7 @@ struct FeedView: View {
             Task {
                 let quota = await auth.ownInviteQuota()
                 guard AccountEpoch.isCurrent(epoch) else { return }
-                inviteQuota = quota
-                inviteQuotaOwner = uid
+                storeInviteQuota(quota, for: uid)
             }
         }
         // The account's copy of the seen-marks goes up first, so the tab dot's server check
