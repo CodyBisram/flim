@@ -105,16 +105,24 @@ struct SpotlightTests {
 
     // MARK: - Slot (the caught-up block)
 
-    @Test("caught up at the top, unseen strip at the first unit: above the block")
+    @Test("caught up at the top, the pinned strip at the first unit: above the block")
     func slotUnseenAboveTopBlock() {
         let ids = ["a", "b", "c"]
-        #expect(SpotlightSlot.slot(placement: .beforeUnit("a"), seam: .top, unitIds: ids, unseen: true) == .top)
+        #expect(SpotlightSlot.slot(placement: .beforeUnit("a"), seam: .top, unitIds: ids, unseen: true, pinned: true) == .top)
     }
 
-    @Test("caught up at the top, unseen strip deeper in the seen days: still lifted above the block")
+    @Test("caught up at the top, the pinned strip deeper in the seen days: still lifted above the block")
     func slotUnseenDeepLiftedToTop() {
         let ids = ["a", "b", "c"]
-        #expect(SpotlightSlot.slot(placement: .beforeUnit("c"), seam: .top, unitIds: ids, unseen: true) == .top)
+        #expect(SpotlightSlot.slot(placement: .beforeUnit("c"), seam: .top, unitIds: ids, unseen: true, pinned: true) == .top)
+    }
+
+    @Test("caught up at the top, an older unopened strip that is not pinned stays at its own place")
+    func slotUnseenUnpinnedOverTopStays() {
+        let ids = ["a", "b", "c"]
+        #expect(SpotlightSlot.slot(placement: .beforeUnit("a"), seam: .top, unitIds: ids, unseen: true) == .beforeUnit("a"))
+        #expect(SpotlightSlot.slot(placement: .beforeUnit("c"), seam: .top, unitIds: ids, unseen: true) == .beforeUnit("c"))
+        #expect(SpotlightSlot.slot(placement: .notYet, seam: .top, unitIds: ids, unseen: true) == .hidden)
     }
 
     @Test("caught up at the top, seen strip: stays at its own place, below the block")
@@ -148,7 +156,7 @@ struct SpotlightTests {
         #expect(SpotlightSlot.slot(placement: .afterLast, seam: .after("b"), unitIds: ids, unseen: false) == .afterLast)
     }
 
-    @Test("a strip waiting on an unloaded page is hidden, unless it is unseen over a caught-up top")
+    @Test("a strip waiting on an unloaded page is hidden, unless it is the pinned week")
     func slotNotYetHidden() {
         #expect(SpotlightSlot.slot(placement: .notYet, seam: .none, unitIds: ["a"], unseen: false) == .hidden)
         #expect(SpotlightSlot.slot(placement: .notYet, seam: .none, unitIds: ["a"], unseen: true) == .hidden)
@@ -156,10 +164,10 @@ struct SpotlightTests {
         #expect(SpotlightSlot.slot(placement: .notYet, seam: .after("a"), unitIds: ["a"], unseen: true) == .hidden)
     }
 
-    @Test("unseen on a caught-up feed shows at the reload, never drops in above the reader later")
+    @Test("the pinned week on a caught-up feed shows at the reload, never drops in above the reader later")
     func slotUnseenCaughtUpNeverWaits() {
-        #expect(SpotlightSlot.slot(placement: .notYet, seam: .top, unitIds: ["a", "b"], unseen: true) == .top)
-        #expect(SpotlightSlot.slot(placement: .beforeUnit("gone"), seam: .top, unitIds: ["a"], unseen: true) == .top)
+        #expect(SpotlightSlot.slot(placement: .notYet, seam: .top, unitIds: ["a", "b"], unseen: true, pinned: true) == .top)
+        #expect(SpotlightSlot.slot(placement: .beforeUnit("gone"), seam: .top, unitIds: ["a"], unseen: true, pinned: true) == .top)
     }
 
     @Test("an anchor that no longer exists is hidden, never pointed at nothing")
@@ -230,6 +238,18 @@ struct SpotlightTests {
         #expect(slots[older.weekKey] == .aboveCaughtUpBlock(afterUnit: seamUnit))
         #expect(SpotlightSlot.pinnedWeekKey(weeks: [newer, older], seen: [newer.weekKey]) == older.weekKey)
         #expect(SpotlightSlot.pinnedWeekKey(weeks: [newer, older], seen: [newer.weekKey, older.weekKey]) == nil)
+    }
+
+    @Test("two unopened weeks over a caught-up top: only the newer holds the top, the older stays at its own place")
+    func snapshotCaughtUpTopPinsOnlyTheNewest() {
+        let pageOne = FeedUnit.units(from: items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)]), calendar: newYork)
+        let older = week("2026-09-07", publishedAt: date(9, 22, 11), frames: [frame()])
+        let newer = week("2026-09-14", publishedAt: date(9, 22, 13), frames: [frame()])
+        let slots = SpotlightSlot.snapshot(previous: [:], weeks: [newer, older], units: pageOne, seam: .top,
+                                           hasMoreFeed: true, seen: [], growOnly: false)
+        #expect(slots[newer.weekKey] == .top)
+        #expect(slots[older.weekKey] == .beforeUnit(pageOne[1].id))
+        #expect(slots.values.filter { $0 == .top }.count == 1)
     }
 
     @Test("a pinned week sits at the top even when its own place is on a page not loaded yet")

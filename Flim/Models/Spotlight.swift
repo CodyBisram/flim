@@ -974,11 +974,12 @@ enum SpotlightSlot: Equatable {
     ///   days, see `SpotlightSeenMark.shownDaysLimit`); then the next reload settles it.
     static func slot(placement: SpotlightPlacement, seam: SpotlightSeam,
                      unitIds: [String], unseen: Bool, pinned: Bool = false) -> SpotlightSlot {
+        // Before anything that could hide it: the pinned week is new wherever its own place
+        // falls, so it shows at this reload instead of waiting on a page and later dropping in
+        // above someone who is already reading. Over a caught-up top, being unseen is NOT enough
+        // on its own: only the pinned week holds the top, so an older unopened week waits at its
+        // own place below the block instead of stacking a second strip up there.
         if pinned { return .top }
-        // Before anything that could hide it: an unseen strip over a caught-up feed is new
-        // wherever its own place falls, so it shows at this reload instead of waiting on a page
-        // and later dropping in above someone who is already reading.
-        if unseen, seam == .top { return .top }
         let position: Int
         switch placement {
         case .notYet:
@@ -992,7 +993,7 @@ enum SpotlightSlot: Equatable {
         if unseen {
             switch seam {
             case .top:
-                return .top
+                break
             case .after(let seamId):
                 if let seamIndex = unitIds.firstIndex(of: seamId), position > seamIndex {
                     return .aboveCaughtUpBlock(afterUnit: seamId)
