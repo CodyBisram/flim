@@ -35,6 +35,15 @@ struct V2Home<Darkroom: View, Friends: View>: View {
     }
     @State private var deskAskedThisRun = false
 
+    /// The App Store app's notification ask waits for its camera coach's "Got it"
+    /// (`cameraCoachIsSettled`, written to this key), and v2 has no coach to write it: a new
+    /// FLIM Beta account that allowed the camera was never asked about notifications. v2's first
+    /// print is its tutorial ("Take one."), so the ask follows that: once the first shot is taken
+    /// and the person has moved off the camera, never over a burst. A later launch settles it
+    /// too, so someone who never shoots is still asked (`settleCameraIntroAtLaunch`).
+    @AppStorage("hasSeenCameraCoach") private var cameraIntroSettled = false
+    @AppStorage(V2Camera.firstShotKey) private var firstShotTaken = false
+
     var body: some View {
         #if DEBUG
         root.modifier(V2DemoFrame())
@@ -81,7 +90,11 @@ struct V2Home<Darkroom: View, Friends: View>: View {
         .onChange(of: photos.pendingCaptureCount) { old, new in
             if new < old { Task { await refreshUnsorted() } }
         }
-        .onChange(of: selection) { _, _ in Task { await refreshUnsorted() } }
+        .onChange(of: selection) { _, tab in
+            Task { await refreshUnsorted() }
+            if firstShotTaken, V2Place.forTab(tab) != .personal { cameraIntroSettled = true }
+        }
+        .onAppear(perform: settleCameraIntroAtLaunch)
         .fullScreenCover(item: $route) { route in
             NavigationStack {
                 switch route {
@@ -106,6 +119,16 @@ struct V2Home<Darkroom: View, Friends: View>: View {
         }
     }
 
+    /// A launch past the first run settles the camera intro: the desk question is asked here,
+    /// once, right after onboarding, so finding it already answered when this first appears means
+    /// the first run happened on an earlier launch. Read once per process, before this launch's
+    /// own desk answer can change it.
+    private func settleCameraIntroAtLaunch() {
+        guard !cameraIntroSettled, !V2CameraIntroLaunch.checked else { return }
+        V2CameraIntroLaunch.checked = true
+        if hasOnboarded, deskAsked || firstShotTaken { cameraIntroSettled = true }
+    }
+
     private func refreshUnsorted() async {
         guard let uid = auth.currentUser?.id else { return }
         let epoch = AccountEpoch.current
@@ -114,6 +137,9 @@ struct V2Home<Darkroom: View, Friends: View>: View {
         unsortedCount = count
     }
 }
+
+/// Whether this process has already looked at the camera intro at launch (`V2Home`).
+@MainActor enum V2CameraIntroLaunch { static var checked = false }
 
 /// A route that covers v2's frame: a print (on its back when the route was about its thread) or
 /// someone's page.
