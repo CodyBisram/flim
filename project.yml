@@ -112,7 +112,7 @@ targets:
         # 1.0 shipped to the App Store and Apple closes a version's TestFlight train once
         # it's been approved (ASC rejected further 1.0 uploads with "Invalid Pre-Release
         # Train... previously approved version"). Bump this again for the next release.
-        MARKETING_VERSION: "1.6.3"
+        MARKETING_VERSION: "1.6.4"
         CURRENT_PROJECT_VERSION: "1"
       # v2 (Flim/V2 and its fonts) is compiled into Debug, so its tests and the -v2Demo host run
       # in the Flim scheme, and into both beta configs, where FLIM_V2 swaps the tab bar for v2's
@@ -212,7 +212,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: "1.6.3"
+        MARKETING_VERSION: "1.6.4"
         CURRENT_PROJECT_VERSION: "1"
       configs:
         Debug: &widget_debug
@@ -261,7 +261,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: "1.6.3"
+        MARKETING_VERSION: "1.6.4"
         CURRENT_PROJECT_VERSION: "1"
       configs:
         Debug: &nse_debug
