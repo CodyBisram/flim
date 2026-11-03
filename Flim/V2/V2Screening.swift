@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 /// One print in a screening.
@@ -42,6 +43,7 @@ struct V2ScreeningView: View {
     @Environment(RollService.self) private var rolls
     @Environment(ChapterService.self) private var chapters
     @Environment(TabSignals.self) private var signals
+    @Environment(\.requestReview) private var requestReview
 
     private enum Phase { case loading, lid, deal, close, empty }
 
@@ -100,6 +102,14 @@ struct V2ScreeningView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .task(id: run) { await play() }
+        // The rating prompt's reveal moment, as the App Store reveal has it: a roll watched to
+        // its end (only `finish` sets `.close`), asked over the closing card once it has settled,
+        // never if the screening closed, replayed or had anything presented over it meanwhile.
+        .task(id: phase == .close) {
+            guard phase == .close, case .roll = source else { return }
+            await ReviewPrompt.askWhenSettled(.rollReveal, user: auth.currentUser, requestReview: requestReview,
+                                              extraDelay: .milliseconds(300)) { phase == .close }
+        }
     }
 
     // MARK: Header

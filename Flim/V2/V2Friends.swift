@@ -99,7 +99,8 @@ struct V2FriendsPlace: View {
                     VStack(alignment: .leading, spacing: 0) {
                         header(groups)
                             .id("top")
-                        V2SpotlightStrip(openFrame: openSpotlightFrame, openAll: { showSpotlight = true })
+                        V2SpotlightStrip(openFrame: { Usage.log(.spotlightStripOpen); openSpotlightFrame($0) },
+                                         openAll: { Usage.log(.spotlightWeeksOpen); showSpotlight = true })
                             .padding(.top, 18)
                         if groups.isEmpty, loaded, !feed.isLoadingFeed {
                             empty
@@ -123,6 +124,10 @@ struct V2FriendsPlace: View {
             }
         }
         .task(id: auth.currentUser?.id) { await load() }
+        // `feed_viewed`, as the App Store feed counts it: once each time Friends genuinely comes
+        // on screen. The pager mounts it early as a neighbour, so it is being frontmost that
+        // counts, not appearing.
+        .task(id: isFrontmost) { if isFrontmost { Usage.log(.feedViewed) } }
         #if DEBUG
         // `-v2OpenGroup`: opens the first group at launch, for screenshots.
         .task(id: isFrontmost) {

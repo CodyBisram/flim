@@ -265,6 +265,7 @@ struct V2RollsView: View {
         Haptics.tap()
         Task {
             if let joined = try? await rolls.joinRoll(inviteCode: roll.inviteCode, userId: me) {
+                Activation.log(.rollJoined)
                 CameraRollSelection.select(joined, for: me)
                 Haptics.success()
                 await rolls.fetchFollowUpInvites()
@@ -888,6 +889,7 @@ struct V2NewRollView: View {
                 } else {
                     try await rolls.createRoll(name: trimmedName, createdBy: uid)
                 }
+                Activation.log(.rollCreated)
                 // The server opens a new roll twelve hours after it starts; move it to the choice.
                 if abs(roll.revealAt.timeIntervalSince(when)) > 60,
                    let moved = try? await rolls.setRevealAt(rollId: roll.id, to: when) {
@@ -915,6 +917,7 @@ struct V2NewRollView: View {
         Task {
             do {
                 let roll = try await rolls.joinRoll(inviteCode: code, userId: uid)
+                Activation.log(.rollJoined)
                 CameraRollSelection.select(roll, for: uid)
                 Haptics.success()
                 done(roll)
