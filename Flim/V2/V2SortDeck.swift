@@ -80,6 +80,7 @@ struct V2SortDeck: View {
         // Open, the deck sits in the Darkroom's half and leaves with it when you swipe to
         // Friends: what was held is written then, as Done would.
         .onDisappear {
+            markFirstSortLanded()
             guard !closing, let last = held else { return }
             held = nil
             Task { await commit(last.photo, last.pile, caption: last.caption, tags: last.tags) }
@@ -523,6 +524,17 @@ struct V2SortDeck: View {
 
     // MARK: Spotlight at the end of a sort (as `SortDeckView.finishSession`)
 
+    /// A new account's first sort goes on with no Spotlight sheet, and only the first: the deck
+    /// leaving after anything was sorted lands it, whichever way it left (the App Store deck
+    /// marks it as it closes). Without this every sort skipped the sheet for the account's whole
+    /// new-account window.
+    private func markFirstSortLanded() {
+        guard !history.isEmpty, let uid = auth.currentUser?.id,
+              NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
+              !NewAccountIntro.firstSortLanded(userId: uid) else { return }
+        NewAccountIntro.markFirstSortLanded(userId: uid)
+    }
+
     /// Writes what is held, then offers this week's Spotlight for what the sort posted, once.
     private func offerSpotlight() {
         guard !offeredThisSort, let uid = auth.currentUser?.id else { return }
@@ -533,8 +545,11 @@ struct V2SortDeck: View {
             if let last { await commit(last.photo, last.pile, caption: last.caption, tags: last.tags) }
         }
         // A new account's first sort goes straight on, with no sheet (the App Store deck's rule).
-        guard !NewAccountIntro.skipsSessionSheet(userId: uid, createdAt: auth.currentUser?.createdAt),
-              session.hasCandidate(viewerId: uid) else { return }
+        // Read before this sort is marked landed; marked here too because, open, the deck can
+        // stay on screen in the Darkroom's half for the next sort.
+        let skips = NewAccountIntro.skipsSessionSheet(userId: uid, createdAt: auth.currentUser?.createdAt)
+        markFirstSortLanded()
+        guard !skips, session.hasCandidate(viewerId: uid) else { return }
         Task {
             if feed.currentSpotlightEntry == nil { await feed.refreshOwnSpotlightEntry() }
             _ = await commitHeld.value
