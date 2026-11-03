@@ -156,11 +156,15 @@ enum NewAccountIntro {
         }
 
         /// Whether to show it now. Shown for the rest of a launch once shown, the same as the
-        /// other lines, unless the invites ran out meanwhile.
-        static func shouldShow(userId: UUID?, quota: AuthService.InviteQuota, otherTopLineShowing: Bool) -> Bool {
+        /// other lines, unless the invites ran out meanwhile. Nothing until `otherTopLinesKnown`:
+        /// a line ahead of it that is still waiting on the network (the Spotlight announcement
+        /// waits on the account's Spotlight entry) reads as "not showing", and the reminder took
+        /// the top and held it for the launch, so both stacked once the announcement arrived.
+        static func shouldShow(userId: UUID?, quota: AuthService.InviteQuota, otherTopLineShowing: Bool,
+                               otherTopLinesKnown: Bool = true) -> Bool {
             guard let userId, line(for: quota) != nil else { return false }
             if shownThisLaunch.contains(shownKey(userId: userId)) { return true }
-            return !hasSeen(userId: userId) && !otherTopLineShowing
+            return otherTopLinesKnown && !hasSeen(userId: userId) && !otherTopLineShowing
         }
     }
 

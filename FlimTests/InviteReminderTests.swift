@@ -32,6 +32,10 @@ struct InviteReminderTests {
         #expect(!Reminder.shouldShow(userId: nil, quota: .remaining(3), otherTopLineShowing: false))
         #expect(!Reminder.shouldShow(userId: me, quota: .remaining(3), otherTopLineShowing: true))
         #expect(!Reminder.shouldShow(userId: me, quota: .unknown, otherTopLineShowing: false))
+        // A line ahead of it still waiting on the network (the Spotlight announcement before the
+        // account's entry lands) must not be read as "not showing": it waits.
+        #expect(!Reminder.shouldShow(userId: me, quota: .remaining(3), otherTopLineShowing: false,
+                                     otherTopLinesKnown: false))
         #expect(Reminder.shouldShow(userId: me, quota: .remaining(3), otherTopLineShowing: false))
 
         // On screen this launch: it keeps its place even if another line comes up later.
