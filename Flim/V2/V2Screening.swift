@@ -60,6 +60,12 @@ struct V2ScreeningView: View {
     @State private var run = 0
     @State private var reveal: RollRevealViewModel?
     @State private var people = 1
+    /// The public link (product rule 9), read when Share is tapped.
+    @State private var linkRead: V2ScreeningLinkRead?
+    @State private var askingShare = false
+    @State private var sendingLink: V2ScreeningLink?
+    @State private var linkNote: String?
+    @State private var linkWorking = false
 
     private let palette = V2Palette.slate
 
@@ -101,6 +107,20 @@ struct V2ScreeningView: View {
             .onLongPressGesture(minimumDuration: 0.25, perform: {}, onPressingChanged: { lingering = $0 })
         }
         .toolbar(.hidden, for: .navigationBar)
+        .confirmationDialog(shareTitle, isPresented: $askingShare, titleVisibility: .visible) {
+            if case .live(let link) = linkRead {
+                Button("Send the link") { sendingLink = link }
+                Button("Stop sharing", role: .destructive) { stopLink() }
+            } else {
+                Button("Make a link") { makeLink() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(shareMessage)
+        }
+        .sheet(item: $sendingLink) { link in
+            ActivityView(items: [sendText(link)])
+        }
         .task(id: run) { await play() }
         // The rating prompt's reveal moment, as the App Store reveal has it: a roll watched to
         // its end (only `finish` sets `.close`), asked over the closing card once it has settled,
@@ -393,12 +413,28 @@ struct V2ScreeningView: View {
                 .padding(.top, 14)
             }
             Spacer(minLength: 12)
+            if let linkNote {
+                Text(linkNote)
+                    .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
+                    .foregroundStyle(palette.ink2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, V2Metrics.margin)
+                    .transition(.opacity)
+            }
             HStack {
                 Button { replay() } label: {
                     Text("Play again").font(V2Type.control()).foregroundStyle(palette.ink2).frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 Spacer()
+                if shareTarget != nil {
+                    Button { prepareShare() } label: {
+                        Text("Share").font(V2Type.control()).foregroundStyle(palette.ink2).frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(linkWorking)
+                    Spacer()
+                }
                 Button {
                     if let seeAll { seeAll() } else { close() }
                 } label: {
@@ -408,6 +444,98 @@ struct V2ScreeningView: View {
             }
             .padding(.horizontal, V2Metrics.margin)
             .padding(.bottom, 16)
+        }
+    }
+
+    // MARK: Share (product rule 9)
+
+    /// What a public link would play: any roll the viewer is watching (they are in it), or the
+    /// viewer's OWN month. Someone else's month has no Share.
+    private var shareTarget: V2ScreeningTarget? {
+        switch source {
+        case .roll(let roll): .roll(roll.id)
+        case .month(let profileId, let chapter):
+            profileId == auth.currentUser?.id ? .month(chapter.monthStart) : nil
+        }
+    }
+
+    private func prepareShare() {
+        guard let shareTarget, !linkWorking else { return }
+        Haptics.tap()
+        linkWorking = true
+        Task {
+            linkRead = await V2Server.screeningLink(for: shareTarget)
+            linkWorking = false
+            askingShare = true
+        }
+    }
+
+    private func makeLink() {
+        guard let shareTarget else { return }
+        linkWorking = true
+        Task {
+            let link = await V2Server.openScreeningLink(for: shareTarget)
+            linkWorking = false
+            if let link {
+                Haptics.success()
+                sendingLink = link
+            } else {
+                Haptics.error()
+                showLinkNote("Couldn't make a link. Try again.")
+            }
+        }
+    }
+
+    private func stopLink() {
+        guard let shareTarget else { return }
+        linkWorking = true
+        Task {
+            let stopped = await V2Server.stopScreeningLink(for: shareTarget)
+            linkWorking = false
+            if stopped {
+                Haptics.success()
+                linkRead = V2ScreeningLinkRead.none
+                showLinkNote("Stopped. The link no longer plays.")
+            } else {
+                Haptics.error()
+                showLinkNote("Couldn't stop it. Try again.")
+            }
+        }
+    }
+
+    private func showLinkNote(_ text: String) {
+        withAnimation(.easeOut(duration: 0.2)) { linkNote = text }
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if linkNote == text { withAnimation(.easeOut(duration: 0.2)) { linkNote = nil } }
+        }
+    }
+
+    private var shareTitle: String {
+        if case .live(let link) = linkRead {
+            return "Shared until \(link.expiresAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))"
+        }
+        return "Share this screening"
+    }
+
+    private var shareMessage: String {
+        let live: Bool = if case .live = linkRead { true } else { false }
+        switch (source, live) {
+        case (.roll, true): return "Anyone with the link can watch it. Anyone in the roll can stop it."
+        case (.month, true): return "Anyone with the link can watch it."
+        case (.roll, false):
+            return "Anyone with the link can watch the whole roll, everyone's prints, for 7 days. No names are shown. Anyone in the roll can stop it."
+        case (.month, false):
+            return "Anyone with the link can watch this month for 7 days. No names are shown, and put-away prints stay out."
+        }
+    }
+
+    /// What goes out with the link.
+    private func sendText(_ link: V2ScreeningLink) -> String {
+        switch source {
+        case .roll(let roll): "Watch \(roll.name) develop: \(link.url.absoluteString)"
+        case .month(_, let chapter):
+            "Watch my \(chapter.monthStart.formatted(.dateTime.month(.wide))): \(link.url.absoluteString)"
         }
     }
 

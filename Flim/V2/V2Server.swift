@@ -115,6 +115,35 @@ enum V2Server {
         return try? await supabase.rpc("invite_to_roll", params: Params(p_roll: roll, p_users: users)).execute().value
     }
 
+    // MARK: Screening links (product rule 9)
+
+    /// A roll's live link (any member's), or the caller's own month's, if there is one.
+    static func screeningLink(for target: V2ScreeningTarget) async -> V2ScreeningLinkRead {
+        do {
+            let rows: [V2ScreeningLink] = try await supabase.rpc("screening_link_status", params: target.params)
+                .execute().value
+            return rows.first.map(V2ScreeningLinkRead.live) ?? .none
+        } catch { return .failed }
+    }
+
+    /// Shares: the live link, made (for seven days) when there is none. Nil when it did not land.
+    static func openScreeningLink(for target: V2ScreeningTarget) async -> V2ScreeningLink? {
+        struct Params: Encodable { let p_roll_id: UUID?; let p_month_start: String?; let p_timezone: String }
+        let base = target.params
+        let params = Params(p_roll_id: base.p_roll_id, p_month_start: base.p_month_start,
+                            p_timezone: TimeZone.current.identifier)
+        let rows: [V2ScreeningLink]? = try? await supabase.rpc("screening_link_open", params: params).execute().value
+        return rows?.first
+    }
+
+    /// Stops the link for everyone (any member, for a roll). False when it did not land.
+    static func stopScreeningLink(for target: V2ScreeningTarget) async -> Bool {
+        do {
+            try await supabase.rpc("screening_link_stop", params: target.params).execute()
+            return true
+        } catch { return false }
+    }
+
     private static func dayString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -150,4 +179,40 @@ enum V2Friendship: Equatable {
 
     /// Whether tapping does something: asking again does not.
     var canAct: Bool { self == .none || self == .theyAsked }
+}
+
+/// What a screening link plays: a roll (any member may share or stop it) or the caller's own month.
+enum V2ScreeningTarget: Equatable {
+    case roll(UUID)
+    case month(Date)
+
+    struct Params: Encodable { let p_roll_id: UUID?; let p_month_start: String? }
+
+    var params: Params {
+        switch self {
+        case .roll(let id): Params(p_roll_id: id, p_month_start: nil)
+        case .month(let start): Params(p_roll_id: nil, p_month_start: V2Server.monthKey(start))
+        }
+    }
+}
+
+/// A live public screening link (`public.screening_link_status`).
+struct V2ScreeningLink: Decodable, Equatable, Identifiable {
+    let token: String
+    var id: String { token }
+    let expiresAt: Date
+    let sharedByMe: Bool
+
+    /// The page that plays it, signed out, on the web.
+    var url: URL { URL(string: "https://flim-app.com/s/\(token)")! }
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case expiresAt = "expires_at"
+        case sharedByMe = "shared_by_me"
+    }
+}
+
+enum V2ScreeningLinkRead: Equatable {
+    case live(V2ScreeningLink), none, failed
 }
