@@ -39,7 +39,7 @@ struct V2SealsDrawer: View {
                         .padding(.top, 12)
                     if let lead = earned.first(where: { $0.id == leading }) {
                         VStack(spacing: 10) {
-                            V2Seal(badge: lead, signupNumber: signup).scaleEffect(1.6).frame(height: 100)
+                            V2Seal(badge: lead, signupNumber: signup, scale: 1.6).frame(height: 110)
                             Text("leads your page")
                                 .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
                                 .foregroundStyle(palette.ink3)
@@ -59,7 +59,7 @@ struct V2SealsDrawer: View {
                         ForEach(earned) { badge in
                             Button { choose(badge) } label: {
                                 VStack(spacing: 6) {
-                                    V2Seal(badge: badge, signupNumber: signup).scaleEffect(72.0 / 58).frame(width: 90, height: 84)
+                                    V2Seal(badge: badge, signupNumber: signup, scale: 1.25).frame(width: 100, height: 92)
                                     Text(badge.kind.label)
                                         .font(.system(.caption2))
                                         .foregroundStyle(badge.id == leading ? palette.ink : palette.ink3)
@@ -82,8 +82,8 @@ struct V2SealsDrawer: View {
                     grid {
                         ForEach(unearned, id: \.self) { kind in
                             VStack(spacing: 6) {
-                                V2Seal(badge: ProfileBadge(id: kind.rawValue, kind: kind, earnedAt: .now), blind: true)
-                                    .scaleEffect(72.0 / 58).frame(width: 90, height: 84)
+                                V2Seal(badge: ProfileBadge(id: kind.rawValue, kind: kind, earnedAt: .now), blind: true, scale: 1.25)
+                                    .frame(width: 100, height: 92)
                                 Text(kind.label)
                                     .font(.system(.caption2))
                                     .foregroundStyle(palette.ink3)
@@ -112,7 +112,7 @@ struct V2SealsDrawer: View {
     }
 
     private func grid(@ViewBuilder _ content: () -> some View) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 12)], spacing: 18) { content() }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 18) { content() }
     }
 
     private func choose(_ badge: ProfileBadge) {

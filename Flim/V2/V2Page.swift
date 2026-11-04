@@ -640,33 +640,45 @@ struct V2Seal: View {
     /// Not yet earned: the shape pressed blind, no ink, no date (board 7a). Only ever drawn in
     /// your own drawer.
     var blind = false
+    /// Drawn at this multiple of the page size (the drawer's grid and its lead seal are larger).
+    /// A real size, not a `scaleEffect`, so the ring stays a fine line at every size.
+    var scale: CGFloat = 1
 
     @Environment(\.v2Palette) private var palette
 
     var body: some View {
         let style = Self.style(badge.kind.tier, slate: palette.isDark)
         let ink = blind ? palette.tick : style.ink
-        VStack(spacing: 1) {
+        let size = CGSize(width: style.size.width * scale, height: style.size.height * scale)
+        let area = style.content(size)
+        VStack(spacing: 1.5 * scale) {
             Text(Self.ringLine(badge))
-                .font(V2Type.data(6.5))
-                .tracking(0.65)
+                .font(V2Type.data(6.5 * scale))
+                .tracking(0.6 * scale)
             Text(middle)
-                .font(V2Type.serif(style.middle, relativeTo: .caption2))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .font(V2Type.serif(style.middle * scale, relativeTo: .caption2))
                 .dynamicTypeSize(.large)
             Text(blind ? " " : bottom)
-                .font(V2Type.data(6.5))
-                .tracking(0.65)
+                .font(V2Type.data(6.5 * scale))
+                .tracking(0.6 * scale)
         }
-        .padding(.horizontal, 4)
+        // Every line stays on one line and shrinks to the shape's own inner area, never past its
+        // edge: the curve of a round or shield seal is narrower at its top and bottom than at its
+        // middle, so the area is the part of the shape the three lines can all clear.
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
+        .multilineTextAlignment(.center)
+        .frame(width: area.width, height: area.height)
+        .offset(y: area.offsetY)
         .foregroundStyle(ink)
-        .frame(width: style.size.width, height: style.size.height)
-        .background { style.shape.stroke(ink, lineWidth: 1.5) }
+        .frame(width: size.width, height: size.height)
+        .background { style.shape.stroke(ink, lineWidth: 1.5 * min(scale, 1.25)) }
         // Blind embossing: a light edge under the pressed shape.
         .shadow(color: blind ? .white.opacity(palette.isDark ? 0.06 : 0.6) : .clear, radius: 0, x: 0.5, y: 0.8)
         .rotationEffect(.degrees(-8))
         .opacity(0.9)
+        // The tilt pushes the corners out; this keeps them off whatever sits next to the seal.
+        .padding(4 * scale)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(blind ? "\(badge.kind.label), not yet earned" : "Seal: \(badge.kind.label)")
     }
@@ -688,6 +700,13 @@ struct V2Seal: View {
         let shape: AnyShape
         let ink: Color
         let middle: CGFloat
+        /// The share of the shape the text may use, and how far down it sits (a shield narrows
+        /// toward its point, so its text rides high).
+        var inset: (x: CGFloat, y: CGFloat, offsetY: CGFloat) = (0.72, 0.70, 0)
+
+        func content(_ size: CGSize) -> (width: CGFloat, height: CGFloat, offsetY: CGFloat) {
+            (size.width * inset.x, size.height * inset.y, size.height * inset.offsetY)
+        }
     }
 
     /// The prototype's five shapes and inks: founding round in gold (the only gold in the app),
@@ -697,17 +716,22 @@ struct V2Seal: View {
     private static func style(_ tier: ProfileBadgeTier, slate: Bool) -> Style {
         switch tier {
         case .founding: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Circle()),
-                              ink: V2Color.rgb(slate ? 0xD4B65A : 0xA88C38), middle: 15)
+                              ink: V2Color.rgb(slate ? 0xD4B65A : 0xA88C38), middle: 15,
+                              inset: (0.72, 0.68, 0))
         case .gold: Style(size: CGSize(width: 58, height: 58), shape: AnyShape(Circle()),
-                          ink: V2Color.rgb(slate ? 0xF5738C : 0xD46A7E), middle: 11)
+                          ink: V2Color.rgb(slate ? 0xF5738C : 0xD46A7E), middle: 11,
+                          inset: (0.72, 0.68, 0))
         case .silver: Style(size: CGSize(width: 51, height: 57),
                             shape: AnyShape(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 26,
                                                                    bottomTrailingRadius: 26, topTrailingRadius: 5)),
-                            ink: V2Color.rgb(slate ? 0xA88CFA : 0x8C74D6), middle: 12)
+                            ink: V2Color.rgb(slate ? 0xA88CFA : 0x8C74D6), middle: 12,
+                            inset: (0.80, 0.66, -0.04))
         case .bronze: Style(size: CGSize(width: 66, height: 46), shape: AnyShape(Capsule()),
-                            ink: V2Color.rgb(slate ? 0x59D1BF : 0x3FA898), middle: 11)
+                            ink: V2Color.rgb(slate ? 0x59D1BF : 0x3FA898), middle: 11,
+                            inset: (0.76, 0.74, 0))
         case .accent: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Rectangle()),
-                            ink: V2Color.rgb(slate ? 0xB9AEA3 : 0x5E534A), middle: 10)
+                            ink: V2Color.rgb(slate ? 0xB9AEA3 : 0x5E534A), middle: 10,
+                            inset: (0.80, 0.78, 0))
         }
     }
 
