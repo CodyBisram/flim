@@ -35,7 +35,6 @@ struct V2SortDeck: View {
     /// People tagged on the top print, posted with it.
     @State private var tags: [PendingTag] = []
     @State private var tagging: Photo?
-    @State private var tagURL: URL?
     /// The sort's posts, for the Spotlight sheet at its end (`SortDeckSession`, as the App Store
     /// deck).
     @State private var session = SortDeckSession()
@@ -65,14 +64,13 @@ struct V2SortDeck: View {
         .foregroundStyle(palette.ink)
         .task { await load() }
         .sheet(item: $tagging) { photo in
-            TagPhotoSheet(url: tagURL, cacheKey: photo.viewPath, tags: $tags, rollId: photo.rollId)
-                .preferredColorScheme(.dark)
+            V2TagSheet(photo: photo, tags: $tags)
+                .modifier(V2DeskEnvironment())
         }
         .sheet(item: $sessionOffer, onDismiss: { sessionSheetClosed() }) { offer in
-            SpotlightSessionSheet(offer: offer, session: session, accessibilitySize: typeSize.isAccessibilitySize,
-                                  onPutUp: { await putUp($0, offer: offer) })
+            V2SpotlightSessionSheet(offer: offer, session: session, onPutUp: { await putUp($0, offer: offer) })
                 .onAppear { if shownOffer?.id != offer.id { shownOffer = offer } }
-                .preferredColorScheme(.dark)
+                .modifier(V2DeskEnvironment())
         }
         // The last print sorted on its own: offer this week's Spotlight, as the App Store deck
         // does. Done never does.
@@ -518,10 +516,7 @@ struct V2SortDeck: View {
     private func openTagging(_ photo: Photo) {
         Haptics.tap()
         writing = false
-        Task {
-            tagURL = await feed.signedURL(for: photo.viewPath)
-            tagging = photo
-        }
+        tagging = photo
     }
 
     // MARK: Spotlight at the end of a sort (as `SortDeckView.finishSession`)
@@ -593,6 +588,31 @@ struct V2SortDeck: View {
             cards = V2DarkroomFixture.make().unsorted
             total = cards.count
             loaded = true
+            // `-v2OpenSpotlightSheet`: the end-of-sort Spotlight offer over three of the fixtures
+            // (`-v2SpotlightSwap` as a swap, `-v2SpotlightFirst` with the first-time words).
+            if ProcessInfo.processInfo.arguments.contains("-v2OpenSpotlightSheet") {
+                let me = UUID()
+                let picked = Array(cards.prefix(3)).map { photo in
+                    Photo(id: photo.id, userId: me, rollId: nil, storagePath: photo.storagePath,
+                          thumbPath: photo.thumbPath, feedPath: photo.feedPath, takenAt: .now,
+                          developsAt: .now, isDeveloped: true, caption: nil)
+                }
+                for photo in picked {
+                    session.published(photo, isTagged: false)
+                    session.landed(photoId: photo.id, post: Post(id: UUID(), userId: me, photoId: photo.id,
+                                                                 storagePath: photo.storagePath, thumbPath: photo.thumbPath,
+                                                                 feedPath: photo.feedPath, takenAt: photo.takenAt,
+                                                                 caption: nil, createdAt: .now))
+                }
+                let args = ProcessInfo.processInfo.arguments
+                var offer = SpotlightSessionOffer(kind: args.contains("-v2SpotlightSwap") ? .swap(fromDay: "Tuesday") : .putUp,
+                                                  weekKey: "2026-11-02", weekStartsAt: .now.addingTimeInterval(-86_400 * 2),
+                                                  weekClosesAt: .now.addingTimeInterval(86_400 * 5), viewerId: me,
+                                                  photoIds: picked.map(\.id), shotBeforeThisWeek: 0, previousWeekKey: nil)
+                offer.firstTime = args.contains("-v2SpotlightFirst")
+                try? await Task.sleep(for: .seconds(0.8))
+                sessionOffer = offer
+            }
             return
         }
         #endif

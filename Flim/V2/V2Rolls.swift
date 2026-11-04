@@ -456,6 +456,7 @@ struct V2SealedRollView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(PhotoService.self) private var photos
+    @Environment(NotificationService.self) private var notifications
 
     @State private var members: [AppUser] = []
     @State private var counts: [UUID: Int] = [:]
@@ -542,8 +543,10 @@ struct V2SealedRollView: View {
         .background { if !embedded { V2Desktop(palette: palette) } }
         .foregroundStyle(palette.ink)
         .toolbar(.hidden, for: .navigationBar)
-        .confirmationDialog("Leave \(roll.name)?", isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button("Leave roll", role: .destructive) { leave() }
+        .sheet(isPresented: $confirmLeave) {
+            V2ConsequenceSheet(consequence: .leave(name: roll.name,
+                                                   myShots: auth.currentUser.flatMap { counts[$0.id] })) { leave() }
+                .modifier(V2DeskEnvironment())
         }
         .task { await load() }
     }
@@ -566,6 +569,7 @@ struct V2SealedRollView: View {
         Task {
             do {
                 try await rolls.leaveRoll(rollId: roll.id, userId: uid)
+                notifications.cancelRollDevelopNotification(rollId: roll.id)
                 dismiss()
             } catch {
                 Haptics.error()
@@ -976,7 +980,7 @@ struct V2RollScreening: View {
             }
             #endif
             .navigationDestination(isPresented: $showAll) {
-                V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent, gone: { dismiss() })
             }
     }
 }

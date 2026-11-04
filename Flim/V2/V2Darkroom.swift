@@ -56,7 +56,8 @@ struct V2DarkroomPlace: View {
         .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
         .onAppear { openRequestedPhoto() }
         .fullScreenCover(item: $routedPhoto) { photo in
-            V2OwnPrintsView(prints: [photo], start: 0)
+            // A delete lands after the Undo window: the kept row and its count read again then.
+            V2OwnPrintsView(prints: [photo], start: 0, onDelete: { Task { await reload() } })
                 .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
         }
@@ -84,7 +85,7 @@ struct V2DarkroomPlace: View {
         }
         .fullScreenCover(item: Binding(get: { pagerStart.map(PagerStart.init) },
                                        set: { pagerStart = $0?.index })) { start in
-            V2OwnPrintsView(prints: kept, start: start.index)
+            V2OwnPrintsView(prints: kept, start: start.index, onDelete: { Task { await reload() } })
                 .modifier(V2DeskEnvironment())
                 .undoCapsuleHost()
         }

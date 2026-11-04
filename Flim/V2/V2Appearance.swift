@@ -1,3 +1,4 @@
+import Photos
 import SwiftUI
 
 /// What Appearance writes. The stamp is the App Store app's accent (`accentColor`): the same six
@@ -37,6 +38,7 @@ struct V2AppearanceView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.v2Palette) private var palette
+    @Environment(AuthService.self) private var auth
     @AppStorage(V2Desk.storageKey) private var deskRaw = V2Desk.system.rawValue
     @AppStorage(V2Settings.stampKey) private var stampRaw = V2Stamp.amber.rawValue
     @AppStorage(V2Settings.grainKey) private var grain = true
@@ -97,7 +99,15 @@ struct V2AppearanceView: View {
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showAccount) { ProfileView().preferredColorScheme(.dark) }
+        .navigationDestination(isPresented: $showAccount) { V2AccountView() }
+        #if DEBUG
+        // `-v2OpenAccount` (with `-v2OpenAppearance`): on to Account, for screenshots.
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenAccount") else { return }
+            try? await Task.sleep(for: .seconds(0.6))
+            showAccount = true
+        }
+        #endif
     }
 
     private var header: some View {
@@ -141,7 +151,13 @@ struct V2AppearanceView: View {
             title("Stamp colour").padding(.top, 34)
             HStack(spacing: 14) {
                 ForEach(V2Stamp.allCases, id: \.self) { option in
-                    Button { stampRaw = option.rawValue; Haptics.tap() } label: {
+                    Button {
+                        stampRaw = option.rawValue
+                        Haptics.tap()
+                        // The row too: a profile load lets the server's stamp win (`AccentSync`),
+                        // so a choice kept only on the phone would come back as the old one.
+                        Task { try? await auth.setAccent(option.rawValue) }
+                    } label: {
                         Circle()
                             .fill(palette.isDark ? option.bright : option.paperColor)
                             .frame(width: 34, height: 34)
@@ -330,5 +346,302 @@ enum V2DevelopLedger {
             pendingWrite = false
             UserDefaults.standard.set(Array(seen.suffix(limit)), forKey: key)
         }
+    }
+}
+
+/// Account (replaces the App Store Settings sheet in FLIM Beta), under Appearance: notifications
+/// and sound, saving developed shots to the camera roll, blocked people, help and the legal pages,
+/// then Sign out and Delete account. Every switch writes what the App Store sheet writes and asks
+/// iOS the same way; Sign out still warns about shots that haven't uploaded. Blocked people,
+/// feedback and the delete page are the App Store app's own screens.
+struct V2AccountView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.v2Palette) private var palette
+    @Environment(AuthService.self) private var auth
+    @Environment(PhotoService.self) private var photos
+    @Environment(NotificationService.self) private var notifications
+
+    @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
+    @AppStorage("developNotificationsEnabled") private var developReminders = true
+    @AppStorage("soundEffects") private var soundEffects = true
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
+
+    @State private var askingNotifications = false
+    @State private var savesShots = false
+    @State private var askingPhotos = false
+    @State private var photosBlocked = false
+    @State private var unsentAtSignOut: Int?
+    @State private var showBlocked = false
+    @State private var showFeedback = false
+    @State private var showDelete = false
+    @State private var showWipe = false
+
+    private var showsFilmLab: Bool {
+        !AppInfo.isAppStore && isOwnerAccount(email: auth.currentUser?.email, username: auth.currentUser?.username)
+    }
+
+    var body: some View {
+        V2Screen(title: "Account", onBack: { dismiss() }) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    title("Notifications").padding(.top, 14)
+                    VStack(spacing: 14) {
+                        notificationState
+                        toggleRow("Develop reminders", value: developReminders) { developReminders.toggle() }
+                            .disabled(notifications.authorizationState != .authorized)
+                            .opacity(notifications.authorizationState == .authorized ? 1 : 0.5)
+                        toggleRow("Sound effects", value: soundEffects) { soundEffects.toggle() }
+                    }
+                    .padding(.top, 14)
+
+                    title("Camera roll").padding(.top, 34)
+                    VStack(alignment: .leading, spacing: 10) {
+                        toggleRow("Save developed shots", value: savesShots) { setSavesShots(!savesShots) }
+                            .disabled(auth.currentUser == nil || askingPhotos)
+                        if photosBlocked {
+                            HStack(alignment: .firstTextBaseline) {
+                                note("iOS is holding this one. Photos access is off for \(AppInfo.appName).")
+                                Spacer(minLength: 8)
+                                Button { openSettings() } label: {
+                                    Text("Open Settings").font(V2Type.control()).underline().frame(minHeight: 44)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        note("Shots you keep are saved to your photo library. Shots from a roll save once you watch the reveal. Applies to shots you take from now on.")
+                    }
+                    .padding(.top, 14)
+
+                    title("Account").padding(.top, 34)
+                    VStack(spacing: 14) {
+                        row("Blocked users") { showBlocked = true }
+                        row("Replay intro") { hasOnboarded = false; dismiss() }
+                    }
+                    .padding(.top, 14)
+
+                    title("Support and legal").padding(.top, 34)
+                    VStack(spacing: 14) {
+                        row("Send feedback") { showFeedback = true }
+                        row("Email us directly") { if let url = AppInfo.feedbackMailURL { openURL(url) } }
+                        row("Privacy Policy") { openURL(AppInfo.privacyPolicyURL) }
+                        row("Terms of Service") { openURL(AppInfo.termsURL) }
+                    }
+                    .padding(.top, 14)
+
+                    if showsFilmLab {
+                        title("Film Lab").padding(.top, 34)
+                        VStack(alignment: .leading, spacing: 10) {
+                            toggleRow("Neutral capture", value: neutralCapture) { neutralCapture.toggle() }
+                            note("Shots skip the FLIM look (LUT calibration)")
+                        }
+                        .padding(.top, 14)
+                    }
+
+                    #if DEBUG
+                    VStack(spacing: 14) {
+                        row("Wipe my test data", tint: .red) { showWipe = true }
+                    }
+                    .padding(.top, 34)
+                    #endif
+
+                    VStack(spacing: 6) {
+                        Button { signOutTapped() } label: {
+                            Text("Sign out")
+                                .font(V2Type.control(.body))
+                                .foregroundStyle(Color.red)
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                                .overlay { Rectangle().stroke(Color.red.opacity(0.5), lineWidth: 1) }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Button { showDelete = true } label: {
+                            Text("Delete account")
+                                .font(V2Type.control())
+                                .foregroundStyle(palette.ink3)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 40)
+
+                    VStack(spacing: 4) {
+                        Text("\(AppInfo.appName) \(AppInfo.versionString)")
+                            .font(V2Type.data(10))
+                            .foregroundStyle(palette.ink3)
+                        Text(AppInfo.colophon)
+                            .font(V2Type.serif(12, italic: true, relativeTo: .caption))
+                            .foregroundStyle(palette.ink3)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 18)
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .padding(.horizontal, V2Metrics.margin)
+                .padding(.bottom, 40)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .sheet(isPresented: $showBlocked) { BlockedUsersSheet().preferredColorScheme(.dark) }
+        .sheet(isPresented: $showFeedback) { FeedbackSheet().preferredColorScheme(.dark) }
+        // The page with the real inventory and the held confirm (confirmations rule 3), as in
+        // the App Store app.
+        .navigationDestination(isPresented: $showDelete) {
+            AccountDeleteView(mode: .deleteAccount).preferredColorScheme(.dark)
+        }
+        .navigationDestination(isPresented: $showWipe) {
+            AccountDeleteView(mode: .wipeData).preferredColorScheme(.dark)
+        }
+        .confirmationDialog(
+            unsentAtSignOut == 1 ? "1 shot hasn't uploaded yet" : "\(unsentAtSignOut ?? 0) shots haven't uploaded yet",
+            isPresented: Binding(get: { unsentAtSignOut != nil }, set: { if !$0 { unsentAtSignOut = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Wait and upload") { Task { await photos.retryFailedUploads() } }
+            Button("Sign out anyway", role: .destructive) { signOut() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They stay on this phone and send when you sign back in here.")
+        }
+        .task { await notifications.refreshAuthorizationState() }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await notifications.refreshAuthorizationState() }
+            refreshSavesShots()
+        }
+        .onAppear { refreshSavesShots() }
+    }
+
+    // MARK: Notifications
+
+    /// The switches mean nothing until iOS allows notifications, so that comes first, with its
+    /// own way forward: asking, or iOS Settings once it has been refused.
+    @ViewBuilder private var notificationState: some View {
+        switch notifications.authorizationState {
+        case .notDetermined:
+            permissionRow("Notifications are off",
+                          detail: "Turn them on to get develop reminders and reactions.") {
+                guard !askingNotifications else { return }
+                askingNotifications = true
+                Task {
+                    await notifications.requestAuthorizationIfNeeded()
+                    askingNotifications = false
+                }
+            }
+            .disabled(askingNotifications)
+        case .denied:
+            permissionRow("Notifications are off in Settings",
+                          detail: "Turn them on in iOS Settings to get develop reminders and reactions.") {
+                openSettings()
+            }
+        case .authorized:
+            EmptyView()
+        }
+    }
+
+    // MARK: Camera roll
+
+    /// On only while the choice is on AND Photos access still stands, so a revoke in iOS Settings
+    /// never leaves the switch saying On over saves that can't happen.
+    private func refreshSavesShots() {
+        guard let uid = auth.currentUser?.id else { savesShots = false; return }
+        let allowed = PHPhotoLibrary.authorizationStatus(for: .addOnly) == .authorized
+        savesShots = CameraRollAutoSave.shared.isEnabled(for: uid) && allowed
+        if allowed { photosBlocked = false }
+    }
+
+    /// Off is immediate. On asks iOS for add-only access first; a refusal leaves it off and says why.
+    private func setSavesShots(_ on: Bool) {
+        guard let uid = auth.currentUser?.id, !askingPhotos else { return }
+        guard on else {
+            savesShots = false
+            CameraRollAutoSave.shared.setEnabled(false, for: uid)
+            return
+        }
+        askingPhotos = true
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            askingPhotos = false
+            if status == .authorized {
+                savesShots = true
+                CameraRollAutoSave.shared.setEnabled(true, for: uid)
+            } else {
+                savesShots = false
+                Haptics.error()
+                withAnimation { photosBlocked = true }
+            }
+        }
+    }
+
+    // MARK: Sign out
+
+    /// Unsent shots wait on this phone under the account and send at its next sign-in here, but
+    /// they stop sending, so signing out with some still waiting says so first.
+    private func signOutTapped() {
+        let unsent = photos.unsentShotCount
+        if unsent > 0 { unsentAtSignOut = unsent } else { signOut() }
+    }
+
+    private func signOut() {
+        Task { try? await auth.signOut() }
+    }
+
+    private func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+    }
+
+    // MARK: Rows
+
+    private func title(_ text: String) -> some View {
+        Text(text).font(V2Type.serif(22, relativeTo: .title2)).accessibilityAddTraits(.isHeader)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+            .foregroundStyle(palette.ink3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func row(_ label: String, value: String = "", tint: Color? = nil,
+                     action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(label).font(.system(.subheadline)).foregroundStyle(tint ?? palette.ink)
+                Spacer()
+                Text(value).font(V2Type.control(.subheadline)).foregroundStyle(palette.ink2)
+            }
+            .padding(.bottom, 12)
+            .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleRow(_ label: String, value: Bool, toggle: @escaping () -> Void) -> some View {
+        row(label, value: value ? "On" : "Off") { toggle(); Haptics.tap() }
+            .accessibilityValue(value ? "On" : "Off")
+    }
+
+    private func permissionRow(_ label: String, detail: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label).font(.system(.subheadline))
+                Text(detail)
+                    .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+                    .foregroundStyle(palette.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 12)
+            .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -260,6 +260,14 @@ struct V2OwnPrintsView: View {
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
         .onAppear { index = min(max(0, start), max(0, prints.count - 1)) }
+        #if DEBUG
+        // `-v2OpenPost`: the post sheet on the first print (`-v2OpenTag` goes on to Tag people).
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenPost") else { return }
+            try? await Task.sleep(for: .seconds(0.8))
+            composing = current
+        }
+        #endif
         .sheet(item: $composing) { photo in
             V2PostSheet(photo: photo) { posted in
                 composing = nil
@@ -372,7 +380,6 @@ struct V2PostSheet: View {
     @State private var caption = ""
     @State private var tags: [PendingTag] = []
     @State private var tagging = false
-    @State private var tagURL: URL?
     @State private var working = false
     @State private var problem: String?
     @FocusState private var writing: Bool
@@ -398,12 +405,7 @@ struct V2PostSheet: View {
                     .focused($writing)
                     .submitLabel(.done)
             }
-            Button {
-                Task {
-                    if tagURL == nil { tagURL = await feed.signedURL(for: photo.viewPath) }
-                    tagging = true
-                }
-            } label: {
+            Button { tagging = true } label: {
                 Text(tags.isEmpty ? "Tag people" : (tags.count == 1 ? "1 person tagged" : "\(tags.count) people tagged"))
                     .font(V2Type.control())
                     .underline()
@@ -420,9 +422,17 @@ struct V2PostSheet: View {
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
         .onAppear { writing = true }
+        #if DEBUG
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-v2OpenTag") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            writing = false
+            tagging = true
+        }
+        #endif
         .sheet(isPresented: $tagging) {
-            TagPhotoSheet(url: tagURL, cacheKey: photo.viewPath, tags: $tags, rollId: photo.rollId)
-                .preferredColorScheme(.dark)
+            V2TagSheet(photo: photo, tags: $tags)
+                .modifier(V2DeskEnvironment())
         }
     }
 
@@ -444,6 +454,223 @@ struct V2PostSheet: View {
                 problem = "Couldn't post that. Try again."
                 working = false
             }
+        }
+    }
+}
+
+/// Tag people (replaces the App Store tag sheet in FLIM Beta): who is in this print, chosen from
+/// the people you follow, friends first. The roll's other members (or, for your own print,
+/// whoever you tagged lately) sit in a row on top, one tap each. The choosing rules are the App
+/// Store sheet's own (`QuickTagChips`, `personMatches`), so the two can't disagree on who shows.
+struct V2TagSheet: View {
+    let photo: Photo
+    @Binding var tags: [PendingTag]
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.v2Palette) private var palette
+    @Environment(\.v2Stamp) private var stamp
+    @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
+    @Environment(RollService.self) private var rolls
+
+    @State private var following: [UserProfile] = []
+    @State private var friendIds: Set<UUID> = []
+    @State private var quickHeader: String?
+    @State private var quick: [UserProfile] = []
+    @State private var query = ""
+    @State private var loaded = false
+
+    private var results: [UserProfile] {
+        following.filter { personMatches($0, query: query) }.sorted { a, b in
+            let af = friendIds.contains(a.id), bf = friendIds.contains(b.id)
+            if af != bf { return af }
+            return (a.username ?? "") < (b.username ?? "")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Tag people").font(V2Type.serif(22, relativeTo: .title2)).accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                Button { dismiss() } label: {
+                    Text("Done").font(V2Type.control()).underline().frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(spacing: 12) {
+                V2PrintCard(width: 46, showsShadow: false, borderFraction: 3.0 / 46, footFraction: 8.0 / 46) {
+                    V2Image(path: photo.thumbPath ?? photo.viewPath, maxPixel: 160)
+                } foot: { Color.clear }
+                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                .accessibilityHidden(true)
+                Text(tagSummary(handles: tags.map(\.user.handle)))
+                    .font(V2Type.serif(15, italic: true, relativeTo: .body))
+                    .foregroundStyle(tags.isEmpty ? palette.ink3 : palette.ink2)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 10)
+            if let quickHeader, !quick.isEmpty {
+                Text(quickHeader)
+                    .font(V2Type.data(10)).tracking(1.5).textCase(.uppercase)
+                    .foregroundStyle(palette.ink3)
+                    .padding(.top, 20)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 14) {
+                        ForEach(quick) { person in chip(person) }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .padding(.top, 8)
+            }
+            TextField("", text: $query,
+                      prompt: Text("Search people you follow")
+                        .font(V2Type.serif(16, italic: true, relativeTo: .body))
+                        .foregroundStyle(palette.ink3))
+                .font(V2Type.serif(16, relativeTo: .body))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .frame(minHeight: 44)
+                .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
+                .padding(.top, 18)
+            if loaded, results.isEmpty {
+                Text(query.isEmpty ? "Follow people to tag them." : "No matches.")
+                    .font(V2Type.serif(15, italic: true, relativeTo: .body))
+                    .foregroundStyle(palette.ink3)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 40)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(results) { person in row(person) }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
+            }
+        }
+        .padding(.horizontal, V2Metrics.margin)
+        .padding(.top, 18)
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity)
+        .background { V2Desktop(palette: palette) }
+        .foregroundStyle(palette.ink)
+        .presentationDetents([.large])
+        .task { await load() }
+    }
+
+    private func isTagged(_ person: UserProfile) -> Bool { tags.contains { $0.user.id == person.id } }
+
+    private func row(_ person: UserProfile) -> some View {
+        let on = isTagged(person)
+        return Button { toggle(person) } label: {
+            HStack(spacing: 12) {
+                AvatarView(path: person.avatarPath, name: person.username, size: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(person.name).font(.system(.subheadline))
+                    Text(person.handle).font(V2Type.control(.caption)).foregroundStyle(palette.ink3)
+                }
+                Spacer(minLength: 8)
+                if friendIds.contains(person.id) {
+                    Text("friend").font(V2Type.serif(13, italic: true, relativeTo: .footnote)).foregroundStyle(palette.ink3)
+                }
+                mark(on)
+            }
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(person.name)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func chip(_ person: UserProfile) -> some View {
+        let on = isTagged(person)
+        return Button { toggle(person) } label: {
+            VStack(spacing: 6) {
+                AvatarView(path: person.avatarPath, name: person.username, size: 46)
+                    .overlay { Circle().stroke(on ? stamp.color(on: palette.desk) : .clear, lineWidth: 2).padding(-3) }
+                Text(person.username ?? person.name)
+                    .font(V2Type.control(.caption2))
+                    .lineLimit(1)
+            }
+            .frame(width: 62)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(person.name)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// A ring, filled with the stamp colour once tagged.
+    private func mark(_ on: Bool) -> some View {
+        Circle()
+            .strokeBorder(on ? Color.clear : palette.ink3, lineWidth: 1.5)
+            .background(Circle().fill(on ? stamp.color(on: palette.desk) : .clear))
+            .overlay {
+                if on {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(V2Color.print)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .accessibilityHidden(true)
+    }
+
+    private func toggle(_ person: UserProfile) {
+        Haptics.tap()
+        if let i = tags.firstIndex(where: { $0.user.id == person.id }) {
+            tags.remove(at: i)
+        } else {
+            // Names are listed, not placed, so a tag's position is the centre (as on the App Store sheet).
+            tags.append(PendingTag(user: person, x: 0.5, y: 0.5))
+        }
+    }
+
+    private func load() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-v2DemoTag") {
+            let people = ["nadia", "gem", "dev.k", "noor", "mari"].map {
+                UserProfile(id: UUID(), username: $0, createdAt: .now)
+            }
+            following = people
+            friendIds = Set(people.prefix(4).map(\.id))
+            quick = Array(people.prefix(3))
+            quickHeader = "From Lake weekend"
+            if tags.isEmpty { tags = [PendingTag(user: people[0], x: 0.5, y: 0.5)] }
+            loaded = true
+            return
+        }
+        #endif
+        guard let me = auth.currentUser?.id else { return }
+        await feed.loadBlocked(userId: me)
+        async let followingRead = feed.fetchFollowingProfiles(of: me)
+        async let followerRead = feed.fetchFollowers(of: me)
+        let list = await followingRead
+        let followers = Set((await followerRead).map(\.id))
+        following = list.filter { !feed.isBlocked($0.id) }
+        friendIds = followers.intersection(Set(list.map(\.id)))
+        loaded = true
+
+        let memberIds: [UUID]? = if let rollId = photo.rollId {
+            (try? await rolls.fetchMemberIds(for: rollId)) ?? []
+        } else { nil }
+        let recent = photo.rollId == nil ? await feed.recentlyTaggedUserIds(by: me) : []
+        let picked = QuickTagChips.selectedIds(
+            from: QuickTagChips.candidateIds(rollMemberIds: memberIds, recentlyTaggedIds: recent),
+            selfId: me, blockedIds: feed.blockedIds)
+        guard !picked.isEmpty else { return }
+        let profiles = await feed.fetchProfiles(ids: picked)
+        quick = picked.compactMap { profiles[$0] }
+        if let rollId = photo.rollId {
+            if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: me) }
+            quickHeader = "From \(rolls.rolls.first { $0.id == rollId }?.name ?? "this roll")"
+        } else {
+            quickHeader = "Recently tagged"
         }
     }
 }

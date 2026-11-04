@@ -205,6 +205,7 @@ private struct V2StampChoice: View {
     var done: () -> Void
 
     @Environment(\.v2Palette) private var palette
+    @Environment(AuthService.self) private var auth
     @AppStorage(V2Settings.stampKey) private var stampRaw = V2Stamp.amber.rawValue
 
     private var stamp: V2Stamp { V2Stamp(rawValue: stampRaw) ?? .amber }
@@ -233,7 +234,13 @@ private struct V2StampChoice: View {
             Spacer(minLength: 20)
             HStack(spacing: 14) {
                 ForEach(V2Stamp.allCases, id: \.self) { option in
-                    Button { stampRaw = option.rawValue; Haptics.tap() } label: {
+                    Button {
+                        stampRaw = option.rawValue
+                        Haptics.tap()
+                        // The row too: a profile load lets the server's stamp win (`AccentSync`),
+                        // so a choice kept only on the phone would come back as the old one.
+                        Task { try? await auth.setAccent(option.rawValue) }
+                    } label: {
                         Circle()
                             .fill(palette.isDark ? option.bright : option.paperColor)
                             .frame(width: 34, height: 34)

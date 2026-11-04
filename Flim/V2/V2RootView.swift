@@ -31,11 +31,15 @@ struct V2RootView<Content: View, Foot: View>: View {
     @ViewBuilder var columnFoot: (_ place: V2Place) -> Foot
 
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// Read so coming back to the app redraws the places: the System desk follows the phone's
+    /// own setting (`V2SystemScheme`), which nothing else here observes.
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(V2Desk.storageKey) private var deskRaw = V2Desk.system.rawValue
     @AppStorage(V2Settings.stampKey) private var stampRaw = V2Stamp.amber.rawValue
 
     private var palette: V2Palette {
-        V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: V2SystemScheme.current)
+        _ = scenePhase
+        return V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: V2SystemScheme.current)
     }
 
     var body: some View {

@@ -373,3 +373,356 @@ struct V2SpotlightPicker: View {
         loaded = true
     }
 }
+
+/// The Spotlight offer at the end of a sort (replaces the App Store session sheet in FLIM Beta):
+/// the prints this sort posted, one to choose, Put it up (or Swap it in) and Not now. The words,
+/// the choosing rules and every refusal are the App Store sheet's own (`SpotlightSessionCopy`,
+/// `SortDeckSession`); only the drawing is the desk's.
+struct V2SpotlightSessionSheet: View {
+    let offer: SpotlightSessionOffer
+    /// Read live, never as values handed in, so posts landing after presentation reach it.
+    let session: SortDeckSession
+    let onPutUp: (Post) async -> SpotlightPutUpOutcome
+
+    enum Phase: Equatable {
+        case choosing
+        case sending
+        case done(String)
+        case refused(String)
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.v2Palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(FeedService.self) private var feed
+
+    @State private var phase: Phase = .choosing
+    @State private var selection: UUID?
+    @State private var errorLine: String?
+    @State private var refusedTagged: Set<UUID> = []
+    @State private var refusedOther: Set<UUID> = []
+    @State private var height: CGFloat = 420
+    @State private var detent: PresentationDetent = .large
+
+    init(offer: SpotlightSessionOffer, session: SortDeckSession,
+         onPutUp: @escaping (Post) async -> SpotlightPutUpOutcome) {
+        self.offer = offer
+        self.session = session
+        self.onPutUp = onPutUp
+        let frames = session.offered(offer)
+        _selection = State(initialValue: frames.count == 1 ? frames.first?.id : nil)
+    }
+
+    private var frames: [SpotlightSessionFrame] { session.offered(offer) }
+    private var failedCount: Int { session.failedCount(offer) }
+    private var kind: SpotlightSessionOffer.Kind { session.kind(offer) }
+    private var isSwap: Bool { if case .swap = kind { return true } else { return false } }
+    private var count: Int { frames.count }
+    private var isSending: Bool { phase == .sending }
+    private var isDone: Bool { if case .done = phase { return true } else { return false } }
+
+    private var chosen: SpotlightSessionFrame? {
+        guard let selection, !isRefused(selection) else { return nil }
+        return frames.first { $0.id == selection }
+    }
+
+    private func isRefused(_ id: UUID) -> Bool { refusedTagged.contains(id) || refusedOther.contains(id) }
+
+    private var title: String {
+        if isDone { return isSwap ? SpotlightSessionCopy.swappedTitle : SpotlightSessionCopy.upTitle }
+        return SpotlightSessionCopy.title(kind: kind, count: count)
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+                .padding(.horizontal, V2Metrics.margin)
+                .padding(.top, 26)
+                .padding(.bottom, 12)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .foregroundStyle(palette.ink)
+        .background { V2Desktop(palette: palette) }
+        .presentationBackground { V2Desktop(palette: palette) }
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(height), .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(isSending)
+        .onAppear { if !typeSize.isAccessibilitySize { detent = .height(height) } }
+    }
+
+    // MARK: Content
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Spotlight · \(V2SpotlightWeek.stamp(offer.weekKey))")
+                .font(V2Type.data(10)).tracking(1.5).textCase(.uppercase)
+                .foregroundStyle(V2Stamp.violet.color(on: palette.desk))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(V2Type.serif(22, relativeTo: .title2))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+                .accessibilityAddTraits(.isHeader)
+            if !isDone {
+                if offer.firstTime {
+                    paragraph(SpotlightFirstTimeCopy.explanation).padding(.top, 14)
+                    paragraph(SpotlightFirstTimeCopy.oneAWeek).padding(.top, 8)
+                } else {
+                    paragraph(SpotlightSessionCopy.subtitle(count: count)).padding(.top, 10)
+                }
+            }
+            if case .swap(let day) = kind, !isDone {
+                upNowRow(day: day).padding(.top, 16)
+            }
+            prints.padding(.top, 20)
+            if failedCount > 0 {
+                quiet(SpotlightSessionCopy.failed(count: failedCount)).padding(.top, 14)
+            }
+            if offer.shotBeforeThisWeek > 0, let previous = offer.previousWeekKey {
+                quiet(SpotlightSessionCopy.shotBefore(previousWeekKey: previous))
+                    .padding(.top, failedCount > 0 ? 6 : 14)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in
+            // The sheet rises as far as its words and prints need, plus the footer.
+            let fitted = measured + 26 + 12 + 150
+            guard abs(fitted - height) > 1 else { return }
+            let resting = detent != .large
+            height = fitted
+            if resting { detent = .height(fitted) }
+        }
+    }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(text)
+            .font(V2Type.serif(15, italic: true, relativeTo: .body))
+            .foregroundStyle(palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func quiet(_ text: String) -> some View {
+        Text(text)
+            .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
+            .foregroundStyle(palette.ink3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The frame up now, from an earlier sort: a line, not a print, because it isn't a choice here.
+    private func upNowRow(day: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            V2PrintCard(width: 40, showsShadow: false, borderFraction: 3.0 / 40, footFraction: 7.0 / 40) {
+                V2Image(path: feed.ownSpotlightThumb.path, maxPixel: 120)
+            } foot: { Color.clear }
+            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(SpotlightSessionCopy.upNow(fromDay: day)).font(.system(.subheadline))
+                    .fixedSize(horizontal: false, vertical: true)
+                quiet(SpotlightSessionCopy.upNowSub(count: count))
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Prints
+
+    @ViewBuilder private var prints: some View {
+        if count == 1, let only = frames.first {
+            print(only, width: 190).frame(maxWidth: .infinity)
+        } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: count >= 7 ? 84 : 100), spacing: 14, alignment: .top)],
+                      alignment: .leading, spacing: 16) {
+                ForEach(frames) { frame in print(frame, width: nil) }
+            }
+        }
+    }
+
+    private func isDimmed(_ frame: SpotlightSessionFrame) -> Bool {
+        if case .refused = phase { return true }
+        if isRefused(frame.id) { return true }
+        if let lit = chosen?.id ?? (isDone ? selection : nil) { return lit != frame.id }
+        return false
+    }
+
+    private func isSelectable(_ frame: SpotlightSessionFrame) -> Bool {
+        phase == .choosing && frame.post != nil && !isRefused(frame.id)
+    }
+
+    private func print(_ frame: SpotlightSessionFrame, width: CGFloat?) -> some View {
+        let isChosen = chosen?.id == frame.id || (isDone && selection == frame.id)
+        let dimmed = isDimmed(frame)
+        return VStack(spacing: 6) {
+            Button { toggle(frame) } label: {
+                GeometryReader { proxy in
+                    V2PrintCard(width: width ?? proxy.size.width, borderFraction: 0.06, footFraction: 0.16) {
+                        V2Image(path: frame.photo.viewPath, maxPixel: 480)
+                            .overlay { SpotlightOpeningIndicator(isOpening: frame.post == nil) }
+                    } foot: { Color.clear }
+                }
+                .aspectRatio(1 / (0.06 + (1 - 0.12) * V2PrintGeometry.windowAspect + 0.16), contentMode: .fit)
+                .frame(width: width)
+                .overlay {
+                    if isChosen {
+                        Rectangle().stroke(palette.ink, lineWidth: 1.5).padding(-5)
+                    }
+                }
+                .rotationEffect(.degrees(isChosen && !reduceMotion ? -1.5 : 0))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!isSelectable(frame))
+            .opacity(dimmed ? 0.5 : 1)
+            .animation(.easeOut(duration: 0.15), value: dimmed)
+            .animation(.easeOut(duration: 0.15), value: isChosen)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel(frame))
+            .accessibilityAddTraits(isChosen ? [.isButton, .isSelected] : .isButton)
+            if refusedTagged.contains(frame.id) {
+                Text(SpotlightSessionCopy.tagged)
+                    .font(V2Type.control(.caption))
+                    .foregroundStyle(palette.ink3)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func accessibilityLabel(_ frame: SpotlightSessionFrame) -> String {
+        let label = SpotlightSessionCopy.frameLabel(takenAt: frame.photo.takenAt)
+        if frame.post == nil { return "\(label), still posting" }
+        if refusedTagged.contains(frame.id) { return "\(label), \(SpotlightSessionCopy.tagged)" }
+        return label
+    }
+
+    /// A tap chooses; a tap on the chosen print clears it, unless it is the only one.
+    private func toggle(_ frame: SpotlightSessionFrame) {
+        guard isSelectable(frame) else { return }
+        Haptics.select()
+        errorLine = nil
+        selection = (selection == frame.id && count > 1) ? nil : frame.id
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        VStack(spacing: 0) {
+            statusLine
+            primaryButton.padding(.top, 10)
+            if phase == .choosing || isSending {
+                Button { dismiss() } label: {
+                    Text(SpotlightSessionCopy.notNow)
+                        .font(V2Type.control(.body))
+                        .foregroundStyle(palette.ink2)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isSending)
+                .opacity(isSending ? 0.4 : 1)
+            }
+        }
+        .padding(.horizontal, V2Metrics.margin)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity)
+        .background { V2Desktop(palette: palette) }
+    }
+
+    @ViewBuilder private var statusLine: some View {
+        switch phase {
+        case .done(let notice):
+            status(notice, failed: false)
+        case .refused(let message):
+            status(message, failed: true)
+        case .choosing, .sending:
+            if let errorLine {
+                status(errorLine, failed: true)
+            } else if let chosen, chosen.post == nil {
+                quiet(SpotlightSessionCopy.stillPosting).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func status(_ text: String, failed: Bool) -> some View {
+        let sentence = text.last.map { ".?".contains($0) } ?? true ? text : text + "."
+        return Text(sentence)
+            .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+            .foregroundStyle(failed ? Color.red : palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var sendTitle: String { isSwap ? SpotlightSessionCopy.swapIn : SpotlightSessionCopy.putUp }
+
+    @ViewBuilder private var primaryButton: some View {
+        switch phase {
+        case .choosing:
+            if let chosen {
+                bigButton(sendTitle, enabled: chosen.post != nil) { Task { await send(chosen) } }
+            } else {
+                bigButton(SpotlightSessionCopy.chooseFrame, enabled: false) {}
+            }
+        case .sending:
+            bigButton(sendTitle, enabled: false, working: true) {}
+        case .done, .refused:
+            bigButton(SpotlightSessionCopy.done, enabled: true) { dismiss() }
+        }
+    }
+
+    private func bigButton(_ label: String, enabled: Bool, working: Bool = false,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack {
+                Text(label).font(V2Type.control(.body)).opacity(working ? 0 : 1)
+                if working { ProgressView().tint(palette.ink) }
+            }
+            .foregroundStyle(enabled || working ? palette.background : palette.ink3)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(enabled || working ? palette.ink : palette.rule)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    /// One put-up at a time, with the App Store sheet's handling of every answer.
+    private func send(_ frame: SpotlightSessionFrame) async {
+        guard phase == .choosing, let post = frame.post else { return }
+        Haptics.tap()
+        errorLine = nil
+        withAnimation(.easeOut(duration: 0.15)) { phase = .sending }
+        let outcome = await onPutUp(post)
+        withAnimation(.easeOut(duration: 0.15)) {
+            switch outcome {
+            case .up(let notice):
+                selection = frame.id
+                phase = .done(notice)
+            case .frameUpChanged:
+                phase = .choosing
+            case .refused(let message, let refusal):
+                switch refusal {
+                case "tagged":
+                    refusedTagged.insert(frame.id)
+                    selection = nil
+                    errorLine = message
+                    phase = .choosing
+                case "not_this_week", "not_photographer", "hidden", "not_found":
+                    refusedOther.insert(frame.id)
+                    selection = nil
+                    errorLine = message
+                    phase = .choosing
+                case "week_closed", "covered", "not_signed_in":
+                    phase = .refused(message)
+                default:
+                    errorLine = message
+                    phase = .choosing
+                }
+            }
+        }
+    }
+}

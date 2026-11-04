@@ -4,11 +4,12 @@ import SwiftUI
 /// naming who shot it. A print opens on its own (`V2RollPrintView`) to turn over for its notes.
 ///
 /// Not drawn on the boards past the screening; it follows Kept's month by day so the two read
-/// alike. The App Store roll screen's extras (members, save all, start another) stay there for
-/// now: its overflow is one tap away under More.
+/// alike. Who's in, save all, start another, mute and leave are under More (`V2RollMore`).
 struct V2RollPrints: View {
     let roll: Roll
     var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
+    /// Once the roll is left or deleted from More. The default steps back from the prints.
+    var gone: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -93,8 +94,7 @@ struct V2RollPrints: View {
             .refreshable { await load() }
         }
         .navigationDestination(isPresented: $showMore) {
-            RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
-                .preferredColorScheme(.dark)
+            V2RollMore(roll: roll) { if let gone { gone() } else { dismiss() } }
         }
         .fullScreenCover(isPresented: $replaying) {
             V2ScreeningView(source: .roll(roll), close: { replaying = false })
@@ -149,6 +149,11 @@ struct V2RollPrints: View {
                              developsAt: roll.revealAt, isDeveloped: true, caption: nil)
             }
             loaded = true
+            // `-v2OpenRollMore`: on to More (`-v2AskLeave` asks to leave it).
+            if ProcessInfo.processInfo.arguments.contains("-v2OpenRollMore") {
+                try? await Task.sleep(for: .seconds(0.6))
+                showMore = true
+            }
             // `-v2OpenRollPrint`: opens the first print, on its back with `-v2GroupBack`.
             if ProcessInfo.processInfo.arguments.contains("-v2OpenRollPrint"), let first = prints.first {
                 try? await Task.sleep(for: .seconds(0.6))
@@ -490,5 +495,343 @@ struct V2RollPrintView: View {
         let (fetchedNotes, fetchedReactions) = await (n, r)
         notes[id] = fetchedNotes
         reactions[id] = fetchedReactions
+    }
+}
+
+/// An opened roll's More (replaces the App Store roll screen in FLIM Beta): who's in and how many
+/// prints each put in, then the roll's few things: start another with the same people, save every
+/// print to the camera roll, mute its notifications, and leave it (or delete it, for whoever
+/// started it). Leaving and deleting ask on a consequence card first. `gone` runs once the roll is
+/// left or deleted, so the caller can step back past the prints too.
+struct V2RollMore: View {
+    let roll: Roll
+    var gone: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.v2Palette) private var palette
+    @Environment(AuthService.self) private var auth
+    @Environment(RollService.self) private var rolls
+    @Environment(PhotoService.self) private var photos
+    @Environment(NotificationService.self) private var notifications
+
+    @State private var members: [AppUser] = []
+    @State private var prints: [Photo] = []
+    @State private var muted = false
+    @State private var asking: RollConsequence?
+    @State private var startAnother = false
+    @State private var saving = false
+    @State private var exported: [URL] = []
+    @State private var showExport = false
+    @State private var problem: String?
+    @State private var problemRetries = false
+    @State private var removing: AppUser?
+
+    private var me: UUID? { auth.currentUser?.id }
+    private var started: Bool { me == roll.createdBy }
+    private var counts: [UUID: Int] { Dictionary(grouping: prints, by: \.userId).mapValues(\.count) }
+    private var savable: [Photo] {
+        PhotoExport.eligible(prints, viewer: me, inRoll: true).sorted { $0.takenAt < $1.takenAt }
+    }
+
+    var body: some View {
+        V2Screen(title: roll.name, onBack: { dismiss() }) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    title("Who's in").padding(.top, 14)
+                    VStack(spacing: 14) {
+                        ForEach(members, id: \.id) { member in memberRow(member) }
+                    }
+                    .padding(.top, 14)
+
+                    title("The roll").padding(.top, 34)
+                    VStack(spacing: 14) {
+                        row("Start another with this group") { startAnother = true }
+                        if !savable.isEmpty {
+                            row(saving ? "Saving…" : "Save all \(savable.count) to Camera Roll") { save() }
+                                .disabled(saving)
+                        }
+                        row(muted ? "Unmute notifications" : "Mute notifications") { toggleMute() }
+                        row(started ? "Delete roll" : "Leave roll", destructive: true) {
+                            asking = started
+                                ? .deleteRoll(name: roll.name, people: members.isEmpty ? nil : members.count)
+                                : .leave(name: roll.name, myShots: me.flatMap { counts[$0] })
+                        }
+                    }
+                    .padding(.top, 14)
+
+                    if let problem {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(problem)
+                                .font(V2Type.serif(14, italic: true, relativeTo: .footnote))
+                                .foregroundStyle(Color.red)
+                            Spacer(minLength: 8)
+                            if problemRetries {
+                                Button { save() } label: {
+                                    Text("Retry").font(V2Type.control()).underline().frame(minHeight: 44)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 18)
+                    }
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .padding(.horizontal, V2Metrics.margin)
+                .padding(.bottom, 40)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .sheet(item: $asking) { consequence in
+            V2ConsequenceSheet(consequence: consequence) { confirm(consequence) }
+                .modifier(V2DeskEnvironment())
+        }
+        .sheet(isPresented: $showExport) { ActivityView(items: exported) }
+        .fullScreenCover(isPresented: $startAnother) {
+            V2NewRollView(followUpOf: roll) { _ in startAnother = false }
+                .modifier(V2DeskEnvironment())
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
+        }
+        .task { await load() }
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text).font(V2Type.serif(22, relativeTo: .title2)).accessibilityAddTraits(.isHeader)
+    }
+
+    private func memberRow(_ member: AppUser) -> some View {
+        let n = counts[member.id] ?? 0
+        let isMe = member.id == me
+        return HStack {
+            Text(isMe ? "You" : (member.username ?? "someone"))
+            Spacer()
+            Text(n == 0 ? "nothing yet" : (n == 1 ? "1 print" : "\(n) prints"))
+                .foregroundStyle(palette.ink2)
+        }
+        .font(.system(.subheadline))
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        // Whoever started the roll can take someone out of it, as on the App Store members sheet.
+        .contextMenu {
+            if started, !isMe {
+                Button(role: .destructive) { ask(remove: member) } label: { Text("Remove from roll") }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityActions {
+            if started, !isMe {
+                Button("Remove from roll") { ask(remove: member) }
+            }
+        }
+    }
+
+    private func row(_ label: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(label).font(.system(.subheadline))
+                    .foregroundStyle(destructive ? Color.red : palette.ink)
+                Spacer()
+            }
+            .padding(.bottom, 12)
+            .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func ask(remove member: AppUser) {
+        removing = member
+        asking = .removeMember(handle: member.username ?? "someone", rollName: roll.name,
+                               theirShots: counts[member.id])
+    }
+
+    private func confirm(_ consequence: RollConsequence) {
+        problem = nil
+        problemRetries = false
+        Task {
+            do {
+                switch consequence {
+                case .deleteRoll:
+                    try await rolls.deleteRoll(rollId: roll.id)
+                    // The develop reminder goes only once the server confirms, as on the App Store screen.
+                    notifications.cancelRollDevelopNotification(rollId: roll.id)
+                    gone()
+                case .leave:
+                    guard let me else { return }
+                    try await rolls.leaveRoll(rollId: roll.id, userId: me)
+                    notifications.cancelRollDevelopNotification(rollId: roll.id)
+                    gone()
+                case .removeMember:
+                    guard let member = removing else { return }
+                    try await rolls.removeMember(rollId: roll.id, userId: member.id)
+                    rolls.recordMemberRemoved(rollId: roll.id)
+                    members.removeAll { $0.id == member.id }
+                    removing = nil
+                case .deleteShot:
+                    return
+                }
+            } catch {
+                Haptics.error()
+                problem = (error as? LocalizedError)?.errorDescription ?? UserFacingError.genericMessage
+            }
+        }
+    }
+
+    private func toggleMute() {
+        guard let me else { return }
+        let wanted = !muted
+        muted = wanted
+        Haptics.tap()
+        Task {
+            if await !photos.setRollMuted(wanted, rollId: roll.id, userId: me) {
+                muted = !wanted   // the write never landed; don't claim it did
+                Haptics.error()
+            }
+        }
+    }
+
+    /// Every print the roll lets you take home, oldest first, streamed to disk one at a time
+    /// (`PhotoExport`), at the 1400px rendition the App Store roll screen saves.
+    private func save() {
+        guard !saving else { return }
+        problem = nil
+        problemRetries = false
+        saving = true
+        let deck = savable
+        Task {
+            let directory = PhotoExport.begin()
+            let signed = await photos.signedURLs(for: deck.map(\.viewPath))
+            var files: [URL] = []
+            for (i, photo) in deck.enumerated() {
+                guard let url = signed[photo.viewPath] else { continue }
+                if let file = await PhotoExport.download(url, into: directory, index: i, total: deck.count,
+                                                         cachePath: photo.viewPath) {
+                    files.append(file)
+                }
+            }
+            saving = false
+            if files.isEmpty {
+                Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
+                problem = "Couldn't load the photos. Check your connection."
+                problemRetries = true
+                return
+            }
+            if files.count < deck.count {
+                problem = "Only \(files.count) of \(deck.count) photos could be loaded. Saving those now."
+            }
+            exported = files
+            showExport = true
+        }
+    }
+
+    private func load() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-v2DemoRolls") {
+            let you = auth.currentUser?.id ?? UUID()
+            members = [AppUser(id: you, username: "you", createdAt: .now),
+                       AppUser(id: UUID(), username: "nadia", createdAt: .now),
+                       AppUser(id: UUID(), username: "gem", createdAt: .now)]
+            prints = (1...7).map { n in
+                Photo(id: UUID(), userId: members[n % 3].id, rollId: roll.id, storagePath: "demo/p01.jpg",
+                      thumbPath: nil, feedPath: nil, takenAt: roll.revealAt, developsAt: roll.revealAt,
+                      isDeveloped: true, caption: nil)
+            }
+            if ProcessInfo.processInfo.arguments.contains("-v2AskLeave") {
+                try? await Task.sleep(for: .seconds(0.6))
+                asking = .leave(name: roll.name, myShots: 3)
+            }
+            return
+        }
+        #endif
+        guard let me else { return }
+        let epoch = AccountEpoch.current
+        async let memberRead = try? rolls.fetchMembers(for: roll.id)
+        async let photoRead = try? photos.fetchRollPhotosSnapshot(rollId: roll.id)
+        async let mutedRead = photos.fetchMutedRolls(userId: me)
+        let (m, p, mutes) = await (memberRead, photoRead, mutedRead)
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        if let m { members = m.sorted { a, b in a.id == me ? true : b.id == me ? false : (a.username ?? "") < (b.username ?? "") } }
+        if let p { prints = p.filter(\.isDeveloped) }
+        muted = mutes.contains(roll.id)
+    }
+}
+
+/// The consequence card for a roll action that touches other people, on the desk: what it is,
+/// what survives (said first), what is lost, then the two choices. The words are `RollConsequence`'s,
+/// shared with the App Store app, so the two never drift apart.
+struct V2ConsequenceSheet: View {
+    let consequence: RollConsequence
+    var onConfirm: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.v2Palette) private var palette
+    /// The card's own height, so the sheet rises only as far as its words need.
+    @State private var height: CGFloat = 360
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(consequence.contextLabel)
+                    .font(V2Type.data(10))
+                    .tracking(1.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.ink3)
+                Text(consequence.title)
+                    .font(V2Type.serif(22, relativeTo: .title2))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+                    .accessibilityAddTraits(.isHeader)
+                VStack(alignment: .leading, spacing: 12) {
+                    fact("✓", consequence.survives)
+                    fact("✕", consequence.loses)
+                }
+                .padding(.top, 20)
+                Button {
+                    Haptics.warning()
+                    dismiss()
+                    onConfirm()
+                } label: {
+                    Text(consequence.confirmLabel)
+                        .font(V2Type.control(.body))
+                        .foregroundStyle(Color.red)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .overlay { Rectangle().stroke(Color.red.opacity(0.5), lineWidth: 1) }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 28)
+                Button { dismiss() } label: {
+                    Text(consequence.cancelLabel)
+                        .font(V2Type.control(.body))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+            .padding(V2Metrics.margin)
+            .padding(.top, 8)
+            .frame(maxWidth: 520, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 + 20 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .foregroundStyle(palette.ink)
+        .presentationDetents([.height(height)])
+        .presentationBackground { V2Desktop(palette: palette) }
+    }
+
+    private func fact(_ mark: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(mark).font(.system(.subheadline, weight: .semibold)).foregroundStyle(palette.ink2)
+                .accessibilityHidden(true)
+            Text(text).font(V2Type.serif(15, italic: true, relativeTo: .body)).foregroundStyle(palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
