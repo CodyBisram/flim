@@ -10,6 +10,10 @@
     {
       "source": "/i/:code",
       "destination": "/i"
+    },
+    {
+      "source": "/s/:token",
+      "destination": "/s"
     }
   ],
   "headers": [
@@ -27,7 +31,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://wxvwamwrjlrvqmuaafjv.supabase.co; connect-src 'self' https://wxvwamwrjlrvqmuaafjv.supabase.co; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://wxvwamwrjlrvqmuaafjv.supabase.co https://kwhgbrdznaogkdyqitvi.supabase.co; connect-src 'self' https://wxvwamwrjlrvqmuaafjv.supabase.co https://kwhgbrdznaogkdyqitvi.supabase.co; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
         },
         {
           "key": "X-Frame-Options",

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1917">
+  <!-- A screening link is private by design: it must never be listed anywhere. -->
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>A FLIM screening</title>
+  <meta name="description" content="Prints from FLIM, the disposable camera for your closest friends.">
+  <meta property="og:site_name" content="FLIM">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="A FLIM screening">
+  <meta property="og:description" content="Watch these prints develop, one by one.">
+  <meta property="og:image" content="https://flim-app.com/og-image.png">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Libre+Caslon+Text:ital,wght@0,400;1,400&display=swap">
+  <style>
+    /* v2's Slate desk and its cream prints (Flim/V2/V2Theme.swift, V2Print.swift). */
+    :root {
+      --desk: #1c1917; --ink: #f3e7dc; --ink2: #b9aea3; --ink3: #948980; --rule: rgba(243, 231, 220, .14);
+      --print: #fbf6f0; --print-ink: #2a2420; --print-ink2: #5e534a; --box: #e8d9cb; --lid: #dccbba;
+      --stamp: #fabd5c;
+      --serif: "Libre Caslon Text", Georgia, serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --w: min(340px, calc(100vw - 48px), calc((100svh - 230px) * 0.68));
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink); }
+    body { font-family: var(--serif); -webkit-font-smoothing: antialiased; overflow: hidden;
+           -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+    /* The desk's grain, very faint. */
+    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .5;
+      background-image: radial-gradient(rgba(255,255,255,.025) 1px, transparent 1px); background-size: 3px 3px; }
+    main { position: relative; height: 100svh; display: flex; flex-direction: column; align-items: center;
+           padding: max(16px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom)); }
+    header { width: 100%; max-width: 520px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+             min-height: 44px; }
+    header .brand { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--ink3); }
+    header h1 { margin: 0; font-weight: 400; font-size: 15px; text-align: center; white-space: nowrap;
+                overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+    header .count { justify-self: end; font-family: var(--mono); font-size: 12px; color: var(--ink3); }
+    .segments { width: 100%; max-width: 520px; display: flex; gap: 4px; margin-top: 8px; height: 2px; }
+    .segments i { flex: 1; background: var(--rule); border-radius: 1px; transition: background .3s; }
+    .segments i.on { background: var(--ink); }
+    .line { font-style: italic; color: var(--ink2); font-size: 17px; margin: 22px 0 0; min-height: 1.4em; text-align: center; }
+    .stage { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; perspective: 1400px; }
+
+    /* A print: 16/340 border on three sides, 93/340 foot, 3:4 window. */
+    .print { width: var(--w); background: var(--print); padding: calc(var(--w) * 16 / 340) calc(var(--w) * 16 / 340) 0;
+             box-shadow: 0 2px 4px rgba(0,0,0,.35), 0 18px 20px rgba(0,0,0,.4); transform-style: preserve-3d;
+             transition: transform .3s cubic-bezier(.2,.8,.3,1), opacity .3s; }
+    .print.away { transform: translateY(70vh) rotate(6deg); opacity: 0; }
+    .print .window { position: relative; aspect-ratio: 3 / 4; background: #121212; overflow: hidden; }
+    .print img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+                 filter: blur(26px) brightness(1.9) saturate(.2); transform: scale(1.08); }
+    .print.developed img { filter: none; transform: none; transition: filter 1.8s ease-out, transform 1.8s ease-out; }
+    .print .stamp { position: absolute; right: 7%; bottom: 3.5%; font-family: var(--mono); font-size: calc(var(--w) * .045);
+                    color: var(--stamp); opacity: 0; letter-spacing: .1em; text-shadow: 0 0 6px rgba(250,140,40,.55);
+                    transition: opacity 1s .9s; }
+    .print.developed .stamp { opacity: .92; }
+    .print .foot { height: calc(var(--w) * 93 / 340); }
+    .print.face-down .window { visibility: hidden; }
+    .print.face-down { background: #f7efe4; }
+
+    /* The box: lid on, then lifted; at the end it closes on its cover. */
+    .box { width: min(260px, 70vw); aspect-ratio: 260 / 330; background: var(--box); position: relative;
+           box-shadow: 0 2px 4px rgba(0,0,0,.35), 0 18px 20px rgba(0,0,0,.4); }
+    .box .lid { position: absolute; inset: 0 0 auto; height: 24%; background: var(--lid); transition: transform 1.2s ease-in, opacity 1.2s; }
+    .box.open .lid { transform: translateY(-60vh) rotate(-10deg); opacity: 0; }
+    .box .label { position: absolute; top: 18px; left: 18px; right: 18px; display: flex; justify-content: space-between;
+                  font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: #8f5f22; z-index: 2; }
+    .box .label span:last-child { color: #6f6256; }
+    .box .cover { position: absolute; left: 50%; top: 13%; width: 54%; transform: translateX(-50%) rotate(-2deg);
+                  background: var(--print); padding: 6% 6% 0; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+    .box .cover .window { aspect-ratio: 3 / 4; background: #121212 center / cover no-repeat; }
+    .box .cover .foot { height: 22%; min-height: 18px; }
+
+    .closing { text-align: center; max-width: 420px; }
+    .closing p { font-style: italic; font-size: 19px; line-height: 1.5; margin: 28px 0 6px; }
+    .closing small { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink3); }
+    .actions { width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: center; min-height: 44px; }
+    .actions button, .actions a { font: 600 13px -apple-system, system-ui, sans-serif; color: var(--ink2); background: none;
+                                  border: 0; padding: 12px 0; cursor: pointer; text-decoration: none; }
+    .actions a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+    .note { text-align: center; max-width: 360px; margin: auto; }
+    .note h2 { font-weight: 400; font-size: 26px; margin: 0 0 10px; }
+    .note p { font-style: italic; color: var(--ink2); font-size: 16px; line-height: 1.5; margin: 0 0 22px; }
+    .note a { font: 600 14px -apple-system, system-ui, sans-serif; color: var(--ink); }
+    .hint { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--ink3); margin-top: 10px; min-height: 14px; }
+    [hidden] { display: none !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .print, .box .lid, .print.developed img, .print .stamp { transition-duration: .2s !important; transition-delay: 0s !important; }
+      .print.away { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app" aria-live="polite">
+    <header>
+      <span class="brand">FLIM</span>
+      <h1 id="title"></h1>
+      <span class="count" id="count"></span>
+    </header>
+    <div class="segments" id="segments" aria-hidden="true"></div>
+    <p class="line" id="line"></p>
+    <div class="stage" id="stage"></div>
+    <div class="hint" id="hint"></div>
+    <div class="actions" id="actions" hidden>
+      <button type="button" id="again">Play again</button>
+      <a href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Get FLIM</a>
+    </div>
+  </main>
+  <script>
+  (function () {
+    "use strict";
+    // FLIM Dev until v2 launches; production's function URL then (and the CSP in vercel.json).
+    var API = "https://kwhgbrdznaogkdyqitvi.supabase.co/functions/v1/public-screening";
+    var NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var $ = function (id) { return document.getElementById(id); };
+
+    var token = (location.pathname.match(/^\/s\/([A-Za-z0-9_-]{24})\/?$/) || [])[1]
+             || new URLSearchParams(location.search).get("t") || "";
+
+    var state = { prints: [], index: 0, run: 0, hurried: false, lingering: false };
+
+    function number(n) { return n < NUMBERS.length ? NUMBERS[n] : String(n); }
+    function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    function imageURL(p) { return API + "?t=" + encodeURIComponent(token) + "&p=" + p.id; }
+    function stamp(d) {
+      return String(d.getMonth() + 1).padStart(2, "0") + " " + String(d.getDate()).padStart(2, "0") + " '" + String(d.getFullYear()).slice(2);
+    }
+    function dayKey(d) { return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); }
+
+    function note(heading, text) {
+      $("segments").innerHTML = ""; $("line").textContent = ""; $("hint").textContent = "";
+      var stage = $("stage"); stage.innerHTML = "";
+      var div = document.createElement("div"); div.className = "note";
+      var h = document.createElement("h2"); h.textContent = heading;
+      var p = document.createElement("p"); p.textContent = text;
+      var a = document.createElement("a"); a.href = "/"; a.textContent = "What is FLIM?";
+      div.append(h, p, a); stage.append(div);
+    }
+
+    // A burst plays as one print, its sharpest, as the app does (BurstGrouping.playback).
+    function playback(prints) {
+      var best = {}, out = [];
+      prints.forEach(function (p) {
+        if (!p.burst) { out.push(p); return; }
+        var b = best[p.burst];
+        if (!b) { best[p.burst] = p; out.push(p); }
+        else if ((p.sharpness || 0) > (b.sharpness || 0)) { out[out.indexOf(b)] = p; best[p.burst] = p; }
+      });
+      return out;
+    }
+
+    function wait(seconds, run) {
+      return new Promise(function (resolve) {
+        var left = seconds * 1000;
+        var tick = setInterval(function () {
+          if (run !== state.run) { clearInterval(tick); resolve(false); return; }
+          if (state.hurried) { state.hurried = false; clearInterval(tick); resolve(true); return; }
+          if (!state.lingering) left -= 100;
+          if (left <= 0) { clearInterval(tick); resolve(true); }
+        }, 100);
+      });
+    }
+
+    function segments(n, on) {
+      var s = $("segments"); s.innerHTML = "";
+      for (var i = 0; i < n; i++) { var b = document.createElement("i"); if (i <= on) b.className = "on"; s.append(b); }
+    }
+
+    function buildPrint(p) {
+      var el = document.createElement("div"); el.className = "print away face-down";
+      var w = document.createElement("div"); w.className = "window";
+      var img = new Image(); img.alt = ""; img.decoding = "async"; img.src = imageURL(p);
+      var st = document.createElement("span"); st.className = "stamp"; st.textContent = stamp(new Date(p.takenAt));
+      var foot = document.createElement("div"); foot.className = "foot";
+      w.append(img, st); el.append(w, foot);
+      return el;
+    }
+
+    async function play(data) {
+      var run = ++state.run;
+      var prints = state.prints;
+      $("actions").hidden = true;
+      $("count").textContent = "";
+      $("line").textContent = "";
+      $("hint").textContent = "tap to hurry · hold to linger";
+      segments(prints.length, -1);
+      // The lid comes off.
+      var stage = $("stage"); stage.innerHTML = "";
+      var box = document.createElement("div"); box.className = "box";
+      var label = document.createElement("div"); label.className = "label";
+      var l1 = document.createElement("span"); l1.textContent = data.title.toUpperCase() + " · " + prints.length;
+      label.append(l1, document.createElement("span"));
+      var lid = document.createElement("div"); lid.className = "lid";
+      box.append(label, lid); stage.append(box);
+      if (!(await wait(0.6, run))) return;
+      box.classList.add("open");
+      if (!(await wait(reduce ? 0.3 : 1.2, run))) return;
+      // Each print: dealt, turned, developed, rested.
+      for (var i = 0; i < prints.length; i++) {
+        var p = prints[i], taken = new Date(p.takenAt);
+        segments(prints.length, i);
+        $("count").textContent = (i + 1) + " / " + prints.length;
+        $("line").textContent = taken.toLocaleDateString(undefined, { weekday: "long" }) + ".";
+        stage.innerHTML = "";
+        var el = buildPrint(p); el.setAttribute("role", "img");
+        el.setAttribute("aria-label", "Print " + (i + 1) + " of " + prints.length + ", taken " +
+          taken.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }));
+        stage.append(el);
+        if (prints[i + 1]) { new Image().src = imageURL(prints[i + 1]); }
+        void el.offsetWidth;
+        el.classList.remove("away");
+        if (!(await wait(0.3, run))) return;
+        el.classList.remove("face-down");
+        if (!(await wait(reduce ? 0.2 : 0.4, run))) return;
+        el.classList.add("developed");
+        if (!(await wait(reduce ? 0.6 : 1.8, run))) return;
+        if (!(await wait(1.0, run))) return;
+      }
+      close(data, prints);
+    }
+
+    function close(data, prints) {
+      $("hint").textContent = "";
+      $("count").textContent = "";
+      $("line").textContent = "";
+      var stage = $("stage"); stage.innerHTML = "";
+      var wrap = document.createElement("div"); wrap.className = "closing";
+      var box = document.createElement("div"); box.className = "box"; box.style.margin = "0 auto";
+      var label = document.createElement("div"); label.className = "label";
+      var l1 = document.createElement("span"); l1.textContent = data.title.toUpperCase() + " · " + prints.length;
+      var l2 = document.createElement("span");
+      label.append(l1, l2);
+      var cover = document.createElement("div"); cover.className = "cover";
+      var cw = document.createElement("div"); cw.className = "window";
+      if (prints[0]) cw.style.backgroundImage = "url(\"" + imageURL(prints[0]) + "\")";
+      var cf = document.createElement("div"); cf.className = "foot";
+      cover.append(cw, cf); box.append(label, cover);
+      var days = new Set(prints.map(function (p) { return dayKey(new Date(p.takenAt)); })).size;
+      var span = prints.length + " " + (prints.length === 1 ? "print" : "prints") + " over " + number(days) + " " + (days === 1 ? "day" : "days") + ".";
+      var line = document.createElement("p");
+      line.textContent = data.kind === "roll"
+        ? "Shot on FLIM by " + number(data.people) + " " + (data.people === 1 ? "friend" : "friends") + ". " + span
+        : cap(span);
+      var until = document.createElement("small");
+      until.textContent = "This link plays until " + new Date(data.expiresAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + ".";
+      wrap.append(box, line, until); stage.append(wrap);
+      $("actions").hidden = false;
+    }
+
+    function bindGestures() {
+      var stage = $("app"), timer = null;
+      stage.addEventListener("pointerdown", function (e) {
+        if (e.target.closest(".actions")) return;
+        timer = setTimeout(function () { state.lingering = true; }, 250);
+      });
+      stage.addEventListener("pointerup", function (e) {
+        if (e.target.closest(".actions")) return;
+        clearTimeout(timer);
+        if (state.lingering) { state.lingering = false; return; }
+        state.hurried = true;
+      });
+      stage.addEventListener("pointercancel", function () { clearTimeout(timer); state.lingering = false; });
+    }
+
+    async function start() {
+      if (!/^[A-Za-z0-9_-]{24}$/.test(token)) { note("This link doesn't play.", "Check the link you were sent, or ask for a new one."); return; }
+      var res;
+      try { res = await fetch(API + "?t=" + encodeURIComponent(token), { cache: "no-store", referrerPolicy: "no-referrer" }); }
+      catch (e) { note("Couldn't load this screening.", "Check your connection and try again."); return; }
+      if (res.status === 404) { note("This screening has ended.", "Links play for a week, or until someone in the roll stops sharing."); return; }
+      if (!res.ok) { note("Couldn't load this screening.", "Try again in a minute."); return; }
+      var data = await res.json();
+      state.prints = playback(data.prints || []);
+      $("title").textContent = data.title;
+      document.title = data.title + " · FLIM";
+      if (!state.prints.length) { note("Nothing to show yet.", "The prints in this link are no longer shared."); return; }
+      $("again").addEventListener("click", function () { play(data); });
+      bindGestures();
+      play(data);
+    }
+    start();
+  })();
+  </script>
+</body>
+</html>
