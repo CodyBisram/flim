@@ -48,16 +48,7 @@ struct V2RollsView: View {
         .containerBackground(.clear, for: .navigation)
         .navigationDestination(for: Roll.self) { roll in
             if roll.isDeveloped {
-                // A route to one photo and its thread (a comment push) goes to the roll's prints;
-                // otherwise an opened roll plays its screening.
-                // A route to one photo's thread, or a roll whose screening has played (the reveal is
-                // one-shot, `rollRevealSeen`), goes to its prints; otherwise it plays.
-                if pendingPhotoIntent.wrappedValue?.rollId == roll.id
-                    || UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)") {
-                    V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
-                } else {
-                    V2RollScreening(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
-                }
+                V2OpenedRoll(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
             } else {
                 V2SealedRollView(roll: roll)
             }
@@ -932,6 +923,32 @@ struct V2NewRollView: View {
 
 /// An opened roll pushed onto the Rolls stack: its screening, with its prints in full
 /// (`V2RollPrints`) as the way on at the end.
+/// An opened roll: its screening, or its prints. A route to one photo's thread, or a roll whose
+/// screening has played (the reveal is one-shot, `rollRevealSeen`), goes to the prints; otherwise
+/// it plays. Decided ONCE, as it is pushed: the screening's own end writes `rollRevealSeen`, and
+/// read on every pass the destination swapped the closing card (Play again, Start another, Share)
+/// for the prints the moment the last print was dealt.
+struct V2OpenedRoll: View {
+    let roll: Roll
+    var pendingPhotoIntent: Binding<RollPhotoIntent?>
+    @State private var plays: Bool
+
+    init(roll: Roll, pendingPhotoIntent: Binding<RollPhotoIntent?>) {
+        self.roll = roll
+        self.pendingPhotoIntent = pendingPhotoIntent
+        _plays = State(initialValue: !(pendingPhotoIntent.wrappedValue?.rollId == roll.id
+            || UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)")))
+    }
+
+    var body: some View {
+        if plays {
+            V2RollScreening(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+        } else {
+            V2RollPrints(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+        }
+    }
+}
+
 struct V2RollScreening: View {
     let roll: Roll
     var pendingPhotoIntent: Binding<RollPhotoIntent?>
