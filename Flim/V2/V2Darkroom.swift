@@ -56,7 +56,9 @@ struct V2DarkroomPlace: View {
         .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
         .onAppear { openRequestedPhoto() }
         .fullScreenCover(item: $routedPhoto) { photo in
-            PhotoPagerView(photos: [photo], signedURLs: [:])
+            V2OwnPrintsView(prints: [photo], start: 0)
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
         }
         #if DEBUG
         // `-v2OpenKept`: opens Kept at launch, for screenshots.
@@ -82,7 +84,9 @@ struct V2DarkroomPlace: View {
         }
         .fullScreenCover(item: Binding(get: { pagerStart.map(PagerStart.init) },
                                        set: { pagerStart = $0?.index })) { start in
-            PhotoPagerView(photos: kept, startIndex: start.index, signedURLs: [:])
+            V2OwnPrintsView(prints: kept, start: start.index)
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
         }
         .fullScreenCover(isPresented: $showKept) {
             NavigationStack { V2KeptView() }
