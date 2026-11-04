@@ -38,7 +38,12 @@ struct V2FindView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $profile) { V2PageView(userId: $0.id, openInvite: $0.openInvite) }
         }
-        .sheet(item: $joinCode) { JoinRollView(initialCode: $0.code) }
+        // v2's own join (the one a roll invite link opens), not the App Store app's sheet. Joining
+        // points the camera at the roll, as it does from an invite.
+        .fullScreenCover(item: $joinCode) { code in
+            V2NewRollView(joinCode: code.code) { _ in joinCode = nil }
+                .modifier(V2DeskEnvironment())
+        }
         .task {
             guard let me = auth.currentUser?.id else { return }
             if feed.followingIds.isEmpty { await feed.loadFollowing(userId: me) }
