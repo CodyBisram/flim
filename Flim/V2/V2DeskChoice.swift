@@ -8,7 +8,6 @@ struct V2DeskChoice: View {
     var chosen: () -> Void
 
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(V2Desk.storageKey) private var deskRaw = V2Desk.system.rawValue
 
     /// Set once a desk has been chosen here, so the question is asked once.
@@ -40,7 +39,7 @@ struct V2DeskChoice: View {
         }
     }
 
-    private var system: V2Palette { V2Palette.of(.system, scheme: colorScheme) }
+    private var system: V2Palette { V2Palette.of(.system, scheme: V2SystemScheme.current) }
 
     // MARK: Phone and closed
 

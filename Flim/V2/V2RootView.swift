@@ -31,12 +31,11 @@ struct V2RootView<Content: View, Foot: View>: View {
     @ViewBuilder var columnFoot: (_ place: V2Place) -> Foot
 
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(V2Desk.storageKey) private var deskRaw = V2Desk.system.rawValue
     @AppStorage(V2Settings.stampKey) private var stampRaw = V2Stamp.amber.rawValue
 
     private var palette: V2Palette {
-        V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: colorScheme)
+        V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: V2SystemScheme.current)
     }
 
     var body: some View {

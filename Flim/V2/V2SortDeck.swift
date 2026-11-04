@@ -66,11 +66,13 @@ struct V2SortDeck: View {
         .task { await load() }
         .sheet(item: $tagging) { photo in
             TagPhotoSheet(url: tagURL, cacheKey: photo.viewPath, tags: $tags, rollId: photo.rollId)
+                .preferredColorScheme(.dark)
         }
         .sheet(item: $sessionOffer, onDismiss: { sessionSheetClosed() }) { offer in
             SpotlightSessionSheet(offer: offer, session: session, accessibilitySize: typeSize.isAccessibilitySize,
                                   onPutUp: { await putUp($0, offer: offer) })
                 .onAppear { if shownOffer?.id != offer.id { shownOffer = offer } }
+                .preferredColorScheme(.dark)
         }
         // The last print sorted on its own: offer this week's Spotlight, as the App Store deck
         // does. Done never does.

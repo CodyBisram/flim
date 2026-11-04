@@ -107,6 +107,8 @@ struct V2ScreeningView: View {
             .onLongPressGesture(minimumDuration: 0.25, perform: {}, onPressingChanged: { lingering = $0 })
         }
         .toolbar(.hidden, for: .navigationBar)
+        // Always Slate, whatever the desk: the lights go down.
+        .preferredColorScheme(.dark)
         .confirmationDialog(shareTitle, isPresented: $askingShare, titleVisibility: .visible) {
             if case .live(let link) = linkRead {
                 Button("Send the link") { sendingLink = link }

@@ -97,7 +97,7 @@ struct V2AppearanceView: View {
         .background { V2Desktop(palette: palette) }
         .foregroundStyle(palette.ink)
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showAccount) { ProfileView() }
+        .sheet(isPresented: $showAccount) { ProfileView().preferredColorScheme(.dark) }
     }
 
     private var header: some View {

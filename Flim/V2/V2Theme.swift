@@ -210,16 +210,33 @@ extension EnvironmentValues {
     }
 }
 
+/// The phone's own appearance. The app pins itself dark for the App Store screens (FlimApp), so
+/// `\.colorScheme` always reads dark and the System desk could never be Paper; the screen's traits
+/// still carry the person's own setting.
+enum V2SystemScheme {
+    @MainActor static var current: ColorScheme {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.screen.traitCollection.userInterfaceStyle == .light ? .light : .dark
+    }
+}
+
 /// The chosen desk and stamp, for a screen presented outside v2's frame (a route's cover): the
 /// frame sets them for everything inside it, but a cover presented from outside does not inherit.
+/// It also sets the system's appearance to the desk's, so on Paper the status bar, keyboards and
+/// sheets read dark on light instead of the app's pinned dark.
 struct V2DeskEnvironment: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("v2Desk") private var deskRaw = V2Desk.system.rawValue
     @AppStorage("accentColor") private var stampRaw = V2Stamp.amber.rawValue
 
     func body(content: Content) -> some View {
-        content
-            .environment(\.v2Palette, V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: colorScheme))
+        // Read on every pass, and the scene phase is read so coming back to the app re-reads the
+        // phone's setting for the System desk.
+        _ = scenePhase
+        let palette = V2Palette.of(V2Desk(rawValue: deskRaw) ?? .system, scheme: V2SystemScheme.current)
+        return content
+            .environment(\.v2Palette, palette)
             .environment(\.v2Stamp, V2Stamp(rawValue: stampRaw) ?? .amber)
+            .preferredColorScheme(palette.isDark ? .dark : .light)
     }
 }

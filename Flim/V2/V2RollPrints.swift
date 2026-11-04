@@ -94,6 +94,7 @@ struct V2RollPrints: View {
         }
         .navigationDestination(isPresented: $showMore) {
             RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+                .preferredColorScheme(.dark)
         }
         .fullScreenCover(isPresented: $replaying) {
             V2ScreeningView(source: .roll(roll), close: { replaying = false })
