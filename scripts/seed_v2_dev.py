@@ -176,7 +176,7 @@ def seed(args):
             pk = key(".flim-service-key")
             rows = request(PROD, pk, "GET",
                            f"/rest/v1/posts?select=photo_id,taken_at,created_at,caption,feed_path,thumb_path"
-                           f"&user_id=eq.{OWNER_PROD_ID}&hidden=eq.false&put_away=eq.false"
+                           f"&user_id=eq.{OWNER_PROD_ID}&hidden=eq.false"
                            f"&order=taken_at.desc&limit={args.posts}")
             copied = 0
             for r in rows:
