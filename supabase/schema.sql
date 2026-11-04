@@ -7080,6 +7080,8 @@ $$;
 -- points at the owner's folder and stays as it is.
 GRANT UPDATE (is_sorted, thumb_path, feed_path, burst_group, is_developed) ON public.photos TO authenticated;
 
+-- 2026-11-04: one exact shape, not just the right prefix: `<uid>/../x` passed the old LIKE, and
+-- service-key readers resolve `..` against the API root (2026-11-04_photo_path_lock_anchored.sql).
 CREATE OR REPLACE FUNCTION public.lock_photo_paths_to_owner()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -7087,19 +7089,19 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    v_prefix TEXT := NEW.user_id::text || '/';
+    v_shape TEXT := '^' || NEW.user_id::text || '/[A-Za-z0-9_-]+\.(jpe?g|heic|png)$';
 BEGIN
     IF auth.uid() IS NULL THEN RETURN NEW; END IF;
     IF (TG_OP = 'INSERT' OR NEW.storage_path IS DISTINCT FROM OLD.storage_path)
-       AND NEW.storage_path NOT LIKE v_prefix || '%' THEN
+       AND NEW.storage_path !~ v_shape THEN
         RAISE EXCEPTION 'storage_path_not_owned' USING ERRCODE = 'P0005';
     END IF;
     IF NEW.thumb_path IS NOT NULL AND (TG_OP = 'INSERT' OR NEW.thumb_path IS DISTINCT FROM OLD.thumb_path)
-       AND NEW.thumb_path NOT LIKE v_prefix || '%' THEN
+       AND NEW.thumb_path !~ v_shape THEN
         RAISE EXCEPTION 'thumb_path_not_owned' USING ERRCODE = 'P0005';
     END IF;
     IF NEW.feed_path IS NOT NULL AND (TG_OP = 'INSERT' OR NEW.feed_path IS DISTINCT FROM OLD.feed_path)
-       AND NEW.feed_path NOT LIKE v_prefix || '%' THEN
+       AND NEW.feed_path !~ v_shape THEN
         RAISE EXCEPTION 'feed_path_not_owned' USING ERRCODE = 'P0005';
     END IF;
     RETURN NEW;

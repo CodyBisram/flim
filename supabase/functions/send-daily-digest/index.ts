@@ -343,6 +343,10 @@ export function digestPayload(title: string, body: string, react?: DigestReact):
 
 /// How long the photo's signed URL lives. The extension fetches it the moment the push lands; an
 /// hour covers a phone that was off when APNs first tried and catches up later in the noon hour.
+/// The only shape a photo path may have before the service key signs it: `<account id>/<name>.<ext>`.
+/// Paths are client-written, and the storage client does not encode them, so a `..` would point
+/// the service key at another account's file, or past the bucket (2026-11-04 review).
+const PHOTO_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9_-]+\.(jpe?g|heic|png)$/;
 const PUSH_IMAGE_TTL_SECONDS = 3600;
 
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
@@ -608,7 +612,7 @@ Deno.serve(async (req: Request) => {
     if (imageByPost.has(post.id)) return imageByPost.get(post.id)!;
     const path = post.feed_path ?? post.thumb_path;
     let url: string | null = null;
-    if (path) {
+    if (path && PHOTO_PATH.test(path)) {
       const { data, error } = await supabase.storage.from("photos").createSignedUrl(path, PUSH_IMAGE_TTL_SECONDS);
       if (error) console.warn(JSON.stringify({ at: "digest_image_sign_failed", error: error.message }));
       url = data?.signedUrl ?? null;

@@ -172,6 +172,10 @@ const REACT_CATEGORY = "FLIM_REACT";
 
 // How long a push photo's signed URL lives. The extension fetches it the moment the push lands;
 // an hour covers a phone that was off when APNs first tried.
+/// The only shape a photo path may have before the service key signs it: `<account id>/<name>.<ext>`.
+/// Paths are client-written, and the storage client does not encode them, so a `..` would point
+/// the service key at another account's file, or past the bucket (2026-11-04 review).
+const PHOTO_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9_-]+\.(jpe?g|heic|png)$/;
 const PUSH_IMAGE_TTL_SECONDS = 3600;
 // Per post, for this run and the next few: a warm instance keeps module state between runs, so an
 // entry is reused only while it is far from expiring.
@@ -190,7 +194,7 @@ async function reactRoute(
   if (img === undefined) {
     const path = feedPath ?? thumbPath;
     img = null;
-    if (path) {
+    if (path && PHOTO_PATH.test(path)) {
       const { data, error } = await supabase.storage.from("photos").createSignedUrl(path, PUSH_IMAGE_TTL_SECONDS);
       if (error) console.warn(JSON.stringify({ at: "push_image_sign_failed", error: error.message }));
       img = data?.signedUrl ?? null;
