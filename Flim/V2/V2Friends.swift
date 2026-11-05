@@ -389,8 +389,24 @@ struct V2FriendsPlace: View {
         guard let uid = auth.currentUser?.id else { return }
         await seen.awaitPull()
         await feed.loadFeed(currentUserId: uid)
+        await fillPastOwnPosts(uid)
         unseenAtLoad = Set(feed.feed.filter { $0.author.id != uid && !seen.isSeen($0.id) }.map(\.id))
         loaded = true
+    }
+
+    /// The feed's pages hold your own posts too, which Friends leaves out, and the next page is
+    /// asked for only as a friend's group comes on screen. A page that was all yours (a sort
+    /// that posted a dozen at once) left Friends empty with friends' prints one page away, so
+    /// it reads on until a friend's print shows or the week's window ends.
+    private func fillPastOwnPosts(_ uid: UUID) async {
+        var pages = 0
+        let epoch = AccountEpoch.current
+        while groups.count < 3, feed.hasMoreFeed, pages < 8, AccountEpoch.isCurrent(epoch) {
+            let before = feed.feed.count
+            await feed.loadMoreFeed(currentUserId: uid)
+            pages += 1
+            if feed.feed.count == before { break }
+        }
     }
 
     /// A group on screen counts as seen, all its prints (the App Store feed's per-card rule). The
@@ -399,7 +415,13 @@ struct V2FriendsPlace: View {
         if isFrontmost { seen.markSeen(groups[index].items.map(\.id)) }
         if index >= groups.count - 3, feed.hasMoreFeed, !feed.isLoadingMoreFeed,
            let uid = auth.currentUser?.id {
-            Task { await feed.loadMoreFeed(currentUserId: uid) }
+            Task {
+                let before = groups.count
+                await feed.loadMoreFeed(currentUserId: uid)
+                // A page of only your own posts adds no group, and so nothing more would appear
+                // to ask for the next one.
+                if groups.count == before { await fillPastOwnPosts(uid) }
+            }
         }
     }
 }

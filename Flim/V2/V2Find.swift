@@ -41,7 +41,17 @@ struct V2FindView: View {
         // v2's own join (the one a roll invite link opens), not the App Store app's sheet. Joining
         // points the camera at the roll, as it does from an invite.
         .fullScreenCover(item: $joinCode) { code in
-            V2NewRollView(joinCode: code.code) { _ in joinCode = nil }
+            V2NewRollView(joinCode: code.code) { joined in
+                joinCode = nil
+                // In: Find steps aside and the roll opens, by the route a roll's push takes.
+                guard let joined else { return }
+                close()
+                Task {
+                    try? await Task.sleep(for: .seconds(0.45))
+                    NotificationCenter.default.post(name: .openPushDestination,
+                                                    object: PushDestination.reveal(rollId: joined.id))
+                }
+            }
                 .modifier(V2DeskEnvironment())
         }
         .task {

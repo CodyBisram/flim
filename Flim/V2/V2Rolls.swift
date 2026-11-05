@@ -86,10 +86,9 @@ struct V2RollsView: View {
                 newRollButton
             }
             .padding(.horizontal, V2Metrics.margin)
-            shelf
-            footnote
-                .padding(.horizontal, V2Metrics.margin)
-                .padding(.bottom, 16)
+            // The line about rolls closes the list and scrolls with it; pinned under the shelf,
+            // the last roll ran up against it and read as covered.
+            shelf(footnote: true)
         }
     }
 
@@ -179,8 +178,10 @@ struct V2RollsView: View {
 
     // MARK: The shelf
 
+    private var shelf: some View { shelf(footnote: false) }
+
     @ViewBuilder
-    private var shelf: some View {
+    private func shelf(footnote showsFootnote: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if !rolls.followUpInvites.isEmpty {
@@ -215,6 +216,12 @@ struct V2RollsView: View {
                         }
                     }
                     .padding(.top, 14)
+                }
+                if showsFootnote {
+                    footnote
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 36)
+                        .padding(.bottom, 8)
                 }
             }
             .padding(.horizontal, V2Metrics.margin)
@@ -523,8 +530,9 @@ struct V2SealedRollView: View {
             }
             .scrollIndicators(.hidden)
             HStack {
+                // Whoever started it deletes it; everyone else leaves (the App Store roll screen's rule).
                 Button { confirmLeave = true } label: {
-                    Text("Leave roll").font(V2Type.control()).foregroundStyle(palette.ink3).frame(minHeight: 44)
+                    Text(started ? "Delete roll" : "Leave roll").font(V2Type.control()).foregroundStyle(palette.ink3).frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 if embedded {
@@ -544,8 +552,9 @@ struct V2SealedRollView: View {
         .foregroundStyle(palette.ink)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $confirmLeave) {
-            V2ConsequenceSheet(consequence: .leave(name: roll.name,
-                                                   myShots: auth.currentUser.flatMap { counts[$0.id] })) { leave() }
+            V2ConsequenceSheet(consequence: started
+                ? .deleteRoll(name: roll.name, people: members.isEmpty ? nil : members.count)
+                : .leave(name: roll.name, myShots: auth.currentUser.flatMap { counts[$0.id] })) { leave() }
                 .modifier(V2DeskEnvironment())
         }
         .task { await load() }
@@ -564,11 +573,17 @@ struct V2SealedRollView: View {
         NotificationCenter.default.post(name: .openCamera, object: nil)
     }
 
+    private var started: Bool { auth.currentUser?.id == roll.createdBy }
+
     private func leave() {
         guard let uid = auth.currentUser?.id else { return }
         Task {
             do {
-                try await rolls.leaveRoll(rollId: roll.id, userId: uid)
+                if started {
+                    try await rolls.deleteRoll(rollId: roll.id)
+                } else {
+                    try await rolls.leaveRoll(rollId: roll.id, userId: uid)
+                }
                 notifications.cancelRollDevelopNotification(rollId: roll.id)
                 dismiss()
             } catch {

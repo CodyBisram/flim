@@ -84,6 +84,9 @@ struct V2Home<Darkroom: View, Friends: View>: View {
             }
         )
         .task(id: auth.currentUser?.id) { await refreshUnsorted() }
+        .onReceive(NotificationCenter.default.publisher(for: .v2UnsortedCountChanged)) { _ in
+            Task { await refreshUnsorted() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await refreshUnsorted() } }
         }

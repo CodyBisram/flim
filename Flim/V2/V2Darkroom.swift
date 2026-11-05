@@ -1,5 +1,10 @@
 import SwiftUI
 
+extension Notification.Name {
+    /// The Darkroom read its stack again; the place row's count should follow.
+    static let v2UnsortedCountChanged = Notification.Name("v2UnsortedCountChanged")
+}
+
 /// The Darkroom: what developed and waits to be sorted, as a stack of prints, and the last few
 /// you kept (prototype, board 15d's right half). Tapping the stack opens the sort deck.
 ///
@@ -351,8 +356,14 @@ struct V2DarkroomPlace: View {
         let (u, k, c) = await (unsortedRead, keptRead, countRead)
         guard AccountEpoch.isCurrent(epoch) else { return }
         // A dropped read keeps what is on screen (the services' nil-on-failure contract).
-        if let u { withAnimation(V2Motion.setDown) { unsorted = u } }
-        if let k { kept = k.photos }
+        if let u {
+            withAnimation(V2Motion.setDown) { unsorted = u }
+            // The count beside the place's name reads it too (a sort just closed, a shot landed).
+            NotificationCenter.default.post(name: .v2UnsortedCountChanged, object: nil)
+        }
+        // A shot in a roll that hasn't opened stays face down until it does, yours included, as
+        // the App Store Darkroom keeps it among the developing ones.
+        if let k { kept = k.photos.filter(\.isReady) }
         if let c { keptCount = c }
     }
 }

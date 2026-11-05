@@ -190,7 +190,8 @@ struct V2KeptView: View {
             guard AccountEpoch.isCurrent(epoch) else { return }
             failed = false
             let known = Set(kept.map(\.id))
-            kept += page.photos.filter { !known.contains($0.id) }
+            // Not a roll's shots before it opens (the App Store Darkroom holds them as developing).
+            kept += page.photos.filter { !known.contains($0.id) && $0.isReady }
             cursor = page.next
             if page.next == nil || page.photos.isEmpty { exhausted = true }
         } catch {
