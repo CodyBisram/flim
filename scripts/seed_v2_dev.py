@@ -132,7 +132,7 @@ def iso(t: dt.datetime) -> str:
 
 
 def new_photo(dev, manifest, user_id, image: bytes, thumb: bytes, taken: dt.datetime, roll_id=None,
-              develops=None, caption=None):
+              develops=None, caption=None, sorted_=True):
     pid = str(uuid.uuid4())
     feed_path = f"{user_id}/{pid}_feed.jpg"
     thumb_path = f"{user_id}/{pid}_thumb.jpg"
@@ -142,7 +142,10 @@ def new_photo(dev, manifest, user_id, image: bytes, thumb: bytes, taken: dt.date
     dev.insert("photos", [{
         "id": pid, "user_id": user_id, "roll_id": roll_id, "storage_path": feed_path, "feed_path": feed_path,
         "thumb_path": thumb_path, "taken_at": iso(taken), "develops_at": iso(develops or taken),
-        "is_developed": (develops or taken) <= dt.datetime.now(dt.timezone.utc), "is_sorted": roll_id is None,
+        "is_developed": (develops or taken) <= dt.datetime.now(dt.timezone.utc),
+        # As the app (PhotoService: isSorted = rollId != nil): a roll shot never enters the sort
+        # deck; a personal one is unsorted until sorted. Pass sorted_=False for the deck.
+        "is_sorted": True if roll_id else sorted_,
         "caption": caption, "push_sent": True,
     }])
     manifest["photos"].append(pid)
