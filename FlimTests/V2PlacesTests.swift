@@ -121,6 +121,15 @@ struct V2PlacesTests {
         let now = Self.at(15)
         #expect(V2RollTime.clock(Self.at(18, day: 28), now: now, calendar: Self.calendar).hasPrefix("TOMORROW "))
         #expect(V2RollTime.clock(Self.at(22), now: now, calendar: Self.calendar).hasPrefix("TONIGHT "))
+        // A morning opening the same day is "today", never "tonight".
+        #expect(V2RollTime.clock(Self.at(11), now: Self.at(8), calendar: Self.calendar).hasPrefix("TODAY "))
+    }
+
+    @Test("the open time reads today, tonight or tomorrow as the box says it")
+    func openLabel() {
+        #expect(V2RollTime.label(Self.at(22), now: Self.at(15), calendar: Self.calendar).hasPrefix("tonight, "))
+        #expect(V2RollTime.label(Self.at(11), now: Self.at(8), calendar: Self.calendar).hasPrefix("today, "))
+        #expect(V2RollTime.label(Self.at(18, day: 28), now: Self.at(15), calendar: Self.calendar).hasPrefix("tomorrow, "))
     }
 
     @Test("every badge has a seal ring line, under twelve characters as the handoff asks")
@@ -153,5 +162,46 @@ struct V2PlacesTests {
         #expect(V2FriendsList.liveLine(Self.at(9, day: 26), now: now, calendar: Self.calendar) == "shot yesterday")
         #expect(V2FriendsList.liveLine(Self.at(9, day: 18), now: now, calendar: Self.calendar) == "quiet this week")
         #expect(V2FriendsList.liveLine(nil, now: now, calendar: Self.calendar) == "quiet this week")
+    }
+
+    private static func request(_ name: String, inCommon: Int = 0, invitedByMe: Bool? = nil) -> V2FriendRequest {
+        V2FriendRequest(id: UUID(), username: name, displayName: nil, avatarPath: nil, askedAt: .now,
+                        inCommon: inCommon, invitedByMe: invitedByMe)
+    }
+
+    @Test("a request from someone you invited says so before anything in common")
+    func requestLine() {
+        #expect(V2FriendsList.requestLine(Self.request("maya", inCommon: 2, invitedByMe: true)) == "joined with your invite")
+        #expect(V2FriendsList.requestLine(Self.request("maya", invitedByMe: false)) == "new here")
+        #expect(V2FriendsList.requestLine(Self.request("maya", invitedByMe: nil)) == "new here")
+        #expect(V2FriendsList.requestLine(Self.request("maya", inCommon: 1)) == "1 friend in common")
+        #expect(V2FriendsList.requestLine(Self.request("maya", inCommon: 3)) == "3 friends in common")
+    }
+
+    @Test("one line at a time above Friends: someone you invited, your own wait, say hi, then invites left")
+    func friendsTopLine() {
+        let maya = Self.request("maya", invitedByMe: true)
+        let reminder = (headline: "You have 3 invites left.", detail: "Who should be here? Tap to send one.")
+        #expect(V2FriendsLines.top(invited: [maya], waitingOn: "nadia", sayHiOnTop: "hi",
+                                   reminder: reminder, sayHiShowing: true) == .invited(maya))
+        #expect(V2FriendsLines.top(invited: [], waitingOn: "nadia", sayHiOnTop: "hi",
+                                   reminder: reminder, sayHiShowing: true) == .waitingOn("nadia"))
+        #expect(V2FriendsLines.top(invited: [], waitingOn: nil, sayHiOnTop: "hi",
+                                   reminder: reminder, sayHiShowing: true) == .sayHi("hi"))
+        // A say-hi line over the inviter's group still keeps the reminder away.
+        #expect(V2FriendsLines.top(invited: [], waitingOn: nil, reminder: reminder, sayHiShowing: true) == nil)
+        #expect(V2FriendsLines.top(invited: [], waitingOn: nil, reminder: reminder, sayHiShowing: false)
+                == .inviteReminder(headline: reminder.headline, detail: reminder.detail))
+        #expect(V2FriendsLines.top(invited: [], waitingOn: nil, reminder: nil, sayHiShowing: false) == nil)
+    }
+
+    @Test("the invite lines name the person and carry no em dash")
+    func friendsLineCopy() {
+        let lines = [V2FriendsLines.invited(name: "Maya"), V2FriendsLines.waiting(name: "Maya"),
+                     V2FriendsLines.sayHi(name: "Maya")]
+        for line in lines {
+            #expect(line.hasPrefix("Maya "))
+            #expect(!line.contains("\u{2014}"))
+        }
     }
 }

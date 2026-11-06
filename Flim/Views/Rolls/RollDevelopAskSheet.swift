@@ -54,7 +54,7 @@ struct RollDevelopAskSheet: View {
                 .flimFont(11, weight: .medium, relativeTo: .caption2)
                 .tracking(2)
                 .foregroundStyle(FlimTheme.textTertiary)
-            Text("Develops at \(Self.timeLabel(for: revealAt)).")
+            Text("Develops \(Self.whenLabel(for: revealAt)).")
                 .flimFont(24, weight: .light, relativeTo: .title2)
                 .foregroundStyle(.white)
                 .padding(.top, 2)
@@ -71,7 +71,7 @@ struct RollDevelopAskSheet: View {
                     dismiss()
                 }
             } label: {
-                Text("Tell me at \(Self.timeLabel(for: revealAt))")
+                Text("Tell me \(Self.whenLabel(for: revealAt))")
                     .flimFont(16, weight: .semibold, relativeTo: .body)
                     .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
