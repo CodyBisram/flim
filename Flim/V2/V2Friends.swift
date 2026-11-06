@@ -76,6 +76,9 @@ struct V2FriendsPlace: View {
     @State private var opened: OpenedGroup?
     @State private var showSpotlight = false
     @State private var spotlightItem: FeedItem?
+    /// Find, opened by itself once for a cohort-code arrival (`offerFindOnce`).
+    @State private var showFind = false
+    @State private var findAppeared = false
 
     private struct OpenedGroup: Identifiable {
         let groups: [V2FeedGroup]
@@ -128,6 +131,8 @@ struct V2FriendsPlace: View {
         // on screen. The pager mounts it early as a neighbour, so it is being frontmost that
         // counts, not appearing.
         .task(id: isFrontmost) { if isFrontmost { Usage.log(.feedViewed) } }
+        // Keyed on the account too: the account arrives after Friends is already frontmost.
+        .task(id: FindOfferKey(frontmost: isFrontmost, userId: auth.currentUser?.id)) { await offerFindOnce() }
         #if DEBUG
         // `-v2OpenGroup`: opens the first group at launch, for screenshots.
         .task(id: isFrontmost) {
@@ -151,7 +156,20 @@ struct V2FriendsPlace: View {
         .fullScreenCover(item: $spotlightItem) { item in
             V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0) { spotlightItem = nil }
                 .modifier(V2DeskEnvironment())
+                .modifier(V2SpotlightChosenAsk(item: item))
                 .undoCapsuleHost()
+        }
+        .fullScreenCover(isPresented: $showFind) {
+            V2FindView { showFind = false }
+                .onAppear {
+                    findAppeared = true
+                    if let uid = auth.currentUser?.id { NewAccountIntro.markDiscoverOffered(userId: uid) }
+                }
+                .modifier(V2DeskEnvironment())
+                .undoCapsuleHost()
+                #if DEBUG
+                .modifier(V2DemoFrame())
+                #endif
         }
         .fullScreenCover(item: $opened) { opened in
             V2GroupView(groups: opened.groups, index: opened.index) { self.opened = nil }
@@ -167,6 +185,36 @@ struct V2FriendsPlace: View {
     }
 
     private var margin: CGFloat { V2Metrics.margin }
+
+    private struct FindOfferKey: Hashable {
+        let frontmost: Bool
+        let userId: UUID?
+    }
+
+    /// A cohort-code arrival's first Friends is nobody they know (the code's maker, followed for
+    /// them, and with friends now mutual, maybe not even that). Find opens by itself, once, so the
+    /// first visit is about finding their people, as the App Store feed does (v2 batch 4: ten of
+    /// thirteen code arrivals in September followed nobody else and never shot).
+    private func offerFindOnce() async {
+        guard isFrontmost, let uid = auth.currentUser?.id,
+              NewAccountIntro.shouldOfferDiscover(userId: uid, createdAt: auth.currentUser?.createdAt) else { return }
+        // Let Friends paint first, and let the start-of-app notification ask (shown a second after
+        // landing) come up; Find waits under anything presented, or the cover would not open.
+        try? await Task.sleep(for: .milliseconds(1600))
+        // A cover asked for while another presentation is starting never comes up, so it is
+        // spent only once Find has appeared (`findAppeared`), and asked again if it did not.
+        for _ in 0..<4 {
+            while !Task.isCancelled, ReviewPrompt.presentationDepth() > 0 {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            guard !Task.isCancelled, auth.currentUser?.id == uid else { return }
+            findAppeared = false
+            showFind = true
+            try? await Task.sleep(for: .milliseconds(1200))
+            if findAppeared || Task.isCancelled { return }
+            showFind = false
+        }
+    }
 
     // MARK: Pieces
 

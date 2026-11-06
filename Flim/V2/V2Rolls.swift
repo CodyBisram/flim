@@ -469,6 +469,12 @@ struct V2SealedRollView: View {
     @State private var counts: [UUID: Int] = [:]
     @State private var confirmLeave = false
     @State private var problem: String?
+    /// The new-account notification ask (`V2DevelopAskSheet`).
+    @State private var showDevelopAsk = false
+    /// The start-of-app primer's own decision flag. Once that primer has been answered either
+    /// way, the roll never asks on its own.
+    @AppStorage("didShowNotifPrimer") private var didDecideNotifPrimer = false
+    @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
 
     private var total: Int { counts.values.reduce(0, +) }
 
@@ -557,7 +563,51 @@ struct V2SealedRollView: View {
                 : .leave(name: roll.name, myShots: auth.currentUser.flatMap { counts[$0.id] })) { leave() }
                 .modifier(V2DeskEnvironment())
         }
-        .task { await load() }
+        // No decision on a swipe-away: it is not an answer (the App Store roll screen's rule).
+        .sheet(isPresented: $showDevelopAsk) {
+            V2DevelopAskSheet(rollName: roll.name, revealAt: roll.revealAt) { accepted in
+                guard let uid = auth.currentUser?.id else { return }
+                NewAccountIntro.markRollAskDecided(userId: uid)
+                guard accepted else { return }
+                notifications.scheduleRollDevelopNotification(
+                    rollId: roll.id, rollName: roll.name,
+                    developsAt: roll.revealAt, photoCount: counts[uid] ?? 0, userId: uid)
+            }
+            .modifier(V2DeskEnvironment())
+        }
+        .task {
+            await load()
+            await remindWhenItOpens()
+        }
+    }
+
+    /// Every member is told when the roll opens, not only those who shot into it (the camera
+    /// schedules for those): a phone push can miss, so the phone keeps its own reminder, as the
+    /// App Store roll screen does. A new account meets the permission here, on the first sealed
+    /// roll it opens, framed by the time (`V2DevelopAskSheet`), once; everyone else is asked by
+    /// iOS directly, as before. Also keeps the lock-screen countdown going for anyone who opens it.
+    private func remindWhenItOpens() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-v2AskDevelop") {
+            try? await Task.sleep(for: .seconds(0.6))
+            showDevelopAsk = true
+            return
+        }
+        #endif
+        guard !roll.isDeveloped, let uid = auth.currentUser?.id else { return }
+        RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
+                              shotCount: total, developFrom: roll.createdAt)
+        guard notificationsEnabled else { return }
+        if NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
+           notifications.authorizationState == .notDetermined, !didDecideNotifPrimer {
+            if !NewAccountIntro.rollAskDecided(userId: uid) { showDevelopAsk = true }
+        } else {
+            await notifications.requestAuthorizationIfNeeded()
+            guard auth.currentUser?.id == uid else { return }
+            notifications.scheduleRollDevelopNotification(
+                rollId: roll.id, rollName: roll.name,
+                developsAt: roll.revealAt, photoCount: counts[uid] ?? 0, userId: uid)
+        }
     }
 
     private var invite: some View {
@@ -602,6 +652,79 @@ struct V2SealedRollView: View {
         let (m, p) = await (memberRead, photoRead)
         if let m { members = m }
         if let p { counts = Dictionary(grouping: p, by: \.userId).mapValues(\.count) }
+    }
+}
+
+/// The notification ask for a new account, on the first sealed roll it opens: the App Store app's
+/// `RollDevelopAskSheet` (same rule: the time is named, the system dialog fires only on yes, either
+/// answer is final), on the desk and in the box's words.
+struct V2DevelopAskSheet: View {
+    let rollName: String
+    let revealAt: Date
+    /// Called on either button, never on a swipe-away, with whether the person said yes.
+    var onDecision: (_ accepted: Bool) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.v2Palette) private var palette
+    @Environment(NotificationService.self) private var notifications
+    @State private var height: CGFloat = 320
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(rollName)
+                    .font(V2Type.data(10))
+                    .tracking(1.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.ink3)
+                    .lineLimit(1)
+                // The box's own words for the time ("tonight, 11:46 PM"), so the two never disagree.
+                Text("It opens \(V2RollTime.label(revealAt)).")
+                    .font(V2Type.serif(22, relativeTo: .title2))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+                    .accessibilityAddTraits(.isHeader)
+                Text("Get told the moment it does. Nothing else, unless you ask for more later.")
+                    .font(V2Type.serif(15, italic: true, relativeTo: .body))
+                    .foregroundStyle(palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+                Button {
+                    Haptics.tap()
+                    Task {
+                        await notifications.requestAuthorizationIfNeeded()
+                        onDecision(true)
+                        dismiss()
+                    }
+                } label: {
+                    Text("Tell me when it opens")
+                        .font(V2Type.control(.body))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .overlay { Rectangle().stroke(palette.ink.opacity(0.6), lineWidth: 1) }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 26)
+                Button { onDecision(false); dismiss() } label: {
+                    Text("I will check")
+                        .font(V2Type.control(.body))
+                        .foregroundStyle(palette.ink3)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+            .padding(V2Metrics.margin)
+            .padding(.top, 8)
+            .frame(maxWidth: 520, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 + 20 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .foregroundStyle(palette.ink)
+        .presentationDetents([.height(height)])
+        .presentationBackground { V2Desktop(palette: palette) }
     }
 }
 
@@ -1039,7 +1162,8 @@ enum V2RollTime {
     /// "tonight, 6 PM", "tomorrow, 6 PM", "Tuesday, 6 PM", "7 Oct, 6 PM" (prototype).
     static func label(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let time = date.formatted(.dateTime.hour().minute())
-        if calendar.isDate(date, inSameDayAs: now) { return "tonight, \(time)" }
+        // "tonight" only from the evening on: a roll opening at 9 in the morning opens "today".
+        if calendar.isDate(date, inSameDayAs: now) { return "\(calendar.component(.hour, from: date) >= 17 ? "tonight" : "today"), \(time)" }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
             return "tomorrow, \(time)"
         }
@@ -1059,7 +1183,7 @@ enum V2RollTime {
     static func clock(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let time = Self.lidTime.string(from: date)
         let day: String
-        if calendar.isDate(date, inSameDayAs: now) { day = "TONIGHT" }
+        if calendar.isDate(date, inSameDayAs: now) { day = calendar.component(.hour, from: date) >= 17 ? "TONIGHT" : "TODAY" }
         else if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) { day = "TOMORROW" }
         else { day = date.formatted(.dateTime.day().month(.abbreviated)).uppercased() }
         return "\(day) \(time)"

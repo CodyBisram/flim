@@ -142,6 +142,7 @@ struct V2SpotlightView: View {
         .fullScreenCover(item: $opened) { item in
             V2GroupView(groups: [V2FeedGroup(author: item.author, items: [item])], index: 0) { opened = nil }
                 .modifier(V2DeskEnvironment())
+                .modifier(V2SpotlightChosenAsk(item: item))
                 .undoCapsuleHost()
         }
         .sheet(isPresented: $showPicker) {
@@ -723,6 +724,32 @@ struct V2SpotlightSessionSheet: View {
                     phase = .choosing
                 }
             }
+        }
+    }
+}
+
+/// The rating prompt's Spotlight moment, as the App Store app asks it: the first time you open
+/// your own chosen frame. A Spotlight surface lists chosen frames alone, so a print of yours
+/// opened from one IS your chosen frame. Spent once the print has sat still (or the guards
+/// refused), never by a glance that left at once.
+struct V2SpotlightChosenAsk: ViewModifier {
+    let item: FeedItem
+
+    @Environment(AuthService.self) private var auth
+    @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content.task(id: item.id) {
+            guard item.author.id == auth.currentUser?.id else { return }
+            let key = ReviewPrompt.spotlightOpenedKey(postId: item.post.id)
+            guard !UserDefaults.standard.bool(forKey: key) else { return }
+            // The extra beat covers the cover sliding in.
+            let settled = await ReviewPrompt.askWhenSettled(
+                .spotlightChosen, user: auth.currentUser, requestReview: requestReview,
+                extraDelay: .milliseconds(400)
+            ) { scenePhase == .active }
+            if settled { UserDefaults.standard.set(true, forKey: key) }
         }
     }
 }
