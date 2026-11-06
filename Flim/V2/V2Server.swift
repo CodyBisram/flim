@@ -10,6 +10,8 @@ struct V2FriendRequest: Decodable, Identifiable, Equatable {
     let avatarPath: String?
     let askedAt: Date
     let inCommon: Int
+    /// They joined with the caller's own invite (2026-11-06; nil from a server without it).
+    var invitedByMe: Bool? = nil
 
     var name: String { displayName?.isEmpty == false ? displayName! : (username ?? "someone") }
 
@@ -19,6 +21,7 @@ struct V2FriendRequest: Decodable, Identifiable, Equatable {
         case avatarPath = "avatar_path"
         case askedAt = "asked_at"
         case inCommon = "in_common"
+        case invitedByMe = "invited_by_me"
     }
 }
 

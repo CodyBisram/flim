@@ -104,7 +104,7 @@ struct V2FriendsList: View {
                     AvatarView(path: request.avatarPath, name: request.username, size: 38)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(request.name).font(V2Type.serif(16, relativeTo: .body)).lineLimit(1)
-                        Text(request.inCommon == 0 ? "new here" : (request.inCommon == 1 ? "1 friend in common" : "\(request.inCommon) friends in common"))
+                        Text(Self.requestLine(request))
                             .font(V2Type.serif(12, italic: true, relativeTo: .caption))
                             .foregroundStyle(palette.ink2)
                     }
@@ -149,6 +149,16 @@ struct V2FriendsList: View {
             if !(await V2Server.dismissRequest(from: request.id, by: me)) {
                 withAnimation { requests.insert(request, at: 0) }
             }
+        }
+    }
+
+    /// Under a request's name: who let them in when it was you, else what you share.
+    static func requestLine(_ request: V2FriendRequest) -> String {
+        if request.invitedByMe == true { return "joined with your invite" }
+        switch request.inCommon {
+        case 0: return "new here"
+        case 1: return "1 friend in common"
+        default: return "\(request.inCommon) friends in common"
         }
     }
 
