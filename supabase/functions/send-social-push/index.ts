@@ -58,6 +58,11 @@ const APNS_TIMEOUT_MS = 10_000;
 // (Lapse, then FLIM) and may again; a rename is this line plus a deploy.
 const APP_NAME = "FLIM";
 
+// FLIM Beta (the v2 redesign) runs this same function on its own project, where friends are
+// mutual: a follow is asking to be friends, and following back is saying yes. Its copy says so;
+// the App Store app's stays exactly as it was. Known by the bundle the pushes go to.
+const IS_V2 = APNS_BUNDLE_ID === "com.flim.app.beta";
+
 // "The week of September 21" from a Spotlight week_key ("2026-09-21"). Read from the key's own
 // digits, never through Date: a bare date parses as midnight UTC, and any formatting in a zone
 // west of UTC would name the Sunday before.
@@ -1549,7 +1554,8 @@ Deno.serve(async (req: Request) => {
     if (join === null) { pendingRetry.add(followKey); continue; }   // unreadable: ask again next run
     if (join) {
       sent += await notify(f.following_id, f.follower_id, `${name} joined ${APP_NAME} with your invite`,
-        join.followsBack ? undefined : "Follow back so you see each other's shots.",
+        join.followsBack ? undefined
+          : (IS_V2 ? "Add them back so you see each other's prints." : "Follow back so you see each other's shots."),
         { t: "profile", id: f.follower_id }, followKey, SOUND_SOCIAL,
         join.followsBack ? undefined : FOLLOW_BACK_CATEGORY);
       if (settled(followKey)) await supabase.from("follows").update({ push_sent: true })
@@ -1563,7 +1569,15 @@ Deno.serve(async (req: Request) => {
     // in the title, and `sendPush` omits the `body` key entirely when none is given (see above
     // its definition), so this renders as a clean single-line banner, never a blank second line.
     // Still routes to the follower's profile.
-    sent += await notify(f.following_id, f.follower_id, `${name} started following you`, undefined, {
+    // v2: a follow is a friend request, unless it answers one (then you are friends now).
+    let followTitle = `${name} started following you`;
+    if (IS_V2) {
+      const { data: back, error: backErr } = await supabase.from("follows").select("follower_id")
+        .eq("follower_id", f.following_id).eq("following_id", f.follower_id).maybeSingle();
+      if (backErr) { pendingRetry.add(followKey); continue; }   // unreadable: ask again next run
+      followTitle = back ? `${name} added you back` : `${name} asked to be friends`;
+    }
+    sent += await notify(f.following_id, f.follower_id, followTitle, undefined, {
       t: "profile",
       id: f.follower_id,
     }, followKey);
