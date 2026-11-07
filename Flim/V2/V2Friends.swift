@@ -129,12 +129,23 @@ struct V2FriendsPlace: View {
                             .padding(.top, 18)
                         // Not while a page is still coming: a first page of only your own prints
                         // reads on (`keepFilling`), and saying "nothing yet" meanwhile was wrong.
-                        if groups.isEmpty, loaded, feed.feedError != nil, !feed.isLoadingFeed {
+                        // The first load reads the whole week before showing any of it: pages
+                        // come in posting order, so a group shown early was pushed down by a newer
+                        // one a moment later. (No account: the demo's fixtures, shown at once.)
+                        if !loaded, auth.currentUser != nil {
+                            V2Developing()
+                                .padding(.top, 60)
+                        } else if groups.isEmpty, loaded, feed.feedError != nil, !feed.isLoadingFeed {
                             V2LoadFailed { await load() }
                                 .padding(.top, 18)
                         } else if groups.isEmpty, loaded, !filling, !feed.isLoadingFeed, !feed.isLoadingMoreFeed {
                             empty
                                 .padding(.top, 18)
+                        } else if groups.isEmpty {
+                            // The first read, on a fresh launch: a quiet sign something is coming,
+                            // held back a moment so a quick read never flashes it.
+                            V2Developing()
+                                .padding(.top, 60)
                         } else {
                             list(groups, seamIndex: seamIndex, sayHi: sayHiInList, width: proxy.size.width - margin * 2)
                                 .padding(.top, 18)
@@ -278,7 +289,7 @@ struct V2FriendsPlace: View {
     // MARK: Pieces
 
     private func header(_ groups: [V2FeedGroup]) -> some View {
-        let friends = Set(groups.map(\.author.id)).count
+        let friends = loaded || auth.currentUser == nil ? Set(groups.map(\.author.id)).count : 0
         let line = friends == 0 ? "" : (friends == 1 ? "one friend shot this week" : "\(friends) friends shot this week")
         return TimelineView(.everyMinute) { context in
             V2PageTitle(title: Calendar.current.component(.hour, from: context.date) >= 17 ? "Tonight" : "Today",

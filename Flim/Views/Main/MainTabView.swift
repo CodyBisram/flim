@@ -398,7 +398,12 @@ struct MainTabView: View {
         // No `onDismiss` here on purpose: a swipe-away must not count as a decision. Only the
         // sheet's own buttons report a decision, via `onDecision`, see `NotificationPrimerSheet`.
         .sheet(isPresented: $showNotifPrimer) {
+            #if FLIM_V2
+            V2NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
+                .modifier(V2DeskEnvironment())
+            #else
             NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
+            #endif
         }
         .sheet(isPresented: Binding(get: { hostsInviteSheet && inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
             JoinRollView(initialCode: inviteCode ?? "")
