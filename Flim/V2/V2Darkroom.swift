@@ -26,6 +26,8 @@ struct V2DarkroomPlace: View {
     @Environment(RollService.self) private var rolls
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The very first read of the prints waiting failed: say so, not a blank stack.
+    @State private var firstReadFailed = false
     @State private var unsorted: [Photo]?
     @State private var kept: [Photo] = []
     @State private var keptCount: Int?
@@ -159,6 +161,8 @@ struct V2DarkroomPlace: View {
                     dayOne(width: stackWidth)
                 } else if unsorted != nil {
                     allSorted(width: stackWidth)
+                } else if firstReadFailed {
+                    V2LoadFailed { await reload() }
                 } else {
                     Color.clear.frame(width: stackWidth, height: stackWidth * V2PrintGeometry.height(width: 1))
                 }
@@ -356,6 +360,7 @@ struct V2DarkroomPlace: View {
         let (u, k, c) = await (unsortedRead, keptRead, countRead)
         guard AccountEpoch.isCurrent(epoch) else { return }
         // A dropped read keeps what is on screen (the services' nil-on-failure contract).
+        firstReadFailed = u == nil && unsorted == nil
         if let u {
             withAnimation(V2Motion.setDown) { unsorted = u }
             // The count beside the place's name reads it too (a sort just closed, a shot landed).

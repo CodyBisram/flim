@@ -45,7 +45,7 @@ struct V2ScreeningView: View {
     @Environment(TabSignals.self) private var signals
     @Environment(\.requestReview) private var requestReview
 
-    private enum Phase { case loading, lid, deal, close, empty }
+    private enum Phase { case loading, lid, deal, close, empty, failed }
 
     @State private var phase: Phase = .loading
     @State private var prints: [V2ScreeningPrint] = []
@@ -82,6 +82,15 @@ struct V2ScreeningView: View {
                     case .loading:
                         Spacer()
                         ProgressView().tint(palette.ink2)
+                        Spacer()
+                    case .failed:
+                        Spacer()
+                        V2LoadFailed {
+                            // The deck is read once per model; a fresh one reads again.
+                            reveal = nil
+                            phase = .loading
+                            await play()
+                        }
                         Spacer()
                     case .empty:
                         Spacer()
@@ -605,7 +614,16 @@ struct V2ScreeningView: View {
         if prints.isEmpty {
             await load()
         }
-        guard !prints.isEmpty else { phase = .empty; return }
+        guard !prints.isEmpty else {
+            // The roll's deck falls back to nothing when its read fails; ask again before
+            // calling the box empty.
+            if case .roll(let roll) = source, (try? await photos.fetchRollPhotosSnapshot(rollId: roll.id)) == nil {
+                phase = .failed
+            } else {
+                phase = .empty
+            }
+            return
+        }
         hurried = nil
         index = 0
         lidOff = false
