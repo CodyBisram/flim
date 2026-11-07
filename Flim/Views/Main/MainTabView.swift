@@ -368,7 +368,8 @@ struct MainTabView: View {
         // The environment accent is injected at the app root (see FlimApp), so it covers the
         // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
-            if !network.isConnected {
+            // FLIM Beta says it in its own top row (V2TopRow).
+            if !AppInfo.isV2, !network.isConnected {
                 FlimToast("No connection", kind: .info, symbol: "wifi.slash")
                     .padding(.top, 8)
                     // It sits over the camera's self timer and roll picker; it only informs,
@@ -381,7 +382,12 @@ struct MainTabView: View {
         // (the photo pager's fullScreenCover) host their own copy; see `UndoCapsuleHost`.
         .undoCapsuleHost()
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
+            #if FLIM_V2
+            V2Onboarding()
+                .modifier(V2DeskEnvironment())
+            #else
             OnboardingView()
+            #endif
         }
         #if DEBUG
         // `-openPhotoFullscreen`, the same unified viewer the darkroom/roll grids use.

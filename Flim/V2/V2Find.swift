@@ -13,6 +13,8 @@ struct V2FindView: View {
 
     @State private var query = ""
     @State private var friends: [UserProfile] = []
+    /// The friends read has answered (or failed): the empty hint waits for it.
+    @State private var friendsRead = false
     @State private var results: [UserProfile]?
     @State private var searchFailed = false
     @State private var profile: ProfileRoute?
@@ -55,10 +57,11 @@ struct V2FindView: View {
                 .modifier(V2DeskEnvironment())
         }
         .task {
-            guard let me = auth.currentUser?.id else { return }
+            guard let me = auth.currentUser?.id else { friendsRead = true; return }
             if feed.followingIds.isEmpty { await feed.loadFollowing(userId: me) }
             if feed.followerIds.isEmpty { await feed.loadFollowers(userId: me) }
             if let mutual = await V2Server.friends(of: me) { friends = mutual }
+            friendsRead = true
         }
         .task(id: query) { await search() }
     }
@@ -182,12 +185,25 @@ struct V2FindView: View {
                     .buttonStyle(.plain)
                     .overlay(alignment: .bottom) { Rectangle().fill(palette.rule).frame(height: 1) }
                 }
-                Text(trimmed.isEmpty ? "Your friends" : "People")
-                    .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
-                    .foregroundStyle(palette.ink3)
-                    .padding(.top, rollCode == nil ? 0 : 14)
-                    .accessibilityAddTraits(.isHeader)
+                if !people.isEmpty {
+                    Text(trimmed.isEmpty ? "Your friends" : "People")
+                        .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
+                        .foregroundStyle(palette.ink3)
+                        .padding(.top, rollCode == nil ? 0 : 14)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 ForEach(people) { person in row(person) }
+                // Nobody yet and nothing typed: what the field is for, instead of a heading over
+                // an empty list (a new account's first Find).
+                if trimmed.isEmpty, people.isEmpty, friendsRead {
+                    Text("Type a name to find someone on FLIM, or a roll code to join a roll.")
+                        .font(V2Type.serif(15, italic: true, relativeTo: .body))
+                        .foregroundStyle(palette.ink3)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                }
                 if !trimmed.isEmpty, results != nil, people.isEmpty, rollCode == nil {
                     Text(searchFailed ? UserFacingError.genericMessage
                                       : "Nobody by that name yet.\nFLIM is invite only; send them one.")

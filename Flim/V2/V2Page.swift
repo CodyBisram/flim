@@ -21,6 +21,8 @@ struct V2PageView: View {
 
     @State private var profile: UserProfile?
     @State private var posts: [Post] = []
+    /// The first read of the prints failed and none are on screen: say so, not "nothing yet".
+    @State private var postsFailed = false
     @State private var following = 0
     @State private var badges: [ProfileBadge] = []
     @State private var displayedIds: [String]?
@@ -407,7 +409,9 @@ struct V2PageView: View {
 
     @ViewBuilder
     private var month: some View {
-        if loaded, !isSelf, friendship != .friends, !feed.isBlocked(userId), posts.isEmpty {
+        if loaded, postsFailed, posts.isEmpty {
+            V2LoadFailed { await load() }
+        } else if loaded, !isSelf, friendship != .friends, !feed.isBlocked(userId), posts.isEmpty {
             faceDown
         } else if loaded, days.isEmpty {
             VStack(spacing: 14) {
@@ -622,6 +626,7 @@ struct V2PageView: View {
                 posts = fetchedPosts
             }
         }
+        postsFailed = fetchedPosts == nil && posts.isEmpty
         if let friendRows { following = friendRows.count }
         if let me = auth.currentUser?.id, feed.followerIds.isEmpty { await feed.loadFollowers(userId: me) }
         if let me = auth.currentUser?.id, feed.followingIds.isEmpty { await feed.loadFollowing(userId: me) }

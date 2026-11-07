@@ -123,6 +123,21 @@ final class V2FlowsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Take photo"].waitForExistence(timeout: 10), "first run did not end on the camera")
     }
 
+    /// A new account's first run is one cover: the desk, the stamp, then the camera's own screen,
+    /// with nothing sliding away and back between them; "Take a shot" ends it.
+    func testFirstRunIsOneFlowEndingOnTheCameraScreen() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-v2NoCamera", "-v2DemoAuth", "onboarding", "-v2AskDesk"]
+        app.launch()
+        XCTAssertTrue(text(app, "Where should your prints lie?").waitForExistence(timeout: 20))
+        app.buttons["Paper"].tap()
+        XCTAssertTrue(text(app, "Your stamp.").waitForExistence(timeout: 5), "the stamp step did not follow the desk")
+        // Whichever stamp an earlier test left chosen.
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Keep '")).firstMatch.tap()
+        XCTAssertTrue(text(app, "FLIM is a camera.").waitForExistence(timeout: 5), "the camera screen did not follow the stamp")
+        XCTAssertTrue(app.buttons["Take a shot"].exists)
+    }
+
     // MARK: Activity
 
     func testActivityClearsItsSlips() {
@@ -169,6 +184,20 @@ final class V2FlowsUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'K4PQ7M'")).firstMatch
             .waitForExistence(timeout: 5), "six letters and digits did not read as a roll code:\n\(app.debugDescription)")
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Join'")).firstMatch.exists)
+    }
+
+    /// Account's Replay intro shows the camera screen again, from under your page and Account.
+    func testReplayIntroShowsTheCameraScreen() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-chromePreviewDemo", "-v2DeskAsked", "YES", "-v2NoCamera", "-v2DemoPage",
+                               "-v2OpenAppearance", "-v2OpenAccount"]
+        app.launch()
+        let replay = app.buttons["Replay intro"]
+        XCTAssertTrue(replay.waitForExistence(timeout: 20), "Account never opened:\n\(app.debugDescription)")
+        replay.tap()
+        XCTAssertTrue(text(app, "FLIM is a camera.").waitForExistence(timeout: 8), "the intro did not come back")
+        app.buttons["Take a shot"].tap()
+        XCTAssertTrue(text(app, "FLIM is a camera.").waitForNonExistence(timeout: 5), "Take a shot did not end the intro")
     }
 
     func testAppearanceChangesTheDesk() {
@@ -293,6 +322,12 @@ final class V2LiveUITests: XCTestCase {
         // Find may already be open over the places (a code arrival's first Friends).
         XCTAssertTrue(app.buttons["Activity"].waitForExistence(timeout: 20) || app.textFields.firstMatch.exists,
                       "never reached the places:\n\(app.debugDescription)")
+        // A fresh install's start-of-app notification ask sits over everything once; answer it
+        // so the test drives the places. Tests about the ask itself pass `keepPrimer`.
+        if !extra.contains("keepPrimer"), app.buttons["Turn on notifications"].waitForExistence(timeout: 3) {
+            app.buttons["Not now"].firstMatch.tap()
+            sleep(1)
+        }
         return app
     }
 
@@ -326,7 +361,7 @@ final class V2LiveUITests: XCTestCase {
     /// A cohort-code arrival (planted in the app's defaults before the run) gets Find opened by
     /// itself on its first Friends, once.
     func test11FindOffer() {
-        let app = signedIn(["-tabFeed"])
+        let app = signedIn(["-tabFeed", "keepPrimer"])
         // The start-of-app notification ask comes first; Find waits under it.
         let notNow = app.buttons["Not now"].firstMatch
         if notNow.waitForExistence(timeout: 4) {
@@ -374,7 +409,7 @@ final class V2LiveUITests: XCTestCase {
     /// The start-of-app notification ask (brought back before the run) answered "Not now" on
     /// Friends: the friends' prints must still be there afterwards.
     func test13FriendsAfterPrimer() {
-        let app = signedIn(["-tabFeed"])
+        let app = signedIn(["-tabFeed", "keepPrimer"])
         if app.buttons["Turn on notifications"].waitForExistence(timeout: 6) {
             shot(app, "54_primer")
             app.buttons["Not now"].firstMatch.tap()

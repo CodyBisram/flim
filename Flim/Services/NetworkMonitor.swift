@@ -1,3 +1,4 @@
+import Foundation
 import Network
 import Observation
 
@@ -12,6 +13,13 @@ final class NetworkMonitor {
     private let queue = DispatchQueue(label: "flim.network.monitor")
 
     init() {
+        #if DEBUG
+        // `-forceOffline`: reads as offline for the whole run, for checking the offline states.
+        if ProcessInfo.processInfo.arguments.contains("-forceOffline") {
+            isConnected = false
+            return
+        }
+        #endif
         monitor.pathUpdateHandler = { [weak self] path in
             let connected = path.status == .satisfied
             Task { @MainActor in self?.isConnected = connected }

@@ -284,6 +284,8 @@ struct V2SpotlightPicker: View {
 
     @State private var posts: [Post] = []
     @State private var loaded = false
+    /// The first read of your posts failed with none on screen.
+    @State private var failed = false
     @State private var firstTimePost: Post?
     @State private var takeOutPost: Post?
 
@@ -310,7 +312,9 @@ struct V2SpotlightPicker: View {
                 .padding(.horizontal, V2Metrics.margin)
                 .padding(.top, 6)
             ScrollView {
-                if loaded, posts.isEmpty {
+                if loaded, failed, posts.isEmpty {
+                    V2LoadFailed { await load() }
+                } else if loaded, posts.isEmpty {
                     Text("Nothing posted this week yet. Post a print and it can go up.")
                         .font(V2Type.serif(15, italic: true, relativeTo: .body))
                         .foregroundStyle(palette.ink3)
@@ -367,7 +371,9 @@ struct V2SpotlightPicker: View {
         guard let me else { loaded = true; return }
         await feed.refreshOwnSpotlightEntry()
         let entry = feed.currentSpotlightEntry
-        let mine = await feed.fetchUserPosts(userId: me) ?? []
+        let read = await feed.fetchUserPosts(userId: me)
+        failed = read == nil && posts.isEmpty
+        let mine = read ?? []
         let thisWeek = mine.filter { post in entry.map { $0.isThisWeek(post.createdAt) } ?? false }
         await feed.loadSpotlightMenuInputs(for: thisWeek, userId: me)
         posts = thisWeek

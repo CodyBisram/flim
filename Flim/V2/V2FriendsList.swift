@@ -18,11 +18,13 @@ struct V2FriendsList: View {
     @State private var loaded = false
     @State private var profile: ProfileRoute?
     @State private var showInvite = false
+    /// The first read failed with nobody on screen.
+    @State private var failed = false
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
 
     var body: some View {
-        V2Screen(title: loaded ? (people.count == 1 ? "1 friend" : "\(people.count) friends") : "Friends",
+        V2Screen(title: loaded && !failed ? (people.count == 1 ? "1 friend" : "\(people.count) friends") : "Friends",
                  onBack: { dismiss() }) {
             if isSelf {
                 Button { showInvite = true } label: {
@@ -47,7 +49,9 @@ struct V2FriendsList: View {
                             .accessibilityAddTraits(.isHeader)
                     }
                     ForEach(people) { person in row(person) }
-                    if loaded, people.isEmpty {
+                    if failed, people.isEmpty {
+                        V2LoadFailed { await load() }
+                    } else if loaded, people.isEmpty {
                         Text(isSelf ? "Nobody yet. Find someone, or bring them in with an invite." : "Nobody yet.")
                             .font(V2Type.serif(15, italic: true, relativeTo: .body))
                             .foregroundStyle(palette.ink3)
@@ -182,6 +186,7 @@ struct V2FriendsList: View {
         let (friends, asks) = await (friendRead, requestRead)
         if let friends { people = friends.filter { !feed.isBlocked($0.id) } }
         if let asks { requests = asks }
+        failed = friends == nil && people.isEmpty
         loaded = true
     }
 }

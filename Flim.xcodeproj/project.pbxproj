@@ -203,6 +203,7 @@
 		74EA99E5BA040D1C53184975 /* ActivitySections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 371FC9FC01058627ECD62D32 /* ActivitySections.swift */; };
 		75EF6BCE38ECF791C4CC0D8C /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 498109790A8BAE9899A4F515 /* CrashReporter.swift */; };
 		77401132FEC9B4725EDA43A8 /* FilmStripLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0132F6E244DC3730C2145E2D /* FilmStripLayoutTests.swift */; };
+		790A5C6955323E0392F72582 /* V2SignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8DDCA240E9983569023C88E /* V2SignIn.swift */; };
 		793DFF7AB411740E0874DD22 /* QuickCaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */; };
 		797F45D1845741442F34B435 /* ReviewerSignInSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BF31E8C225DFDD35DCCFD60 /* ReviewerSignInSheet.swift */; };
 		79D669915A62DA962B12309C /* DarkroomZoomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E7E1AAE63D02823A39DE078 /* DarkroomZoomBar.swift */; };
@@ -831,6 +832,7 @@
 		E59CEB17E84E758D79740DEA /* MemoryWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryWidget.swift; sourceTree = "<group>"; };
 		E5D6CE2A66AC5924234B0396 /* VersionGateNudgeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionGateNudgeSheet.swift; sourceTree = "<group>"; };
 		E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingError.swift; sourceTree = "<group>"; };
+		E8DDCA240E9983569023C88E /* V2SignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2SignIn.swift; sourceTree = "<group>"; };
 		EA4E9E80825C6F956A87A3AC /* V2SharePrint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2SharePrint.swift; sourceTree = "<group>"; };
 		EA572719CB09DB023B6F4FA8 /* VersionGateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionGateService.swift; sourceTree = "<group>"; };
 		EACB1050A3FCF4AE495979D3 /* RollDevelopReminderFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDevelopReminderFallbackTests.swift; sourceTree = "<group>"; };
@@ -1119,6 +1121,7 @@
 				DAEBCCB56C1B9F4147A491FE /* V2Seals.swift */,
 				53792484EE2B3B60A299B4AD /* V2Server.swift */,
 				EA4E9E80825C6F956A87A3AC /* V2SharePrint.swift */,
+				E8DDCA240E9983569023C88E /* V2SignIn.swift */,
 				1E93C775AC47DCC965A02272 /* V2SortDeck.swift */,
 				F4D431746A80DFF3B6CEEB80 /* V2Spotlight.swift */,
 				76460B44FFEC9EF9911DEF8B /* V2Theme.swift */,
@@ -2029,6 +2032,7 @@
 				05BE00F5BA69AD156CAFA1E4 /* V2Seals.swift in Sources */,
 				10A81A52FE8D90DC2437D4DB /* V2Server.swift in Sources */,
 				CD4C7088D3957C4840C9F2DC /* V2SharePrint.swift in Sources */,
+				790A5C6955323E0392F72582 /* V2SignIn.swift in Sources */,
 				DC112CF5ABA2C28997F84EAE /* V2SortDeck.swift in Sources */,
 				C1DEFCC86B7878795ECF25B3 /* V2Spotlight.swift in Sources */,
 				E5178A4606D32719792DEC50 /* V2Theme.swift in Sources */,

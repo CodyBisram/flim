@@ -149,7 +149,9 @@ struct V2AppearanceView: View {
             .padding(.top, 14)
 
             title("Stamp colour").padding(.top, 34)
-            HStack(spacing: 14) {
+            // Each swatch takes up to 58 points and at least its 44-point target, so the six fit
+            // the closed Duo's column (314 points) as well as the phone.
+            HStack(spacing: 0) {
                 ForEach(V2Stamp.allCases, id: \.self) { option in
                     Button {
                         stampRaw = option.rawValue
@@ -167,6 +169,8 @@ struct V2AppearanceView: View {
                                 }
                             }
                             .frame(width: 44, height: 44)
+                            .frame(minWidth: 44, maxWidth: 58, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(option.rawValue.capitalized)
@@ -374,6 +378,9 @@ struct V2AccountView: View {
     @State private var photosBlocked = false
     @State private var unsentAtSignOut: Int?
     @State private var showBlocked = false
+    /// The first run's camera screen again, presented from here: the root's own copy cannot come
+    /// up over your page and this screen.
+    @State private var showIntro = false
     @State private var showFeedback = false
     @State private var showDelete = false
     @State private var showWipe = false
@@ -417,7 +424,7 @@ struct V2AccountView: View {
                     title("Account").padding(.top, 34)
                     VStack(spacing: 14) {
                         row("Blocked users") { showBlocked = true }
-                        row("Replay intro") { hasOnboarded = false; dismiss() }
+                        row("Replay intro") { showIntro = true }
                     }
                     .padding(.top, 14)
 
@@ -484,6 +491,15 @@ struct V2AccountView: View {
                 .padding(.bottom, 40)
             }
             .scrollIndicators(.hidden)
+        }
+        .fullScreenCover(isPresented: $showIntro) {
+            // "Take a shot" ends where it says: on the camera, with every cover over the places
+            // closed (V2TopRow listens for `.openCamera`).
+            V2Onboarding(onFinish: {
+                showIntro = false
+                NotificationCenter.default.post(name: .openCamera, object: nil)
+            })
+            .modifier(V2DeskEnvironment())
         }
         .sheet(isPresented: $showBlocked) { BlockedUsersSheet().preferredColorScheme(.dark) }
         .sheet(isPresented: $showFeedback) { FeedbackSheet().preferredColorScheme(.dark) }

@@ -26,6 +26,8 @@ struct V2Screen<Content: View, Trailing: View>: View {
                                 .minimumScaleFactor(0.8)
                                 .padding(.horizontal, V2Metrics.margin)
                                 .padding(.top, 12)
+                                // The phone's header row leaves this much before the content.
+                                .padding(.bottom, 10)
                                 .accessibilityAddTraits(.isHeader)
                             content()
                         }

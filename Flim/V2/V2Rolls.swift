@@ -19,6 +19,10 @@ struct V2RollsView: View {
     @Environment(PhotoService.self) private var photos
 
     @State private var shots: [UUID: Int] = [:]
+    /// The shelf has been read once (no "No rolls yet." before that), and whether that read
+    /// failed with nothing to show.
+    @State private var shelfLoaded = false
+    @State private var shelfFailed = false
     @State private var showNewRoll = false
     /// Open, the roll beside the shelf.
     @State private var selected: Roll?
@@ -193,8 +197,13 @@ struct V2RollsView: View {
                     .padding(.bottom, 30)
                 }
                 if rolls.rolls.isEmpty, rolls.followUpInvites.isEmpty {
-                    empty
-                        .padding(.top, 12)
+                    if shelfFailed {
+                        V2LoadFailed { await load() }
+                    } else if shelfLoaded {
+                        empty
+                            .padding(.top, 12)
+                            .transition(.opacity)
+                    }
                 }
                 if !sealed.isEmpty {
                     sectionTitle("Developing")
@@ -383,8 +392,13 @@ struct V2RollsView: View {
         }
         #endif
         guard let uid = auth.currentUser?.id else { return }
-        try? await rolls.fetchRolls(for: uid)
+        let read: Bool
+        do { try await rolls.fetchRolls(for: uid); read = true } catch { read = false }
         await rolls.fetchFollowUpInvites()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            shelfFailed = !read && rolls.rolls.isEmpty
+            shelfLoaded = true
+        }
         await withTaskGroup(of: (UUID, Int).self) { group in
             for roll in rolls.rolls {
                 group.addTask { (roll.id, await photos.rollTotalShotCount(rollId: roll.id)) }

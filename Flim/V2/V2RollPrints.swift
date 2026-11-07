@@ -21,6 +21,8 @@ struct V2RollPrints: View {
 
     @State private var prints: [Photo] = []
     @State private var names: [UUID: String] = [:]
+    /// The first read of the roll's prints failed and none are on screen.
+    @State private var printsFailed = false
     @State private var loaded = false
     @State private var opened: Opened?
     @State private var showMore = false
@@ -79,7 +81,9 @@ struct V2RollPrints: View {
                             .padding(.top, 18)
                         }
                     }
-                    if loaded, prints.isEmpty {
+                    if loaded, printsFailed, prints.isEmpty {
+                        V2LoadFailed { await load() }
+                    } else if loaded, prints.isEmpty {
                         Text("No shots in this roll.")
                             .font(V2Type.serif(15, italic: true, relativeTo: .body))
                             .foregroundStyle(palette.ink3)
@@ -168,6 +172,7 @@ struct V2RollPrints: View {
         let (p, m) = await (photoRead, memberRead)
         guard AccountEpoch.isCurrent(epoch) else { return }
         if let p { prints = p.filter { !feed.isBlocked($0.userId) }.sorted { $0.takenAt < $1.takenAt } }
+        printsFailed = p == nil && prints.isEmpty
         if let m {
             let me = auth.currentUser?.id
             names = Dictionary(uniqueKeysWithValues: m.map { ($0.id, $0.id == me ? "you" : ($0.username ?? "someone")) })

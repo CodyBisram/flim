@@ -204,4 +204,19 @@ struct V2PlacesTests {
             #expect(!line.contains("\u{2014}"))
         }
     }
+
+    @Test("sign-in names who brought you, and says friends are asked to add you back")
+    func signInInviterCopy() {
+        #expect(V2SignInCopy.inviterTitle(name: "Maya", rollName: nil, isCampaign: false) == "Maya invited you.")
+        #expect(V2SignInCopy.inviterTitle(name: "Maya", rollName: "Lake weekend", isCampaign: false)
+                == "Maya invited you to Lake weekend.")
+        #expect(V2SignInCopy.inviterTitle(name: "FLIM", rollName: nil, isCampaign: true) == "You're in with FLIM's code.")
+        #expect(V2SignInCopy.inviterDetail(rollName: nil, isCampaign: false) == "Once you're in, they're asked to add you back.")
+        #expect(V2SignInCopy.inviterDetail(rollName: nil, isCampaign: true) == "Once you're in, find the people you know.")
+        #expect(V2SignInCopy.inviterDetail(rollName: "Lake weekend", isCampaign: false).hasPrefix("The roll is waiting"))
+        for line in [V2SignInCopy.inviterDetail(rollName: nil, isCampaign: false),
+                     V2SignInCopy.inviterDetail(rollName: "x", isCampaign: false)] {
+            #expect(!line.contains("\u{2014}"))
+        }
+    }
 }

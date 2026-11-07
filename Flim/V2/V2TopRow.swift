@@ -15,6 +15,7 @@ struct V2TopRow<Middle: View>: View {
     @Environment(\.v2Palette) private var palette
     @Environment(\.v2LayoutMode) private var mode
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(NetworkMonitor.self) private var network
 
     @State private var showPage = false
     @State private var showFind = false
@@ -31,10 +32,12 @@ struct V2TopRow<Middle: View>: View {
                     you
                     find
                     activity
+                    offline
                 }
             case .phone:
                 HStack(spacing: 16) {
                     you
+                    offline
                     Spacer(minLength: 8)
                     find
                     activity
@@ -42,6 +45,7 @@ struct V2TopRow<Middle: View>: View {
             case .inner:
                 HStack(spacing: 16) {
                     you
+                    offline
                     Spacer(minLength: 8)
                     middle()
                     Spacer(minLength: 8)
@@ -93,7 +97,15 @@ struct V2TopRow<Middle: View>: View {
             else { showFind = true }
         }
         #endif
+        .animation(.easeInOut(duration: 0.3), value: network.isConnected)
         .task(id: auth.currentUser?.id) { await refreshUnread() }
+        // Sent to the camera (a shortcut, Shoot into it, the intro's Take a shot): whatever this
+        // row opened over the places steps aside, or the camera would sit underneath it.
+        .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
+            showPage = false
+            showFind = false
+            showActivity = false
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await refreshUnread() } }
         }
@@ -128,6 +140,21 @@ struct V2TopRow<Middle: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Your page")
+    }
+
+    /// Offline, said quietly in the row rather than in a capsule over it. The camera's caption
+    /// says what it means for a shot (V2Camera); a read that fails says so where it failed.
+    @ViewBuilder
+    private var offline: some View {
+        if !network.isConnected {
+            Text("no connection")
+                .font(V2Type.serif(13, italic: true, relativeTo: .footnote))
+                .foregroundStyle(palette.ink3)
+                .lineLimit(1)
+                .fixedSize()
+                .transition(.opacity)
+                .accessibilityLabel("No connection")
+        }
     }
 
     private var find: some View {

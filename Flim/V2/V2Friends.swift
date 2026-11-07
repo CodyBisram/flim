@@ -129,7 +129,10 @@ struct V2FriendsPlace: View {
                             .padding(.top, 18)
                         // Not while a page is still coming: a first page of only your own prints
                         // reads on (`keepFilling`), and saying "nothing yet" meanwhile was wrong.
-                        if groups.isEmpty, loaded, !filling, !feed.isLoadingFeed, !feed.isLoadingMoreFeed {
+                        if groups.isEmpty, loaded, feed.feedError != nil, !feed.isLoadingFeed {
+                            V2LoadFailed { await load() }
+                                .padding(.top, 18)
+                        } else if groups.isEmpty, loaded, !filling, !feed.isLoadingFeed, !feed.isLoadingMoreFeed {
                             empty
                                 .padding(.top, 18)
                         } else {
@@ -691,6 +694,13 @@ struct V2FriendsPlace: View {
         #endif
         #if DEBUG
         plantDemoLines()
+        // `-v2DemoFeedFailed`: the first read failed with nothing to show.
+        if ProcessInfo.processInfo.arguments.contains("-v2DemoFeedFailed") {
+            feed.feed = []
+            feed.feedError = UserFacingError.genericMessage
+            loaded = true
+            return
+        }
         #endif
         guard let uid = auth.currentUser?.id else { return }
         await seen.awaitPull()

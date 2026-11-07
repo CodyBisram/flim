@@ -40,7 +40,8 @@ enum NotificationActions {
     static func categories() -> Set<UNNotificationCategory> {
         let followBack = UNNotificationAction(
             identifier: followBackAction,
-            title: "Follow back",
+            // FLIM Beta's friends are mutual: following back is adding them back.
+            title: AppInfo.isV2 ? "Add them back" : "Follow back",
             options: [.authenticationRequired]
         )
         let category = UNNotificationCategory(

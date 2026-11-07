@@ -9,6 +9,13 @@ enum AppInfo {
     /// (covers the whole UI) plus CFBundleDisplayName in project.yml (the home-screen name).
     static let appName = "FLIM"
 
+    /// FLIM Beta, the v2 redesign (its configurations set FLIM_V2). Friends there are mutual.
+    #if FLIM_V2
+    static let isV2 = true
+    #else
+    static let isV2 = false
+    #endif
+
     /// Where in-app feedback is emailed. Change to your address.
     static let feedbackEmail = "support@flim-app.com"
 

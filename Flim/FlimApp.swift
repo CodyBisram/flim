@@ -53,7 +53,13 @@ struct FlimApp: App {
                 .environment(network)
                 .environment(versionGate)
                 .environment(chapters)
+                #if FLIM_V2
+                // FLIM Beta follows the chosen desk (Paper reads dark on light, status bar
+                // included); the App Store app stays pinned dark.
+                .modifier(V2DeskEnvironment())
+                #else
                 .preferredColorScheme(.dark)
+                #endif
                 // Text scales with the user's Dynamic Type setting, up to the ceiling declared in
                 // FlimTypeScale. The ceiling exists because several surfaces here are
                 // fixed-geometry (the camera's 38x38 control row, the story-style reveal, capsule

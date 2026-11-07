@@ -63,6 +63,10 @@ struct ContentView: View {
                 // The sign-in screen with the waitlist sheet open over it and a stubbed server.
                 // See WaitlistPreviewDemoHost.
                 WaitlistPreviewDemoHost()
+            } else if let screen = UserDefaults.standard.string(forKey: "v2DemoAuth") {
+                // `-v2DemoAuth email|code|username|onboarding|unreachable|splash`: FLIM Beta's way
+                // in, one screen at a time, signed out and with no network. See V2SignIn.swift.
+                V2AuthDemoHost(screen: screen)
             } else if ProcessInfo.processInfo.arguments.contains("-v2Demo") {
                 // v2's frame on stand-in places, for the iPhone and iPhone Duo arrangements.
                 // See V2DemoHost.
@@ -76,13 +80,26 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private var splash: some View {
+        #if FLIM_V2
+        V2Splash()
+        #else
+        SplashView()
+        #endif
+    }
+
     private var authGate: some View {
         Group {
             if auth.isLoading {
-                SplashView()
+                splash
             } else if !auth.isAuthenticated {
                 NavigationStack {
+                    #if FLIM_V2
+                    V2EmailSignIn()
+                    #else
                     EmailAuthView()
+                    #endif
                 }
                 .transition(.opacity)
                 // Nobody is signed in, so a held push destination naming one account's roll,
@@ -96,8 +113,12 @@ struct ContentView: View {
             } else if auth.isResolvingProfile {
                 // Signed in, still fetching the profile, hold on the splash so existing
                 // users never see a flash of the username screen.
-                SplashView()
+                splash
             } else if auth.profileUnavailable {
+                #if FLIM_V2
+                V2AccountUnreachable { await auth.retryProfileLoad() }
+                    .transition(.opacity)
+                #else
                 // Signed in, but the profile could not be FETCHED. Falling through to the
                 // username screen here is what locked people out: an existing user was shown
                 // sign-up, and the name they already owned came back as taken.
@@ -109,9 +130,14 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
+                #endif
             } else if auth.currentUser?.username == nil {
                 NavigationStack {
+                    #if FLIM_V2
+                    V2UsernameEntry()
+                    #else
                     UsernameView()
+                    #endif
                 }
                 .transition(.opacity)
             } else {
@@ -124,6 +150,10 @@ struct ContentView: View {
         // by mention suggestions so picking one doesn't also close the keyboard. See
         // KeyboardDismiss.swift for why this observes taps instead of capturing them.
         .dismissesKeyboardOnBackgroundTap()
+        #if FLIM_V2
+        // FLIM Beta's way in is drawn on the desk (V2SignIn.swift).
+        .modifier(V2DeskEnvironment())
+        #endif
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.id)
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.username)
         .animation(.easeInOut(duration: 0.35), value: auth.isLoading)
