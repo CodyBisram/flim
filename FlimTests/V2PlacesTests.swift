@@ -140,6 +140,9 @@ struct V2PlacesTests {
         #expect(V2RollTime.clock(Self.at(22), now: now, calendar: Self.calendar).hasPrefix("TONIGHT "))
         // A morning opening the same day is "today", never "tonight".
         #expect(V2RollTime.clock(Self.at(11), now: Self.at(8), calendar: Self.calendar).hasPrefix("TODAY "))
+        // The app's 4am day boundary, not midnight: a roll opening at 2 AM while it's still
+        // 11 PM the same night is still today's, not tomorrow's.
+        #expect(V2RollTime.clock(Self.at(2, day: 28), now: Self.at(23), calendar: Self.calendar).hasPrefix("TODAY "))
     }
 
     @Test("the open time reads today, tonight or tomorrow as the box says it")
@@ -147,6 +150,9 @@ struct V2PlacesTests {
         #expect(V2RollTime.label(Self.at(22), now: Self.at(15), calendar: Self.calendar).hasPrefix("tonight, "))
         #expect(V2RollTime.label(Self.at(11), now: Self.at(8), calendar: Self.calendar).hasPrefix("today, "))
         #expect(V2RollTime.label(Self.at(18, day: 28), now: Self.at(15), calendar: Self.calendar).hasPrefix("tomorrow, "))
+        // Same 4am boundary as the lid's clock: a 2 AM opening set from 11 PM the same night
+        // reads "today", never "tomorrow".
+        #expect(V2RollTime.label(Self.at(2, day: 28), now: Self.at(23), calendar: Self.calendar).hasPrefix("today, "))
     }
 
     @Test("every badge has a seal ring line, under twelve characters as the handoff asks")
