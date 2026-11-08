@@ -94,6 +94,23 @@ struct V2PlacesTests {
         #expect(V2When.relativeDay(Self.at(9, day: 23), now: now, calendar: Self.calendar) != "yesterday")
     }
 
+    private static func photo(developsAt: Date) -> Photo {
+        Photo(id: UUID(), userId: UUID(), rollId: nil, storagePath: "p/\(UUID()).jpg",
+              thumbPath: nil, feedPath: nil, takenAt: developsAt.addingTimeInterval(-60),
+              developsAt: developsAt, isDeveloped: false, caption: nil, isSorted: true)
+    }
+
+    @Test("the Darkroom's kept count excludes a roll shot still waiting to reveal")
+    func readyKeptCount() {
+        let now = Date.now
+        let notReady = Self.photo(developsAt: now.addingTimeInterval(3_600))
+        let ready = Self.photo(developsAt: now.addingTimeInterval(-3_600))
+        #expect(V2DarkroomPlace.readyKeptCount(total: 5, latestKept: [notReady, ready]) == 4)
+        #expect(V2DarkroomPlace.readyKeptCount(total: 5, latestKept: [ready]) == 5)
+        // Never negative, even if the total round trip lagged behind the page read.
+        #expect(V2DarkroomPlace.readyKeptCount(total: 0, latestKept: [notReady]) == 0)
+    }
+
     @Test("a roll's time left reads in the largest whole unit")
     func timeLeft() {
         let now = Self.at(12)
