@@ -761,7 +761,9 @@ struct V2RollMore: View {
         let (m, p, mutes) = await (memberRead, photoRead, mutedRead)
         guard AccountEpoch.isCurrent(epoch) else { return }
         if let m { members = m.sorted { a, b in a.id == me ? true : b.id == me ? false : (a.username ?? "") < (b.username ?? "") } }
-        if let p { prints = p.filter(\.isDeveloped) }
+        // `isReady` (`develops_at <= now`), not `isDeveloped`: the latter is a cron-maintained
+        // cache with an untracked cadence, same reasoning as `DarkroomViewModel.recomputeSplits`.
+        if let p { prints = p.filter(\.isReady) }
         muted = mutes.contains(roll.id)
     }
 }
