@@ -79,6 +79,9 @@ struct CameraView: View {
     // Whether to schedule a local "your photo developed" reminder (toggled in Profile).
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var unsortedCount = 0
+    /// 1.7: your newest personal shot, bottom right; tapping it opens the Darkroom.
+    @State private var lastShot: Photo?
+    @State private var lastShotURL: URL?
     @State private var showSortDeck = false
     @Environment(NetworkMonitor.self) private var network
 
@@ -110,6 +113,70 @@ struct CameraView: View {
     }
 
     var body: some View {
+        Group {
+            // 1.7 (FLIM Beta) draws the camera on the desk (the Blend board, 1a/1b); the App Store
+            // app keeps 1.6's black camera.
+            if AppInfo.is17 { deskLayer } else { v1Layer }
+        }
+        // Collected at the ZStack so it hears every branch: the zoom pills now live in an
+        // overlay on the viewfinder box, not in the control VStack with the top bar/shutter.
+        .onPreferenceChange(ControlRegionPreferenceKey.self) { controlRegions = $0 }
+        .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await refreshUnsorted() } }) {
+            SortDeckView()
+        }
+        .onAppear {
+            if hasOnboarded { startCameraFlow() }
+        }
+        .onChange(of: hasOnboarded) { _, done in
+            if done { startCameraFlow() }
+        }
+        .onDisappear {
+            camera.stopRunning()
+            // Cancel any running self-timer. Its countdown lives in a Task that SwiftUI does not
+            // auto-cancel (it is a bare Task, not a `.task`), and `countdown` is `@State` that
+            // survives a tab switch, so without this the timer keeps ticking off-screen and fires
+            // a capture into a stopped session. Clearing it makes the Task's own `countdown != nil`
+            // guard return; `capturePhoto`'s `session.isRunning` check covers the final-tick race.
+            countdown = nil
+        }
+        .onChange(of: selectedRoll) { persistSelectedRoll() }
+        // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
+        // even if two land back to back with identical copy. Fires for both a fresh capture that
+        // raced the roll's own develop and a manual "Retry" of an item queued before it developed.
+        .onChange(of: photos.personalFallbackCount) { _, count in
+            guard count > 0 else { return }
+            Haptics.success()
+            withAnimation { rollDevelopedFallbackToast = true }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { rollDevelopedFallbackToast = false }
+            }
+        }
+        // Defaults the camera to a roll you just created, until you deliberately switch away, 
+        // selectedRoll is view-local state (persisted, but only restored once on appear), so a
+        // roll created elsewhere has no other way to reach an already-mounted CameraView.
+        .onReceive(NotificationCenter.default.publisher(for: .selectCameraRoll)) { note in
+            // Same rule as `restoreSelectedRoll`: a developed roll can't take new shots, so it
+            // is never a valid camera target, however it arrives.
+            if let roll = note.object as? Roll, !roll.isDeveloped { selectedRoll = roll }
+        }
+        // The picker's "Start a roll" closes the picker first and opens the create sheet once it
+        // has gone, rather than stacking one sheet on the other: CreateRollView already makes
+        // the new roll the camera's target (`.selectCameraRoll` above).
+        .sheet(isPresented: $showRollPicker, onDismiss: {
+            guard startRollAfterPicker else { return }
+            startRollAfterPicker = false
+            showCreateRoll = true
+        }) {
+            RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll) {
+                startRollAfterPicker = true
+            }
+        }
+        .sheet(isPresented: $showCreateRoll) { CreateRollView() }
+    }
+
+    /// 1.6's camera: a full-width viewfinder between black bands.
+    private var v1Layer: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -266,61 +333,294 @@ struct CameraView: View {
                 }
             }
         }
-        // Collected at the ZStack so it hears every branch: the zoom pills now live in an
-        // overlay on the viewfinder box, not in the control VStack with the top bar/shutter.
-        .onPreferenceChange(ControlRegionPreferenceKey.self) { controlRegions = $0 }
-        .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await refreshUnsorted() } }) {
-            SortDeckView()
-        }
-        .onAppear {
-            if hasOnboarded { startCameraFlow() }
-        }
-        .onChange(of: hasOnboarded) { _, done in
-            if done { startCameraFlow() }
-        }
-        .onDisappear {
-            camera.stopRunning()
-            // Cancel any running self-timer. Its countdown lives in a Task that SwiftUI does not
-            // auto-cancel (it is a bare Task, not a `.task`), and `countdown` is `@State` that
-            // survives a tab switch, so without this the timer keeps ticking off-screen and fires
-            // a capture into a stopped session. Clearing it makes the Task's own `countdown != nil`
-            // guard return; `capturePhoto`'s `session.isRunning` check covers the final-tick race.
-            countdown = nil
-        }
-        .onChange(of: selectedRoll) { persistSelectedRoll() }
-        // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
-        // even if two land back to back with identical copy. Fires for both a fresh capture that
-        // raced the roll's own develop and a manual "Retry" of an item queued before it developed.
-        .onChange(of: photos.personalFallbackCount) { _, count in
-            guard count > 0 else { return }
-            Haptics.success()
-            withAnimation { rollDevelopedFallbackToast = true }
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                withAnimation { rollDevelopedFallbackToast = false }
+    }
+
+    // MARK: - 1.7 camera (the Blend board, 1a and 1b)
+
+    /// The roll being shot into, if it can still take shots.
+    private var liveRoll: Roll? {
+        guard let selectedRoll, !selectedRoll.isDeveloped else { return nil }
+        return selectedRoll
+    }
+
+    /// 1.7's camera: the viewfinder inset on the desk with 12pt corners, its roll picker and
+    /// flash and timer inside the frame, the zoom chips on its foot. Shooting into a roll gives the
+    /// frame an amber edge and a line under it with the roll's countdown. Flip, shutter, last shot
+    /// below.
+    private var deskLayer: some View {
+        ZStack {
+            FlimTheme.bg.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Pinned to the top at the full width it can have (3:4, what it shows is the
+                // photo); the line and the controls share what is left below it, centred. The
+                // controls keep their own minimum, so on a short screen (the Duo's outer display)
+                // the frame gives way instead.
+                deskViewfinder
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .layoutPriority(1)
+                VStack(spacing: 0) {
+                    deskUnderLine
+                        .frame(height: 34)
+                    ZStack {
+                        if camera.permission != .denied {
+                            deskBottomRow
+                                .reportsControlRegion()
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 88)
+                }
+                .frame(maxHeight: .infinity)
+            }
+
+            Color.white
+                .opacity(camera.flashOpacity)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+
+            if camera.permission == .denied {
+                cameraDeniedOverlay
+            } else {
+                VStack(spacing: 0) {
+                    if rollDevelopedFallbackToast {
+                        FlimToast("That roll isn't accepting shots anymore, so this one went to your Darkroom instead.",
+                                  kind: .info, alignment: .leading)
+                            .padding(.top, 10)
+                            .padding(.horizontal, 24)
+                    }
+                    Spacer()
+                }
+                .animation(.snappy(duration: 0.25), value: rollDevelopedFallbackToast)
+
+                coachOverlay
+
+                if let countdown, countdown > 0 {
+                    Text("\(countdown)")
+                        .font(.system(size: 104, weight: .thin))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 12)
+                        .transition(.scale.combined(with: .opacity))
+                        .id(countdown)
+                        .allowsHitTesting(false)
+                }
             }
         }
-        // Defaults the camera to a roll you just created, until you deliberately switch away, 
-        // selectedRoll is view-local state (persisted, but only restored once on appear), so a
-        // roll created elsewhere has no other way to reach an already-mounted CameraView.
-        .onReceive(NotificationCenter.default.publisher(for: .selectCameraRoll)) { note in
-            // Same rule as `restoreSelectedRoll`: a developed roll can't take new shots, so it
-            // is never a valid camera target, however it arrives.
-            if let roll = note.object as? Roll, !roll.isDeveloped { selectedRoll = roll }
-        }
-        // The picker's "Start a roll" closes the picker first and opens the create sheet once it
-        // has gone, rather than stacking one sheet on the other: CreateRollView already makes
-        // the new roll the camera's target (`.selectCameraRoll` above).
-        .sheet(isPresented: $showRollPicker, onDismiss: {
-            guard startRollAfterPicker else { return }
-            startRollAfterPicker = false
-            showCreateRoll = true
-        }) {
-            RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll) {
-                startRollAfterPicker = true
+        .task(id: photos.pendingCaptureCount) { await refreshLastShot() }
+    }
+
+    private var deskViewfinder: some View {
+        CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
+            // Dark under the picture, so the frame reads as a frame while the camera starts.
+            .background(Color.black)
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                if let reticle = camera.focusReticle {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(accent, lineWidth: 1.5)
+                        .frame(width: 72, height: 72)
+                        .position(reticle.point)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
             }
+            .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
+            .overlay { faceIndicators }
+            .animation(.easeOut(duration: 0.18), value: camera.faceRects)
+            .overlay { cameraUnavailableOverlay.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
+            .animation(.easeOut(duration: 0.2), value: camera.isInterrupted)
+            .onChange(of: camera.isInterrupted) { _, now in
+                if now { countdown = nil }
+            }
+            // Shooting into a roll: an amber edge, so you always know where the shot is going.
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(accent, lineWidth: liveRoll == nil ? 0 : 2)
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeOut(duration: 0.2), value: liveRoll?.id)
+            .overlay(alignment: .top) {
+                deskTopRow
+                    .reportsControlRegion()
+                    .padding(.horizontal, 6)
+                    .padding(.top, 6)
+            }
+            .overlay(alignment: .bottom) {
+                zoomControl
+                    .padding(Self.zoomTapInset)
+                    .reportsControlRegion()
+                    .padding(EdgeInsets(top: -Self.zoomTapInset.top, leading: -Self.zoomTapInset.leading,
+                                       bottom: -Self.zoomTapInset.bottom, trailing: -Self.zoomTapInset.trailing))
+                    .padding(.bottom, 14)
+            }
+            .frame(maxWidth: .infinity)
+    }
+
+    /// Inside the frame's top edge: where the shot goes (left), flash and timer (right). White
+    /// with a soft shadow, because they sit on the live picture.
+    private var deskTopRow: some View {
+        HStack(spacing: 2) {
+            Button { showRollPicker = true } label: {
+                HStack(spacing: 5) {
+                    Text(liveRoll?.name ?? "Personal")
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .layoutPriority(-1)
+            .accessibilityLabel("Send photos to")
+            .accessibilityValue(liveRoll?.name ?? "Personal")
+
+            Spacer(minLength: 8)
+
+            if camera.isFlashSupported {
+                Button { cycleFlash() } label: {
+                    Image(systemName: flashIcon)
+                        .font(.system(size: 16, weight: .medium))
+                        .contentTransition(.symbolEffect(.replace))
+                        .foregroundStyle(flashMode == .off ? .white : accent)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Flash")
+                .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
+            }
+
+            Button {
+                selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
+                Haptics.tap()
+            } label: {
+                HStack(spacing: 1) {
+                    Image(systemName: "timer")
+                        .font(.system(size: 16, weight: .medium))
+                    if selfTimerSeconds > 0 {
+                        Text("\(selfTimerSeconds)")
+                            .font(.system(size: 11, weight: .bold))
+                            .fixedSize()
+                    }
+                }
+                .foregroundStyle(selfTimerSeconds == 0 ? .white : accent)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Self timer")
+            .accessibilityValue(selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds) seconds")
         }
-        .sheet(isPresented: $showCreateRoll) { CreateRollView() }
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+    }
+
+    /// Under the frame: a stuck shot's status first (not saved, or queued with Retry), otherwise
+    /// the roll being shot into, with its countdown and a way back to Personal.
+    @ViewBuilder
+    private var deskUnderLine: some View {
+        if let status = captureStatus, !status.isInBetween {
+            CaptureStatusChip(status: status, rollName: liveRoll?.name) {
+                Task { await photos.retryFailedUploads() }
+            }
+            .padding(.horizontal, 16)
+        } else if let roll = liveRoll {
+            Button {
+                withAnimation(.snappy(duration: 0.25)) { selectedRoll = nil }
+                Haptics.tap()
+            } label: {
+                TimelineView(.periodic(from: .now, by: 1)) { tl in
+                    HStack(spacing: 0) {
+                        Text("Shooting into \(roll.name) · ")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(DeskType.clock(roll.revealAt.timeIntervalSince(tl.date)))
+                            .font(DeskType.data(12))
+                            .foregroundStyle(accent)
+                            .fixedSize()
+                        Text(" · ")
+                        Text("tap to stop").fontWeight(.semibold).fixedSize()
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(FlimTheme.textSecondary)
+                }
+                .padding(.horizontal, 16)
+                .frame(minHeight: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Shooting into \(roll.name)")
+            .accessibilityHint("Switches back to Personal")
+        }
+    }
+
+    /// Flip on the left, the shutter in the middle, your last shot on the right.
+    private var deskBottomRow: some View {
+        ZStack {
+            ShutterButton(isCapturing: camera.isCapturing,
+                          unavailableReason: camera.isInterrupted ? (camera.interruptionReason ?? "Camera unavailable") : nil) { shutter() }
+            HStack {
+                Button {
+                    camera.flipCamera()
+                    Haptics.tap()
+                } label: {
+                    Image(systemName: Self.flipCameraSymbol)
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .frame(width: 48, height: 48)
+                        .background(Circle().fill(FlimTheme.surface))
+                }
+                .accessibilityLabel("Flip camera")
+
+                Spacer()
+
+                lastShotButton
+            }
+            .padding(.horizontal, 40)
+        }
+    }
+
+    /// Your newest shot, opening the Darkroom. Shots into a roll stay sealed until it opens, so
+    /// while one is picked this says so instead.
+    private var lastShotButton: some View {
+        Button {
+            NotificationCenter.default.post(name: .openDarkroom, object: nil)
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(FlimTheme.surface)
+                if liveRoll != nil {
+                    Text("SEALED")
+                        .font(DeskType.data(8))
+                        .foregroundStyle(accent)
+                } else if let lastShot, lastShot.isReady, let lastShotURL {
+                    CachedImage(url: lastShotURL, maxPixel: 150, cacheKey: lastShot.thumbPath ?? lastShot.storagePath) {
+                        $0.resizable().scaledToFill()
+                    } placeholder: { Color.clear }
+                } else if lastShot != nil {
+                    Text("DEVELOPING")
+                        .font(DeskType.data(6))
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                if captureStatus?.isInBetween == true {
+                    ProgressView().controlSize(.mini).tint(FlimTheme.textPrimary)
+                }
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .accessibilityLabel(liveRoll != nil ? "Sealed until the roll opens. Open Darkroom" : "Last shot. Open Darkroom")
+    }
+
+    private func refreshLastShot() async {
+        guard let uid = auth.currentUser?.id,
+              let shot = await photos.fetchLatestPersonalShot(userId: uid) else { return }
+        lastShot = shot
+        if let path = shot.thumbPath ?? Optional(shot.storagePath) {
+            lastShotURL = try? await photos.signedURL(for: path)
+        }
     }
 
     // MARK: - Selected roll persistence

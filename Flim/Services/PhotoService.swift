@@ -2498,6 +2498,19 @@ final class PhotoService {
     /// `next` is `nil` once a page comes back with nothing to anchor to (an empty page); the
     /// caller should also treat `photos.count < limit` as "no more", the same short-page signal
     /// `fetchPage` itself uses, since a `next` cursor can exist on a page that's already the last.
+    /// Your newest personal shot, sorted or not, for the 1.7 camera's last-shot tile. `nil` when
+    /// there is none or the read failed; the tile keeps what it had.
+    func fetchLatestPersonalShot(userId: UUID) async -> Photo? {
+        let rows: [Photo]? = try? await supabase.from("photos").select()
+            .eq("user_id", value: userId.uuidString)
+            .is("roll_id", value: nil)
+            .order(PhotoOrderColumn.takenAt.column, ascending: false)
+            .limit(1)
+            .execute()
+            .value
+        return rows?.first
+    }
+
     func fetchDarkroomPage(userId: UUID, limit: Int, before: PhotoCursor?) async throws -> (photos: [Photo], next: PhotoCursor?) {
         let base = supabase.from("photos").select()
             .eq("user_id", value: userId.uuidString)

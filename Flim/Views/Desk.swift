@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 /// 1.7's desks: the ground every screen sits on. Paper is light, Slate is dark, System follows the
 /// phone. Only FLIM Beta reads this (`AppInfo.is17`); the App Store app stays pinned dark.
@@ -81,5 +82,43 @@ struct DeskEnvironment: ViewModifier {
 
     func body(content: Content) -> some View {
         content.preferredColorScheme((Desk(rawValue: deskRaw) ?? Desk.fallback).colorScheme)
+    }
+}
+
+/// 1.7's two faces beside the system's: Libre Caslon Text for titles, IBM Plex Mono for stamps,
+/// counters and clocks. Both ship in Flim/Resources/Fonts (OFL, licences beside them) and are
+/// registered for this process the first time they're asked for. The App Store build leaves the
+/// font files out until 1.7 ships; there `Font.custom` falls back to the system face, and nothing
+/// there asks for these anyway (`AppInfo.is17` is false).
+enum DeskType {
+    static let caslon = "LibreCaslonText-Regular"
+    static let caslonItalic = "LibreCaslonText-Italic"
+    static let mono = "IBMPlexMono-Medium"
+
+    private static let registration: Void = {
+        for name in ["LibreCaslonText-Variable", "LibreCaslonText-Italic-Variable", "IBMPlexMono-Medium"] {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }()
+
+    static func registerFonts() { _ = registration }
+
+    /// Titles and display lines. Scales with Dynamic Type from `relativeTo`.
+    static func serif(_ size: CGFloat, italic: Bool = false, relativeTo style: Font.TextStyle = .title) -> Font {
+        registerFonts()
+        return Font.custom(italic ? caslonItalic : caslon, size: size, relativeTo: style)
+    }
+
+    /// Stamps, counters and clocks: fixed size, they sit in fixed chrome.
+    static func data(_ size: CGFloat) -> Font {
+        registerFonts()
+        return Font.custom(mono, fixedSize: size)
+    }
+
+    /// A countdown as the board draws it: "02:14:09", hours padded, never negative.
+    static func clock(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds.rounded(.down)))
+        return String(format: "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
     }
 }
