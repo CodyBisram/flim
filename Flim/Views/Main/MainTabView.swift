@@ -169,6 +169,8 @@ struct MainTabView: View {
     /// Owned here (not in FeedView) so `profile` and `post` push destinations can push straight
     /// into a page or a post without the Feed tab needing to already be open.
     @State private var feedPath = NavigationPath()
+    /// Your avatar for 1.7's You tab, paired with the path it was signed for.
+    @State private var myAvatar: SignedPath?
     #if FLIM_V2
     /// FLIM Beta: a route to a print or a page covers v2's frame instead of pushing onto Friends.
     @State private var v2Route: V2Route?
@@ -278,6 +280,55 @@ struct MainTabView: View {
         }
     }
 
+    /// 1.7's five tabs (the Blend board, 1c): the same four stacks plus You, under `DeskTabBar`
+    /// instead of the system's tab bar. The system bar is hidden on every tab's root and on every
+    /// screen pushed onto it (`deskTabRoot`), so pushed screens keep the desk's bar as 1.6's did.
+    private var deskTabs: some View {
+        TabView(selection: selection) {
+            Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
+                CameraView().deskTabRoot()
+            }
+            Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) {
+                darkroomStack.deskTabRoot()
+            }
+            Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
+                rollsStack.deskTabRoot()
+            }
+            Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) {
+                feedStack.deskTabRoot()
+            }
+            Tab("You", systemImage: "person.crop.circle", value: DeskTabBar.you) {
+                youStack.deskTabRoot()
+            }
+        }
+        // The bar floats over the tabs; each tab reserves its height itself (`deskTabRoot`),
+        // because a TabView does not pass an inset set on it down into its tabs.
+        .overlay(alignment: .bottom) {
+            DeskTabBar(selection: selection,
+                       rollsDot: signals.rollsHaveUnwatched,
+                       feedDot: signals.feedHasUnread,
+                       youDot: false,
+                       avatarURL: myAvatar?.url,
+                       avatarKey: myAvatar?.path,
+                       initial: String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
+        }
+        .task(id: auth.currentUser?.avatarPath) {
+            guard let path = auth.currentUser?.avatarPath else { myAvatar = nil; return }
+            myAvatar = await SignedPath.sign(path) { await feed.signedURL(for: $0) }
+        }
+    }
+
+    /// Your own page, as its own tab (1.7). Pages and posts it opens push onto this stack.
+    private var youStack: some View {
+        NavigationStack {
+            if let uid = auth.currentUser?.id {
+                UserPageView(userId: uid)
+            } else {
+                FlimTheme.bg.ignoresSafeArea()
+            }
+        }
+    }
+
     #if FLIM_V2
     /// FLIM Beta's places (`V2Home`): Darkroom, Personal and Friends side by side, driving the same
     /// `selected` the tab bar does. The Darkroom and Friends stacks stay here because the routes
@@ -351,7 +402,7 @@ struct MainTabView: View {
         #if FLIM_V2
         v2Places
         #else
-        tabs
+        if AppInfo.is17 { deskTabs } else { tabs }
         #endif
     }
 
@@ -942,5 +993,17 @@ private struct FollowBackListener: ViewModifier {
                 feed.noteReactionMadeElsewhere(postId: action.postId, emoji: action.emoji, userId: action.recipient)
             }
         }
+    }
+}
+
+private extension View {
+    /// A 1.7 tab's root: hides the system tab bar here and on every screen pushed onto it (each
+    /// push resolves the bar's visibility again, so it is set on the stack's whole subtree).
+    func deskTabRoot() -> some View {
+        toolbarVisibility(.hidden, for: .tabBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: DeskTabBar.height + DeskTabBar.bottomGap)
+                    .allowsHitTesting(false)
+            }
     }
 }

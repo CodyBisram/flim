@@ -1,18 +1,25 @@
 name: iOS · FLIM Beta TestFlight
 
-# FLIM Beta, the v2 test app: its own bundle id, Supabase project and TestFlight (see
-# docs/TESTFLIGHT_SETUP.md, "FLIM Beta"). v2 is built on main under Flim/V2, so a push to main that
-# touches v2 ships a beta build; anything else, including a change to the App Store app's screens
-# that v2 also shows, ships one by hand (workflow_dispatch). The App Store app's pipeline
-# (ios-testflight.yml) ignores v2's paths, so a v2-only push never ships an identical App Store
-# build.
+# FLIM Beta, the test app for 1.7: its own bundle id, Supabase project (FLIM Dev) and TestFlight
+# (see docs/TESTFLIGHT_SETUP.md, "FLIM Beta"). 1.7 is built in the app's own files behind
+# AppInfo.is17, which only FLIM Beta's configurations switch on, so every app change ships a beta
+# build alongside the App Store app's. (v2, under Flim/V2, is on the back burner.)
 on:
   push:
     branches: [main]
-    paths:
-      - "Flim/V2/**"
-      - "Flim/Resources/Fonts/**"
-      - ".github/workflows/ios-beta-testflight.yml"
+    # 1.7 is built in the app's own files (AppInfo.is17), so any app change builds FLIM Beta,
+    # the same set the App Store workflow builds on.
+    paths-ignore:
+      - ".claude/**"
+      - "docs/**"
+      - "web/**"
+      - "scripts/**"
+      - "supabase/**"
+      - "*.md"
+      - "social/**"
+      - ".github/workflows/nightly-numbers.yml"
+      - ".github/workflows/r2-tripwire.yml"
+      - ".github/workflows/ios-testflight.yml"
   workflow_dispatch:
 
 # Its own lane. The App Store app's build number is that app's latest TestFlight build plus one,

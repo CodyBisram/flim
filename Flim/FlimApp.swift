@@ -57,6 +57,10 @@ struct FlimApp: App {
                 // FLIM Beta follows the chosen desk (Paper reads dark on light, status bar
                 // included); the App Store app stays pinned dark.
                 .modifier(V2DeskEnvironment())
+                #elseif FLIM_17
+                // 1.7 in FLIM Beta follows the chosen desk (Paper reads dark on light, status bar
+                // and sheets included); the App Store app stays pinned dark.
+                .modifier(DeskEnvironment())
                 #else
                 .preferredColorScheme(.dark)
                 #endif

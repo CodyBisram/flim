@@ -18,9 +18,12 @@ enum FlimTheme {
     /// Anything else that shows a photo at 1:1 is a bug.
     static let frameAspect: CGFloat = 3.0 / 4.0
 
-    static let bg = Color(red: 0.04, green: 0.04, blue: 0.04)
-    static let bgElevated = Color(white: 0.08)
-    static let stroke = Color(white: 0.14)
+    // 1.7 (`AppInfo.is17`): every ground and text token is a Paper/Slate pair from `DeskColor`,
+    // resolved by the desk the person chose. The App Store app keeps the plain 1.6 values below,
+    // so it draws exactly as before.
+    static let bg = AppInfo.is17 ? DeskColor.desk : Color(red: 0.04, green: 0.04, blue: 0.04)
+    static let bgElevated = AppInfo.is17 ? DeskColor.box : Color(white: 0.08)
+    static let stroke = AppInfo.is17 ? DeskColor.rule : Color(white: 0.14)
 
     // MARK: Semantic roles (v2 foundations, 2026-09-14)
     //
@@ -28,9 +31,9 @@ enum FlimTheme {
     // (.red, .green, a 0.35 opacity for "disabled"). Named here so a state is drawn the same
     // way everywhere and its contrast is a known number. Ratios are against `bg` unless said.
     /// Cards, the tab bar, image wells. A step up from the ground, not a panel. 1.3:1.
-    static let surface = Color(white: 0.08)
+    static let surface = AppInfo.is17 ? DeskColor.box : Color(white: 0.08)
     /// Rows and fills that sit on a sheet.
-    static let row = Color.white.opacity(0.06)
+    static let row = AppInfo.is17 ? DeskColor.box : Color.white.opacity(0.06)
     /// Hairline seams and control borders. Same value as `stroke`; the name says what it is for.
     static let divider = stroke
     /// Uploaded, posted, joined. Always icon plus words, never a bare green dot. 10.9:1.
@@ -40,13 +43,13 @@ enum FlimTheme {
     static let destructive = Color(red: 1.0, green: 0.27, blue: 0.23)
     /// Text of an unavailable control. 3.2:1 on bg, under 3:1 on a row, so a disabled control
     /// always says why in secondary text beside it; the dimming is never the only cue.
-    static let disabled = Color(white: 0.38)
+    static let disabled = AppInfo.is17 ? DeskColor.ink3.opacity(0.7) : Color(white: 0.38)
     /// Inline validation and failure text under a field or form.
     static let error = Color(red: 1, green: 0.4, blue: 0.4)
     /// Prompt text inside an empty text field.
-    static let placeholder = Color(white: 0.3)
+    static let placeholder = AppInfo.is17 ? DeskColor.ink3 : Color(white: 0.3)
     /// Skeletons, at the real geometry of what is coming. Pulsed 35 to 70 percent by the caller.
-    static let loading = Color(white: 0.11)
+    static let loading = AppInfo.is17 ? DeskColor.box : Color(white: 0.11)
     /// "Not yet saved", "queued offline": the accent with a warning glyph, deliberately not a
     /// third colour. A state to attend to, not an error.
     static func warning(_ accent: Color) -> Color { accent }
@@ -92,8 +95,8 @@ enum FlimTheme {
     /// 10pt, and a hair of lift settles it without reading as grey.
     static let badgeInk = Color(red: 0.08, green: 0.07, blue: 0.05)
 
-    static let textPrimary = Color.white
-    static let textSecondary = Color(white: 0.62)   // 7.4:1 on bg, passes AA and AAA
+    static let textPrimary = AppInfo.is17 ? DeskColor.ink : Color.white
+    static let textSecondary = AppInfo.is17 ? DeskColor.ink2 : Color(white: 0.62)   // 7.4:1 on bg, passes AA and AAA
 
     /// The faintest text in the app, and the only one that was failing.
     ///
@@ -105,7 +108,7 @@ enum FlimTheme {
     /// obviously brighter: this colour's whole job is to recede, and the point is that it can do
     /// that while still being readable by someone who isn't looking at it in a dark room with
     /// young eyes.
-    static let textTertiary = Color(white: 0.55)   // 5.9:1 on bg, 5.1:1 on a sheet; 0.48 was 4.0:1 on a sheet (AA fails)
+    static let textTertiary = AppInfo.is17 ? DeskColor.ink3 : Color(white: 0.55)   // 5.9:1 on bg, 5.1:1 on a sheet; 0.48 was 4.0:1 on a sheet (AA fails)
 }
 
 /// The spacing scale. Nine steps; a gap that is not one of these is a gap nobody decided on.
@@ -334,9 +337,9 @@ extension FlimTheme {
     /// as dark as it can be while still unmistakably a different ground than `bg`: separation
     /// comes from the top hairline, the ambient shadow, and the dimming scrim as much as from
     /// lightness, so the fill itself only has to clear `bgElevated`, not carry the whole job.
-    static let sheetSurface = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0).opacity(0.96)
+    static let sheetSurface = AppInfo.is17 ? DeskColor.desk : Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0).opacity(0.96)
     /// `sheetSurface` without its 4% of glass, for a pinned region that content scrolls under.
-    static let sheetSurfaceSolid = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0)
+    static let sheetSurfaceSolid = AppInfo.is17 ? DeskColor.desk : Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0)
 
     /// A row/section fill for content that sits ON `sheetSurface`, not on `bg`.
     ///
@@ -347,13 +350,13 @@ extension FlimTheme {
     /// Translucent white composites lighter than whatever is behind it, on `bg` or on
     /// `sheetSurface` alike, which is why it's the correct lift for anything drawn on the sheet
     /// layer rather than a fixed dark color tuned for one specific ground.
-    static let sheetRow = Color.white.opacity(0.06)
+    static let sheetRow = AppInfo.is17 ? DeskColor.box : Color.white.opacity(0.06)
 
     /// `sheetRow` over `sheetSurface`, as a solid colour: an image placeholder on a sheet that
     /// must hide what is drawn beneath it (a chosen frame's shadow) while it loads, and any
     /// opaque card or pinned bar on a sheet (an invite code, a comment composer). Solid on
     /// purpose: on iOS 26 the sheet itself is glass, and content on it must not be glass too.
-    static let sheetTile = Color(red: 41.0 / 255.0, green: 41.0 / 255.0, blue: 45.0 / 255.0)
+    static let sheetTile = AppInfo.is17 ? DeskColor.box : Color(red: 41.0 / 255.0, green: 41.0 / 255.0, blue: 45.0 / 255.0)
 
     /// iOS 26 only: the wash every sheet's content sits on, over the system's glass sheet.
     ///
@@ -390,7 +393,12 @@ private struct FlimSheetSurfaceModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
+        if AppInfo.is17 {
+            // 1.7: a solid sheet on the desk colour, no glass (the Blend board, 2c).
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .presentationBackground(FlimTheme.sheetSurfaceSolid)
+        } else if #available(iOS 26, *) {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {

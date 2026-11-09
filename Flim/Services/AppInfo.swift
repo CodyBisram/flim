@@ -9,11 +9,21 @@ enum AppInfo {
     /// (covers the whole UI) plus CFBundleDisplayName in project.yml (the home-screen name).
     static let appName = "FLIM"
 
-    /// FLIM Beta, the v2 redesign (its configurations set FLIM_V2). Friends there are mutual.
+    /// The v2 "Print" redesign (Flim/V2). On the back burner since 2026-11-09: no configuration
+    /// sets FLIM_V2 any more, so this is false everywhere.
     #if FLIM_V2
     static let isV2 = true
     #else
     static let isV2 = false
+    #endif
+
+    /// 1.7 ("Blend"): 1.6's layout on Paper and Slate desks. On in FLIM Beta (its configurations
+    /// set FLIM_17), off in the App Store app until 1.7 ships, so everything it changes reads this
+    /// constant and the App Store build runs exactly the 1.6 path.
+    #if FLIM_17
+    static let is17 = true
+    #else
+    static let is17 = false
     #endif
 
     /// Where in-app feedback is emailed. Change to your address.

@@ -543,7 +543,8 @@ struct FeedView: View {
             // circle as the bell and Find friends beside it (2026-10-01, owner): three equal
             // circles read as one row, and 34 was under the 44pt touch minimum. A photo with an
             // accent ring rather than glass, so it still reads as you, not as a control.
-            if let uid = auth.currentUser?.id {
+            // 1.7 moves your page to its own tab (You), so the header drops the avatar.
+            if !AppInfo.is17, let uid = auth.currentUser?.id {
                 NavigationLink {
                     UserPageView(userId: uid)
                 } label: {

@@ -9,8 +9,18 @@ import XCTest
 ///
 /// Photos come from the disk cache when planted (`scripts/plant_demo_images.py`); every check here
 /// reads labels, so they pass without them.
+/// v2 is on the back burner since 2026-11-09: FLIM Beta builds 1.7 (FLIM_17) and no
+/// configuration switches v2 on, so these skip unless FLIM_V2_UI_TESTS=1 is set (after putting
+/// FLIM_V2 back on a beta config).
+private func skipUnlessV2() throws {
+    if ProcessInfo.processInfo.environment["FLIM_V2_UI_TESTS"] != "1" {
+        throw XCTSkip("v2 is on the back burner; FLIM Beta builds 1.7")
+    }
+}
+
 final class V2FlowsUITests: XCTestCase {
-    override func setUp() {
+    override func setUpWithError() throws {
+        try skipUnlessV2()
         continueAfterFailure = false
     }
 
@@ -280,6 +290,7 @@ final class V2LiveUITests: XCTestCase {
     private var shots: String = ""
 
     override func setUpWithError() throws {
+        try skipUnlessV2()
         continueAfterFailure = true
         let env = ProcessInfo.processInfo.environment
         guard let pass = env["FLIM_REVIEW_PASS"], !pass.isEmpty, let dir = env["FLIM_SHOTS"] else {
