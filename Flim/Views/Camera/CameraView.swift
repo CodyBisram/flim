@@ -352,27 +352,26 @@ struct CameraView: View {
             DeskGround()
 
             VStack(spacing: 0) {
-                // Pinned to the top at the full width it can have (3:4, what it shows is the
-                // photo); the line and the controls share what is left below it, centred. The
-                // controls keep their own minimum, so on a short screen (the Duo's outer display)
-                // the frame gives way instead.
+                // Centred on the screen (owner, 2026-11-10: pinned to the top it looked off): the
+                // frame at the full width it can have (3:4, what it shows is the photo), the line
+                // and the controls under it, and the space split evenly above and below the group.
+                // The frame wins the height negotiation, so on a short screen (the Duo's outer
+                // display) the spacers give way first, then the frame.
+                Spacer(minLength: 6)
                 deskViewfinder
                     .padding(.horizontal, 16)
-                    .padding(.top, 6)
                     .layoutPriority(1)
-                VStack(spacing: 0) {
-                    deskUnderLine
-                        .frame(height: 34)
-                    ZStack {
-                        if camera.permission != .denied {
-                            deskBottomRow
-                                .reportsControlRegion()
-                        }
+                deskUnderLine
+                    .frame(height: 34)
+                ZStack {
+                    if camera.permission != .denied {
+                        deskBottomRow
+                            .reportsControlRegion()
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 88)
                 }
-                .frame(maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
+                .frame(height: 88)
+                Spacer(minLength: 0)
             }
 
             Color.white

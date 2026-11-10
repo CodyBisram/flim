@@ -172,7 +172,7 @@ extension EnvironmentValues {
 }
 
 /// The desk under a screen (Blend 1, "Tokens"): its colour and, in 1.7, a fixed noise grain over
-/// it, 3% on Paper and 5% on Slate. Under the content, never on a photograph: screens draw their
+/// it, 5% on both desks (owner, 2026-11-10: 3% on Paper was not noticeable). Under the content, never on a photograph: screens draw their
 /// photographs on top of this. Ignores the safe area itself. In the App Store app it is exactly
 /// 1.6's plain `FlimTheme.bg`.
 struct DeskGround: View {
@@ -188,7 +188,7 @@ struct DeskGround: View {
                 if grain {
                     Image(uiImage: DeskGrain.tile)
                         .resizable(resizingMode: .tile)
-                        .opacity(scheme == .dark ? 0.05 : 0.03)
+                        .opacity(0.05)
                         .blendMode(scheme == .dark ? .screen : .multiply)
                 }
             }
