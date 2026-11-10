@@ -229,3 +229,17 @@ enum DeskGrain {
         }
     }
 }
+
+
+/// Screens that are always Slate in 1.7, whatever the desk, so photographs read true: the
+/// Darkroom viewer (Blend 1, 3b), the screening and the reveal (3e), the sort deck. The status
+/// bar follows when the screen is its own presentation. 1.6 is dark already, so nothing changes.
+struct DeskAlwaysSlate: ViewModifier {
+    func body(content: Content) -> some View {
+        if AppInfo.is17 {
+            content.environment(\.colorScheme, .dark).preferredColorScheme(.dark)
+        } else {
+            content
+        }
+    }
+}

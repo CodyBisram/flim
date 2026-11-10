@@ -126,6 +126,12 @@ struct SortDeckView: View {
     }
 
     var body: some View {
+        deckBody
+            // 1.7: always Slate, whatever the desk (Blend 1, 3e), so photographs read true.
+            .modifier(DeskAlwaysSlate())
+    }
+
+    private var deckBody: some View {
         ZStack {
             DeskGround()
             VStack(spacing: 0) {

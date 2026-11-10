@@ -68,6 +68,12 @@ struct ChapterRecapView: View {
     private var isOwnRecap: Bool { auth.currentUser?.id == profileId }
 
     var body: some View {
+        recapBody
+            // 1.7: a month plays on Slate like a roll's screening (Blend 1, 3e).
+            .modifier(DeskAlwaysSlate())
+    }
+
+    private var recapBody: some View {
         NavigationStack {
             content
                 .toolbar(.hidden, for: .navigationBar)

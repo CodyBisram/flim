@@ -82,6 +82,12 @@ struct RollRevealView: View {
     private var currentPhoto: Photo? { viewModel.playedDeck[safe: viewModel.index] }
 
     var body: some View {
+        deckBody
+            // 1.7: always Slate, whatever the desk (Blend 1, 3e), so photographs read true.
+            .modifier(DeskAlwaysSlate())
+    }
+
+    private var deckBody: some View {
         // Its own stack, so a handle tapped during a reveal pushes the profile with a back
         // button instead of presenting it as a sheet that has no way out.
         NavigationStack {

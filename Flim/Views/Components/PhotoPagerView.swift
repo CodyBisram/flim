@@ -438,7 +438,7 @@ struct PhotoPagerView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
         }
-        .modifier(DeskViewerScheme())
+        .modifier(DeskAlwaysSlate())
         // 1.7's Post, for this one shot (Blend 3, 9b).
         .fullScreenCover(item: $deskPostPhoto) { photo in
             DeskPostView(photos: [photo],
@@ -2397,18 +2397,6 @@ private struct PageFrameModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         } else {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
-
-/// 1.7's viewer is always Slate (Blend 1, 3b), so the photograph reads true whatever the desk;
-/// the status bar follows. 1.6 is dark already.
-private struct DeskViewerScheme: ViewModifier {
-    func body(content: Content) -> some View {
-        if AppInfo.is17 {
-            content.environment(\.colorScheme, .dark).preferredColorScheme(.dark)
-        } else {
-            content
         }
     }
 }
