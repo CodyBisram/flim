@@ -91,9 +91,13 @@ struct RollsView: View {
             // under it with the scroll edge effect, below 26 it stacks above as before.
             Group {
                 if rolls.isLoading && rolls.rolls.isEmpty {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(FlimTheme.textPrimary)
                 } else if let error = loadError, rolls.rolls.isEmpty {
-                    ErrorState(message: error) { await load() }
+                    if AppInfo.is17 {
+                        DeskFailedState(title: "Couldn't load your rolls.", message: DeskFailedState.standardMessage) { await load() }
+                    } else {
+                        ErrorState(message: error) { await load() }
+                    }
                 } else if rolls.rolls.isEmpty {
                     // An invitation to a follow-up roll must show even with no rolls of your
                     // own (the old roll was deleted, or you left it after the follow-up began).
@@ -190,7 +194,41 @@ struct RollsView: View {
     /// The compact bar every tab shares: the screen's own name at the far left, controls at
     /// the right, one row (Feed and Darkroom set the pattern). One glyph, two actions: the
     /// redesign collapses the old create/join pair, since both start a roll's life here.
+    @ViewBuilder
     private var header: some View {
+        if AppInfo.is17 { deskHeader } else { v1Header }
+    }
+
+    /// 1.7's header (Blend 1, 3c): the title in Caslon, Join and + on the right (1.6's Create
+    /// and Join, as two plain controls).
+    private var deskHeader: some View {
+        HStack(spacing: 18) {
+            Text("Rolls")
+                .font(DeskType.serif(30, relativeTo: .largeTitle))
+                .foregroundStyle(FlimTheme.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+            Button("Join") { showJoin = true }
+                .flimFont(15, weight: .semibold, relativeTo: .body)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Join a roll with a code")
+            Button { showCreate = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Start a roll")
+        }
+        .padding(.leading, 24)
+        .padding(.trailing, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+    }
+
+    private var v1Header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("Rolls")
                 .flimFont(17, weight: .light, relativeTo: .body)
@@ -494,7 +532,7 @@ struct RollsView: View {
     /// first time anyone sees them.
     private func rackWell(sealed: Bool, @ViewBuilder content: () -> some View) -> some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(sealed ? accent.opacity(0.16) : Color(white: 0.063))
+            .fill(sealed ? accent.opacity(0.16) : (AppInfo.is17 ? FlimTheme.well : Color(white: 0.063)))
             .overlay(
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(sealed ? accent.opacity(0.35) : FlimTheme.stroke, lineWidth: 1)
@@ -988,7 +1026,27 @@ struct RollsView: View {
 
     // MARK: - First run (3d, verbatim from the list era: it is already the product's voice)
 
+    @ViewBuilder
     private var emptyState: some View {
+        if AppInfo.is17 {
+            // Blend 2, 8d: 1.6's copy, word for word, on the desk.
+            VStack(spacing: 18) {
+                Image(systemName: "film")
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(accent)
+                DeskEmptyState(title: "Better with friends.",
+                               message: "Start a roll and share the code, or join one with a friend's code.") {
+                    Button { showCreate = true } label: { DeskPill("Create", style: .box) }
+                    Button { showJoin = true } label: { DeskPill("Join", style: .box) }
+                }
+            }
+            .padding(.top, 120)
+        } else {
+            v1EmptyState
+        }
+    }
+
+    private var v1EmptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "film.stack")
                 .font(.system(size: 40, weight: .ultraLight))
