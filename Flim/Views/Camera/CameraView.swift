@@ -1205,12 +1205,12 @@ private struct ShutterButton: View {
             ZStack {
                 // A slow breathing halo that quietly invites the tap.
                 Circle()
-                    .stroke(.white.opacity(0.18), lineWidth: 2)
+                    .stroke((AppInfo.is17 ? FlimTheme.textPrimary : Color.white).opacity(0.18), lineWidth: 2)
                     .frame(width: 84, height: 84)
                     .scaleEffect(pulse ? 1.14 : 0.94)
                     .opacity(pulse ? 0 : 0.9)
                 Circle()
-                    .stroke(.white.opacity(0.6), lineWidth: 3)
+                    .stroke((AppInfo.is17 ? FlimTheme.textPrimary : Color.white).opacity(AppInfo.is17 ? 0.35 : 0.6), lineWidth: 3)
                     .frame(width: 70, height: 70)
                 Circle()
                     .fill(.white)

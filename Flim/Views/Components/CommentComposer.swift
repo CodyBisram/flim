@@ -40,7 +40,7 @@ struct CommentComposer: View {
         @ViewBuilder var fieldBackground: some View {
             switch self {
             case .surface:    Capsule().fill(FlimTheme.bgElevated)
-            case .inlineCard: Capsule().fill(Color.white.opacity(0.06))
+            case .inlineCard: Capsule().fill(FlimTheme.well)
             }
         }
     }
@@ -128,7 +128,7 @@ struct CommentComposer: View {
                 TextField(placeholder, text: $draft, axis: .vertical)
                     .lineLimit(style.lineLimit)
                     .flimFont(style.textSize, relativeTo: .body)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .tint(accent)
                     .focused(focus)
                     .padding(.horizontal, style.horizontalPadding)

@@ -45,7 +45,7 @@ struct PhotoCommentsSheet: View {
                             Spacer()
                             Image(systemName: "bubble.right")
                                 .font(.system(size: 28, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
-                            Text("No comments yet").flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                            Text("No comments yet").flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                             Text("Start the conversation on this shot.")
                                 .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                             Spacer()
@@ -72,7 +72,7 @@ struct PhotoCommentsSheet: View {
             .flimInlineTitle("Comments")
             .toolbarColorScheme(.dark, for: .navigationBar)
                         .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.foregroundStyle(.white) }
+                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary) }
             }
             .task { await load() }
         }
@@ -115,7 +115,7 @@ struct PhotoCommentsSheet: View {
                 HStack(spacing: 6) {
                     Button { openProfile(comment.userId) } label: {
                         Text(handle(comment.userId))
-                            .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
+                            .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(FlimTheme.textPrimary)
                     }
                     Text(comment.createdAt.formatted(.relative(presentation: .named)))
                         .flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)

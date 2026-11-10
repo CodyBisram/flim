@@ -175,12 +175,12 @@ struct PostDetailView: View {
                         .onTapGesture(count: 2) { doubleTapLike() }
 
                     if let caption = post.caption, !caption.isEmpty {
-                        Text(caption).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                        Text(caption).flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                     }
 
                     reactionBar
 
-                    Divider().overlay(Color.white.opacity(0.08))
+                    Divider().overlay((AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.08)))
 
                     if isSpotlightStranger, let spotlightWeekKey {
                         spotlightStrangerNote(weekKey: spotlightWeekKey)
@@ -508,7 +508,7 @@ struct PostDetailView: View {
                     // requesting the image, so every author here showed a letter even when
                     // they had a photo everywhere else in the app.
                     AvatarView(path: item.author.avatarPath, name: item.author.handle, size: 34)
-                    Text(item.author.handle).flimFont(15, weight: .semibold, relativeTo: .body).foregroundStyle(.white)
+                    Text(item.author.handle).flimFont(15, weight: .semibold, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             Spacer()
@@ -592,7 +592,7 @@ struct PostDetailView: View {
                         HStack(spacing: 6) {
                             Button { route = ProfileRoute(id: info.comment.userId) } label: {
                                 Text(info.handle)
-                                    .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
+                                    .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(FlimTheme.textPrimary)
                             }
                             Text(info.comment.createdAt.formatted(.relative(presentation: .named)))
                                 .flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
@@ -674,7 +674,7 @@ struct PostDetailView: View {
             .background(
                 FlimTheme.bg
                     .overlay(alignment: .top) {
-                        Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                        Rectangle().fill((AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.10))).frame(height: 1)
                     }
                     .ignoresSafeArea(edges: .bottom)
             )

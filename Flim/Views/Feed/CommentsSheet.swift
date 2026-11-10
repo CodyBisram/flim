@@ -180,7 +180,7 @@ struct CommentsSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Button { openProfile(info.comment.userId) } label: {
-                        Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
+                        Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(FlimTheme.textPrimary)
                     }
                     Text(Self.compactTime(info.comment.createdAt))
                         .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
@@ -296,8 +296,8 @@ struct CommentsSheet: View {
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: Color(red: 0.14, green: 0.14, blue: 0.14), location: 0.13),
-                    .init(color: Color(red: 0.14, green: 0.14, blue: 0.14), location: 0.87),
+                    .init(color: AppInfo.is17 ? FlimTheme.stroke : Color(red: 0.14, green: 0.14, blue: 0.14), location: 0.13),
+                    .init(color: AppInfo.is17 ? FlimTheme.stroke : Color(red: 0.14, green: 0.14, blue: 0.14), location: 0.87),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .leading, endPoint: .trailing
@@ -313,7 +313,7 @@ struct CommentsSheet: View {
     private var emptyState: some View {
         VStack(spacing: 6) {
             Spacer()
-            Text("No comments yet").flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+            Text("No comments yet").flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
             Text("Be the first to comment.").flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
             Spacer()
         }

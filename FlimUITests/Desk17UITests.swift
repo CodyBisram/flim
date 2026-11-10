@@ -13,7 +13,7 @@ final class Desk17UITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-chromePreviewDemo", "-desk", "slate"]
+        app.launchArguments = ["-chromePreviewDemo", "-desk", ProcessInfo.processInfo.environment["FLIM_DESK"] ?? "slate"]
         app.launch()
         // The demo answers no system prompts; a camera ask over the camera tab would block taps.
         addUIInterruptionMonitor(withDescription: "camera") { alert in
@@ -53,6 +53,19 @@ final class Desk17UITests: XCTestCase {
             assertNoSystemTabBar()
             shot(label.lowercased())
         }
+
+        // The comments sheet (Blend 1, 2c), from the card's comment line.
+        let comments = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View all'")).firstMatch
+        // The line sits under the bar on a short screen; bring it up first.
+        app.swipeUp(velocity: .slow)
+        if comments.waitForExistence(timeout: 5), comments.isHittable {
+            comments.tap()
+            sleep(2)
+            shot("comments")
+            app.swipeDown(velocity: .fast)
+            sleep(1)
+        }
+        app.swipeDown(velocity: .fast)
 
         // Activity pushes onto the Feed (Blend 1, 4d): the bar stays, Back returns.
         let activity = app.buttons["Activity"].firstMatch
