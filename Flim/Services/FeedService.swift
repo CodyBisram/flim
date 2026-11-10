@@ -303,6 +303,25 @@ final class FeedService {
             return followsMe ? "Follow back" : "Follow"
         }
 
+        /// 1.7 speaks friends (Blend 1, 4b and 4e): following each other is "Friends", following
+        /// someone who hasn't followed back is a request you sent ("Requested", tap to cancel),
+        /// and anyone else, including someone who asked you, gets "Add friend". The same rule
+        /// the 1.7 update card promises: mutual follows became friends, one-way ones requests.
+        enum DeskState: Equatable { case friends, requested, add }
+
+        static func deskState(following: Bool, followsMe: Bool) -> DeskState {
+            if following { return followsMe ? .friends : .requested }
+            return .add
+        }
+
+        static func deskLabel(_ state: DeskState) -> String {
+            switch state {
+            case .friends: "Friends"
+            case .requested: "Requested"
+            case .add: "Add friend"
+            }
+        }
+
         /// Whether a profile header should show the "Follows you" disclosure pill.
         static func showsFollowsYouBadge(followsMe: Bool) -> Bool { followsMe }
     }

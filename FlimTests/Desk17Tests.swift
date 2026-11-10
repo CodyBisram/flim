@@ -45,3 +45,14 @@ final class SpotlightStampTests: XCTestCase {
         XCTAssertEqual(SpotlightWeekLabel.stamp("nonsense"), "SPOTLIGHT")
     }
 }
+
+final class DeskFriendStateTests: XCTestCase {
+    func testMutualFollowsAreFriendsAndOneWayIsARequest() {
+        typealias R = FeedService.FollowRelationship
+        XCTAssertEqual(R.deskState(following: true, followsMe: true), .friends)
+        XCTAssertEqual(R.deskState(following: true, followsMe: false), .requested)
+        XCTAssertEqual(R.deskState(following: false, followsMe: true), .add)
+        XCTAssertEqual(R.deskState(following: false, followsMe: false), .add)
+        XCTAssertEqual(R.deskLabel(.add), "Add friend")
+    }
+}

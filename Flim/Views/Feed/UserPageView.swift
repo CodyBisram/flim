@@ -1135,6 +1135,7 @@ struct DiscoverPeopleView: View {
     @State private var searchText = ""
     @State private var loaded = false
     @State private var showInvite = false
+    @State private var showJoinRoll = false
     /// The query the current `results` answer, and whether that request failed. "No one
     /// matches" is said only for the exact query that came back empty, never while a request is
     /// still in flight and never for a request that failed.
@@ -1165,8 +1166,16 @@ struct DiscoverPeopleView: View {
                         Spacer()
                     } else if searchInFlight && results.isEmpty {
                         Spacer()
-                        ProgressView().tint(.white)
+                        ProgressView().tint(FlimTheme.textPrimary)
                         Spacer()
+                    } else if searchSettled && results.isEmpty && AppInfo.is17 {
+                        // Blend 2, 8g.
+                        Spacer()
+                        DeskEmptyState(title: "No one called “\(searchText)”.",
+                                       message: "Check the spelling, or ask them for their username.") {
+                            Button { showInvite = true } label: { DeskPill("Invite a friend to FLIM", style: .box) }
+                        }
+                        Spacer(); Spacer()
                     } else if searchSettled && results.isEmpty {
                         Spacer()
                         VStack(spacing: 12) {
@@ -1187,12 +1196,16 @@ struct DiscoverPeopleView: View {
                                 if searching {
                                     ForEach(results) { profile in personLink(profile) }
                                 } else {
+                                    if AppInfo.is17 {
+                                        // Blend 1, 4e: join a roll by code, then the invite.
+                                        deskJoinRow
+                                    }
                                     inviteRow
                                     if sections.isEmpty && loaded {
                                         Text("No one to suggest yet. Search by name, or invite someone you shoot with.")
                                             .flimFont(14, relativeTo: .subheadline)
                                             .foregroundStyle(FlimTheme.textTertiary)
-                                            .padding(.horizontal, 20).padding(.top, 24)
+                                            .padding(.horizontal, AppInfo.is17 ? 24 : 20).padding(.top, 24)
                                     }
                                     ForEach(sections) { section in
                                         sectionHeader(section.title)
@@ -1206,14 +1219,15 @@ struct DiscoverPeopleView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Find friends")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .flimInlineTitle(AppInfo.is17 ? "Find" : "Find friends")
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .sheet(isPresented: $showInvite) { InviteSheet() }
+            .sheet(isPresented: $showJoinRoll) { JoinRollView(initialCode: "") }
             .task {
                 if let uid = auth.currentUser?.id {
                     await feed.loadFollowing(userId: uid)
@@ -1241,11 +1255,42 @@ struct DiscoverPeopleView: View {
 
     /// Why each group of people is here. Uppercase tracked caps, the same voice as the old
     /// single "SUGGESTED" header this replaces.
+    @ViewBuilder
     private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
-            .foregroundStyle(FlimTheme.textTertiary)
-            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 2)
+        if AppInfo.is17 {
+            Text(title.uppercased())
+                .font(DeskType.data(10.5)).tracking(1.7)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 4)
+        } else {
+            Text(title.uppercased())
+                .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 2)
+        }
+    }
+
+    /// 1.7: a roll code can be joined from Find as well as from Rolls (Blend 1, 4e).
+    private var deskJoinRow: some View {
+        Button { showJoinRoll = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "film.stack")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(FlimTheme.surface))
+                Text("Join a roll by code")
+                    .flimFont(15, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            .padding(.horizontal, 24).padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func personLink(_ profile: UserProfile) -> some View {
@@ -1259,13 +1304,13 @@ struct DiscoverPeopleView: View {
     private var inviteRow: some View {
         Button { showInvite = true } label: {
             HStack(spacing: 12) {
-                Image(systemName: "plus")
+                Image(systemName: AppInfo.is17 ? "square.and.arrow.up" : "plus")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : .black)
                     .frame(width: 42, height: 42)
-                    .background(Circle().fill(.white))
+                    .background(Circle().fill(AppInfo.is17 ? FlimTheme.surface : .white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Invite a friend")
+                    Text(AppInfo.is17 ? "Invite a friend to FLIM" : "Invite a friend")
                         .flimFont(15, weight: .medium, relativeTo: .body)
                         .foregroundStyle(FlimTheme.textPrimary)
                     Text("Your code, in a message.")
@@ -1274,7 +1319,7 @@ struct DiscoverPeopleView: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 20).padding(.vertical, 8)
+            .padding(.horizontal, AppInfo.is17 ? 24 : 20).padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1290,7 +1335,7 @@ struct PersonRow: View {
         HStack(spacing: 12) {
             AvatarView(path: profile.avatarPath, name: profile.username, size: 42)
             VStack(alignment: .leading, spacing: 2) {
-                Text(profile.handle).flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+                Text(profile.handle).flimFont(15, weight: AppInfo.is17 ? .semibold : .medium, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 if let bio = profile.bio, !bio.isEmpty {
                     Text(bio).flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary).lineLimit(1)
                 }
@@ -1303,7 +1348,7 @@ struct PersonRow: View {
                 FollowButton(userId: profile.id)
             }
         }
-        .padding(.horizontal, 18).padding(.vertical, 8)
+        .padding(.horizontal, AppInfo.is17 ? 24 : 18).padding(.vertical, 8)
     }
 }
 
@@ -1414,18 +1459,46 @@ struct FollowButton: View {
                 // `feed.follow`/`unfollow` already put the optimistic flip back on failure
                 // (the "restore input" half); this is the "say so and stay retryable" half.
                 Haptics.error()
-                onFailure(following
-                    ? "Couldn't unfollow. Check your connection and try again."
-                    : "Couldn't follow. Check your connection and try again.")
+                if AppInfo.is17 {
+                    onFailure("That didn't go through. Check your connection and try again.")
+                } else {
+                    onFailure(following
+                        ? "Couldn't unfollow. Check your connection and try again."
+                        : "Couldn't follow. Check your connection and try again.")
+                }
             }
         } label: {
-            Text(FeedService.FollowRelationship.buttonLabel(following: following, followsMe: feed.followsMe(userId)))
-                .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(following ? .white : .black)
-                .padding(.horizontal, 16).padding(.vertical, 7)
-                .background(following ? Color.white.opacity(0.12) : accent, in: Capsule())
+            if AppInfo.is17 {
+                deskLabel(FeedService.FollowRelationship.deskState(following: following, followsMe: feed.followsMe(userId)))
+            } else {
+                Text(FeedService.FollowRelationship.buttonLabel(following: following, followsMe: feed.followsMe(userId)))
+                    .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(following ? .white : .black)
+                    .padding(.horizontal, 16).padding(.vertical, 7)
+                    .background(following ? Color.white.opacity(0.12) : accent, in: Capsule())
+            }
         }
         .disabled(busy)
+    }
+}
+
+extension FollowButton {
+    /// 1.7's three states (Blend 1, 4b): Add friend solid, Requested outlined, Friends with a tick
+    /// on the box tone.
+    @ViewBuilder
+    fileprivate func deskLabel(_ state: FeedService.FollowRelationship.DeskState) -> some View {
+        let title = FeedService.FollowRelationship.deskLabel(state)
+        HStack(spacing: 5) {
+            Text(title)
+            if state == .friends { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
+        }
+        .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+        .foregroundStyle(state == .add ? DeskColor.onSolid : (state == .requested ? FlimTheme.textSecondary : FlimTheme.textPrimary))
+        .padding(.horizontal, 14)
+        .frame(minHeight: 34)
+        .background(state == .add ? DeskColor.solid : (state == .friends ? FlimTheme.surface : .clear), in: Capsule())
+        .overlay { if state == .requested { Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1.5) } }
+        .accessibilityHint(state == .requested ? "Cancels the request" : (state == .friends ? "Removes them as a friend" : ""))
     }
 }
 

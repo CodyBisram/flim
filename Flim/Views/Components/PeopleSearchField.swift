@@ -33,7 +33,7 @@ struct PeopleSearchField: View {
             Image(systemName: "magnifyingglass").foregroundStyle(FlimTheme.textTertiary)
             TextField("", text: $query,
                       prompt: Text(prompt).foregroundStyle(FlimTheme.textTertiary))
-                .foregroundStyle(.white).tint(accent)
+                .foregroundStyle(FlimTheme.textPrimary).tint(accent)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             if !query.isEmpty {
@@ -52,7 +52,7 @@ struct PeopleSearchField: View {
         .animation(.snappy(duration: 0.2), value: query.isEmpty)
         .padding(.horizontal, 14).padding(.vertical, 11)
         .background(FlimTheme.bgElevated, in: Capsule())
-        .padding(.horizontal, 16)
+        .padding(.horizontal, AppInfo.is17 ? 24 : 16)
         // Enough to clear the grabber with real space under it, and close enough to the 12 + 16
         // that separates this from whatever follows that the field doesn't sit lopsided.
         .padding(.top, underSheetGrabber ? 22 : 8)

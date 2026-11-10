@@ -66,6 +66,16 @@ final class Desk17UITests: XCTestCase {
             XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5), "Back did not return to the Feed")
         }
 
+        // Find (Blend 1, 4e): join by code and the invite sit above the suggestions.
+        let find = app.buttons["Find"].firstMatch
+        if find.waitForExistence(timeout: 5) {
+            find.tap()
+            XCTAssertTrue(app.buttons["Join a roll by code"].waitForExistence(timeout: 5), "Find has no join-by-code row")
+            shot("find")
+            app.buttons["Done"].firstMatch.tap()
+            XCTAssertTrue(bar("Feed").waitForExistence(timeout: 5))
+        }
+
         // A name on a feed card pushes that person's page; the desk's bar stays, the system's
         // does not come back.
         let name = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '@'")).firstMatch
