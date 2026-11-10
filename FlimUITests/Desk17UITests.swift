@@ -125,4 +125,20 @@ final class Desk17UITests: XCTestCase {
         app.swipeUp()
         shot("settings_paper_lower")
     }
+
+    /// Friends from your page (Blend 1, 4c): the two tabs are there and switch.
+    func testFriendsHasFriendsAndRequests() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo"]
+        app.launch()
+        let friends = app.buttons["Friends"].firstMatch
+        XCTAssertTrue(friends.waitForExistence(timeout: 15))
+        friends.tap()
+        let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Requests'")).firstMatch
+        XCTAssertTrue(requests.waitForExistence(timeout: 10), "Friends has no Requests tab")
+        shot("friends")
+        requests.tap()
+        sleep(1)
+        shot("friends_requests")
+    }
 }

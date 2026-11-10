@@ -50,6 +50,7 @@ struct UserPageView: View {
     /// double tap read `isFollowing` after the first tap's optimistic flip and raced an
     /// unfollow against the follow still in flight (audit A-11, 1.6.1).
     @State private var followBusy = false
+    @State private var showDeskFriends = false
     /// The "shared" stat. Distinct from `posts.count`, which is zero until the grid's own fetch
     /// lands and made the whole stats row flash 0 on every open; this seeds from the session
     /// cache (see `FeedService.profileStatsCache`) and settles to the real count when posts do.
@@ -339,6 +340,8 @@ struct UserPageView: View {
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
         }
+        // 1.7's Friends and requests (Blend 1, 4c).
+        .sheet(isPresented: $showDeskFriends) { DeskFriendsView() }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await load() } }) {
             ProfileView()
         }
@@ -491,7 +494,7 @@ struct UserPageView: View {
             if isSelf {
                 HStack(spacing: 8) {
                     deskBoxButton("Edit page") { showEditProfile = true }
-                    deskBoxButton("Friends") { followList = .following }
+                    deskBoxButton("Friends") { showDeskFriends = true }
                     deskBoxButton(unseenBadgeCount > 0 ? "Seals ·" : "Seals") { showBadgePicker = true }
                         .overlay(alignment: .topTrailing) {
                             if unseenBadgeCount > 0 {
