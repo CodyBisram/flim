@@ -285,7 +285,7 @@ struct DarkroomFrameView: View {
                 CachedImage(url: signedURL, maxPixel: decodeSize, cacheKey: photo.displayPath) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    Color.white.opacity(0.06)
+                    FlimTheme.well
                 }
                 .frame(width: imgW, height: imgH)
                 .clipShape(RoundedRectangle(cornerRadius: 2))
@@ -327,7 +327,7 @@ struct DarkroomFrameView: View {
     /// only STATED time.
     private var developingWell: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(Color(white: 0.063))
+            .fill((AppInfo.is17 ? FlimTheme.well : Color(white: 0.063)))
             .overlay(
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(FlimTheme.stroke, lineWidth: 1)
@@ -351,7 +351,7 @@ struct DarkroomFrameView: View {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 12, weight: .semibold))
                 .contentTransition(.symbolEffect(.replace))
-                .foregroundStyle(isSelected ? accent : .white.opacity(0.85))
+                .foregroundStyle(isSelected ? accent : FlimTheme.textPrimary.opacity(0.85))
                 .padding(2)
                 .shadow(radius: 1)
         }
@@ -498,7 +498,7 @@ struct DarkroomSortBanner: View {
                 CachedImage(url: previewURLs[photo.id], maxPixel: 120, cacheKey: photo.displayPath) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    Color.white.opacity(0.06)
+                    FlimTheme.well
                 }
                 .frame(width: 26, height: 35)
                 .clipShape(RoundedRectangle(cornerRadius: 2))
@@ -550,7 +550,7 @@ struct DarkroomLoadingSkeleton: View {
                     HStack(spacing: DarkroomDayUnit.frameGap) {
                         ForEach(0..<DarkroomDayUnit.photoColumns, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.white.opacity(0.06))
+                                .fill(FlimTheme.well)
                                 .frame(width: frameWidth,
                                        height: DarkroomDayUnit.photoFrameHeight(frameWidth: frameWidth))
                         }

@@ -406,7 +406,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
                 content(Image(uiImage: uiImage)).opacity(shown ? 1 : 0)
             } else if failed {
                 // Graceful failure instead of shimmering forever, tap to retry.
-                Rectangle().fill(Color.white.opacity(0.04))
+                Rectangle().fill((AppInfo.is17 ? FlimTheme.well : Color.white.opacity(0.04)))
                     .overlay {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 15, weight: .medium))

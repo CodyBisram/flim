@@ -363,7 +363,58 @@ struct DarkroomView: View {
         }
     }
 
+    @ViewBuilder
     private var normalHeaderRow: some View {
+        if AppInfo.is17 { deskHeaderRow } else { v1HeaderRow }
+    }
+
+    /// 1.7's header (Blend 1, 3a): the title in Caslon with Select on the right, and the ledger
+    /// under it as an italic line.
+    private var deskHeaderRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Darkroom")
+                    .font(DeskType.serif(30, relativeTo: .largeTitle))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                #if DEBUG
+                Button {
+                    Task {
+                        if let uid = auth.currentUser?.id {
+                            await photoService.seedUnsortedPhotos(userId: uid)
+                            await reload()
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
+                }
+                .accessibilityLabel("Seed unsorted (DEBUG)")
+                #endif
+                if !vm.photos.isEmpty, zoom == .month {
+                    Button("Select") {
+                        isSelecting = true
+                        selectedIDs = []
+                    }
+                    .flimFont(15, weight: .semibold)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(minHeight: 44)
+                    .padding(.leading, 12)
+                }
+            }
+            // Server-counted, never the loaded page count.
+            if let total = vm.totalCount, total > 0 {
+                Text("\(total) shot\(total == 1 ? "" : "s") in your Darkroom.")
+                    .font(DeskType.serif(14, italic: true, relativeTo: .subheadline))
+                    .foregroundStyle(FlimTheme.textSecondary)
+            }
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .padding(.horizontal, 24)
+    }
+
+    private var v1HeaderRow: some View {
         HStack(spacing: 6) {
             // Chrome, not content. This sat at `textPrimary` and 17pt light, identical to the
             // unit titles below it (the night title, the feed handle, a ready roll's name), so
@@ -427,23 +478,31 @@ Text("Darkroom")
     /// renders at a given Dynamic Type size.
     private var selectionHeaderRow: some View {
         ZStack {
-            Text("\(selectedIDs.count) selected")
-                .flimFont(15)
-                .foregroundStyle(FlimTheme.textPrimary)
+            Group {
+                if AppInfo.is17 {
+                    // Blend 3, 9a: the count in Caslon.
+                    Text("\(selectedIDs.count) selected")
+                        .font(DeskType.serif(20, relativeTo: .title3))
+                } else {
+                    Text("\(selectedIDs.count) selected")
+                        .flimFont(15)
+                }
+            }
+            .foregroundStyle(FlimTheme.textPrimary)
 
             HStack {
                 Button("Cancel") {
                     isSelecting = false
                     selectedIDs = []
                 }
-                .flimFont(15)
-                .foregroundStyle(accent)
+                .flimFont(15, weight: AppInfo.is17 ? .semibold : .regular)
+                .foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : accent)
 
                 Spacer()
             }
         }
         .frame(minHeight: 44)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, AppInfo.is17 ? 24 : 20)
     }
 
     var body: some View {
@@ -534,7 +593,7 @@ Text("Darkroom")
                         .foregroundStyle(selectedIDs.isEmpty ? FlimTheme.textTertiary : .white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(selectedIDs.isEmpty ? Color.white.opacity(0.08) : Color.red.opacity(0.85), in: Capsule())
+                        .background(selectedIDs.isEmpty ? (AppInfo.is17 ? FlimTheme.chip : Color.white.opacity(0.08)) : (AppInfo.is17 ? DeskColor.red : Color.red.opacity(0.85)), in: Capsule())
                 }
                 .disabled(selectedIDs.isEmpty)
                 .padding(.horizontal, 20)
@@ -1338,13 +1397,13 @@ Text("Darkroom")
                 PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], showsCountdown: false)
                     .frame(width: 236, height: 236 / FlimTheme.frameAspect)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder((AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.12)), lineWidth: 1))
                     .padding(.top, 14)
                     .onTapGesture { selectedPhoto = photo }
 
                 Text("Your first frame.")
                     .flimFont(20, weight: .light, relativeTo: .title3)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .padding(.top, 22)
                 // The frame arrives here already decided: the sort deck either posted it or kept
                 // it, and the line says which. It used to say "only you can see it" right after
@@ -1378,7 +1437,7 @@ Text("Darkroom")
                 }
 
                 Rectangle()
-                    .fill(LinearGradient(colors: [.clear, Color.white.opacity(0.12), Color.white.opacity(0.12), .clear],
+                    .fill(LinearGradient(colors: [.clear, FlimTheme.textPrimary.opacity(0.12), FlimTheme.textPrimary.opacity(0.12), .clear],
                                          startPoint: .leading, endPoint: .trailing))
                     .frame(height: 1)
                     .padding(.top, 26)
@@ -1386,7 +1445,7 @@ Text("Darkroom")
                 // The roll, introduced as the next shot rather than as a card about rolls.
                 Text(inviter.map { "Shoot the next one with \($0.name)." } ?? "Shoot the next one into a roll.")
                     .flimFont(15, relativeTo: .subheadline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .padding(.top, 18)
                 Text("A roll. Nobody sees a frame, not even you, until it develops twelve hours later.")
                     .flimFont(13, relativeTo: .footnote)
@@ -1402,7 +1461,7 @@ Text("Darkroom")
                         Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
                     }
                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 10)
@@ -1420,7 +1479,7 @@ Text("Darkroom")
                             Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
                         }
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 8)
@@ -1432,7 +1491,24 @@ Text("Darkroom")
         }
     }
 
+    @ViewBuilder
     private var emptyState: some View {
+        if AppInfo.is17 {
+            // Blend 2, 8c.
+            DeskEmptyState(title: "Nothing developing.",
+                           message: "Shots you take wait here until you post them. Nobody sees them before then.") {
+                Button {
+                    NotificationCenter.default.post(name: .openCamera, object: nil)
+                } label: {
+                    DeskPill("Take a shot", systemImage: "camera", style: .outline)
+                }
+            }
+        } else {
+            v1EmptyState
+        }
+    }
+
+    private var v1EmptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "camera.aperture")
                 .font(.system(size: 40, weight: .ultraLight))

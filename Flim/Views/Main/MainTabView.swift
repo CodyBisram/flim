@@ -585,6 +585,9 @@ struct MainTabView: View {
             //                   `profile_chapters`/`chapter_photos` exist server-side.
             if args.contains("-seedDemo") { selected = 1 }
             if args.contains("-tabFeed") { selected = 3 }   // jump to Feed for screenshots
+            if args.contains("-tabDarkroom") { selected = 1 }
+            if args.contains("-tabRolls") { selected = 2 }
+            if AppInfo.is17, args.contains("-tabYou") { selected = DeskTabBar.you }
             #if FLIM_V2
             // `-v2RoutePost`: the route a comment push takes, onto the first fixture post.
             if args.contains("-v2RoutePost"), let first = feed.feed.first {
