@@ -408,8 +408,7 @@ struct RollsView: View {
             NavigationLink(value: roll) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(roll.name)
-                        .flimFont(26, weight: .light, relativeTo: .title3)
-                        .tracking(0.3)
+                        .modifier(DeskTitleOr(size: 28) { $0.flimFont(26, weight: .light, relativeTo: .title3).tracking(0.3) })
                         .foregroundStyle(FlimTheme.textPrimary)
                         .padding(.bottom, 5)
                     clockLine(roll, now: now, closing: closing)
@@ -554,8 +553,7 @@ struct RollsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Text(roll.name)
-                        .flimFont(17, weight: .light, relativeTo: .body)
-                        .tracking(0.4)
+                        .modifier(DeskTitleOr(size: 19) { $0.flimFont(17, weight: .light, relativeTo: .body).tracking(0.4) })
                         .foregroundStyle(FlimTheme.textPrimary)
                     Spacer(minLength: 8)
                     HStack(spacing: 4) {
@@ -611,8 +609,7 @@ struct RollsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(roll.name)
-                    .flimFont(17, weight: .light, relativeTo: .body)
-                    .tracking(0.4)
+                    .modifier(DeskTitleOr(size: 19) { $0.flimFont(17, weight: .light, relativeTo: .body).tracking(0.4) })
                     .foregroundStyle(FlimTheme.textPrimary)
                 Spacer(minLength: 8)
                 Text("Invited")
@@ -819,8 +816,8 @@ struct RollsView: View {
 
                 HStack(spacing: 5) {
                     Text(roll.name)
-                        .flimFont(13.5, relativeTo: .subheadline)
-                        .foregroundStyle(FlimTheme.textSecondary)
+                        .modifier(DeskTitleOr(size: 15) { $0.flimFont(13.5, relativeTo: .subheadline) })
+                        .foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : FlimTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if mutedRolls.contains(roll.id) {

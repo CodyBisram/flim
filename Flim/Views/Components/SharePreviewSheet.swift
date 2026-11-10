@@ -167,7 +167,7 @@ struct SharePreviewSheet: View {
         ZStack {
             Text("Share")
                 .flimFont(16, weight: .medium, relativeTo: .body)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
             HStack {
                 Button { Haptics.tap(); dismiss() } label: {
                     Image(systemName: "xmark")
@@ -274,7 +274,7 @@ struct SharePreviewSheet: View {
                                 .padding(-0.5)
                         } else {
                             RoundedRectangle(cornerRadius: radius)
-                                .stroke(Color(white: 0.26), lineWidth: 1)
+                                .stroke((AppInfo.is17 ? FlimTheme.stroke : Color(white: 0.26)), lineWidth: 1)
                                 .padding(-0.5)
                         }
                     }
