@@ -54,6 +54,18 @@ final class Desk17UITests: XCTestCase {
             shot(label.lowercased())
         }
 
+        // Activity pushes onto the Feed (Blend 1, 4d): the bar stays, Back returns.
+        let activity = app.buttons["Activity"].firstMatch
+        if activity.waitForExistence(timeout: 5) {
+            activity.tap()
+            XCTAssertTrue(app.staticTexts["Activity"].waitForExistence(timeout: 5), "Activity did not open")
+            XCTAssertTrue(bar("Feed").isHittable, "the bar went away on Activity")
+            assertNoSystemTabBar()
+            shot("activity")
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5), "Back did not return to the Feed")
+        }
+
         // A name on a feed card pushes that person's page; the desk's bar stays, the system's
         // does not come back.
         let name = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '@'")).firstMatch

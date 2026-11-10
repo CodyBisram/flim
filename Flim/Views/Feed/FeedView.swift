@@ -471,14 +471,13 @@ struct FeedView: View {
         .navigationDestination(item: $spotlightRoute) { route in
             PostDetailView(item: route.item, spotlightWeekKey: route.weekKey)
         }
-        .sheet(isPresented: $showActivity) {
-            ActivityFeedView(seenBefore: activitySeenBefore) { queriedAt in
-                // Never moves the watermark backwards: a refresh inside the sheet reports its
-                // own (later) query time, and an earlier one can't undo it.
-                lastActivitySeen = max(lastActivitySeen, queriedAt.timeIntervalSince1970)
-                unreadActivity = 0
-                updateFeedDot()
-            }
+        // 1.6 presents Activity as a sheet; 1.7 pushes it onto the Feed (Blend 1, 4d), so the bar
+        // stays and Back returns to the Feed.
+        .sheet(isPresented: Binding(get: { showActivity && !AppInfo.is17 }, set: { showActivity = $0 })) {
+            activityView(embedded: false)
+        }
+        .navigationDestination(isPresented: Binding(get: { showActivity && AppInfo.is17 }, set: { showActivity = $0 })) {
+            activityView(embedded: true)
         }
     }
 
@@ -489,6 +488,16 @@ struct FeedView: View {
     @ViewBuilder
     private var header: some View {
         if AppInfo.is17 { deskHeader } else { v1Header }
+    }
+
+    private func activityView(embedded: Bool) -> some View {
+        ActivityFeedView(seenBefore: activitySeenBefore, onLoaded: { queriedAt in
+            // Never moves the watermark backwards: a refresh inside Activity reports its own
+            // (later) query time, and an earlier one can't undo it.
+            lastActivitySeen = max(lastActivitySeen, queriedAt.timeIntervalSince1970)
+            unreadActivity = 0
+            updateFeedDot()
+        }, embedded: embedded)
     }
 
     /// Opens Activity, keeping the previous visit so it can mark what's new.

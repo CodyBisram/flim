@@ -148,12 +148,59 @@ struct ActivityFeedView: View {
     /// is the honest watermark. Stamping "now" after the thumbnails were signed would mark a
     /// reply that arrived during the signing as seen without it ever being shown (audit A4).
     var onLoaded: (Date) -> Void = { _ in }
+    /// 1.7: pushed onto the Feed's stack (Blend 1, 4d) rather than presented as its own sheet, so
+    /// it has no stack or Done of its own and the tab bar stays.
+    var embedded = false
 
+    @ViewBuilder
     var body: some View {
-        NavigationStack {
+        if embedded {
+            content
+                .background(FlimTheme.bg.ignoresSafeArea())
+        } else {
+            NavigationStack {
+                content
+            }
+            // A sheet paints over the tab host's capsule: without its own, a notice or an undo
+            // staged from a post opened here would never be seen.
+            .undoCapsuleHost(bottomPadding: 24)
+            .flimSheetSurface()
+        }
+    }
+
+    /// 1.7's title: Caslon, under the back button, scrolling with the list.
+    private var deskTitle: some View {
+        Text("Activity")
+            .font(DeskType.serif(30, relativeTo: .largeTitle))
+            .foregroundStyle(FlimTheme.textPrimary)
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+    }
+
+    private var content: some View {
             ZStack {
                 if let error = feed.activityError, items.isEmpty, loaded {
-                    ErrorState(message: error) { await load() }
+                    if AppInfo.is17 {
+                        VStack(spacing: 0) {
+                            deskTitle
+                            Spacer()
+                            DeskFailedState(title: "Couldn't load your activity.", message: DeskFailedState.standardMessage) { await load() }
+                            Spacer(); Spacer()
+                        }
+                    } else {
+                        ErrorState(message: error) { await load() }
+                    }
+                } else if items.isEmpty && loaded && AppInfo.is17 {
+                    // Blend 2, 8f. No dot on the bell while this is empty.
+                    VStack(spacing: 0) {
+                        deskTitle
+                        Spacer()
+                        DeskEmptyState(title: "Nothing yet.",
+                                       message: "Friend requests, comments, reactions and rolls opening show up here.")
+                        Spacer(); Spacer()
+                    }
                 } else if items.isEmpty && loaded {
                     VStack(spacing: 10) {
                         Image(systemName: "bell.slash")
@@ -166,9 +213,10 @@ struct ActivityFeedView: View {
                             .multilineTextAlignment(.center).padding(.horizontal, 50)
                     }
                 } else if !loaded {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(FlimTheme.textPrimary)
                 } else {
                     ScrollView {
+                        if AppInfo.is17 { deskTitle }
                         // NOT pinned. A pinned header floats over the rows passing beneath it,
                         // and since the header is only as tall as its own text, avatars and
                         // thumbnails slid out either side of it and overlapped the label. Making
@@ -197,13 +245,7 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Activity")
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
-                }
-            }
+            .modifier(ActivityChrome(embedded: embedded, dismiss: { dismiss() }))
             .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
             // No zoom transition here either. The identical pair of modifiers on the profile
             // grid's push to this same destination caused it to open a previously-opened post,
@@ -217,11 +259,6 @@ struct ActivityFeedView: View {
                     onCommentsFocusConsumed: { focusCommentsPostId = nil })
             }
             .task { await load() }
-        }
-        // A sheet paints over the tab host's capsule: without its own, a notice or an undo
-        // staged from a post opened here would never be seen.
-        .undoCapsuleHost(bottomPadding: 24)
-        .flimSheetSurface()
     }
 
     private func load(keepingOnFailure: Bool = false) async {
@@ -266,12 +303,20 @@ struct ActivityFeedView: View {
     /// ever passes underneath it.
     private func sectionHeader(_ section: ActivitySection) -> some View {
         HStack {
-            Text(section.title)
-                .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(section == .new ? accent : FlimTheme.textSecondary)
+            if AppInfo.is17 {
+                // Blend 1, 4d: a mono label, the board's TONIGHT / YESTERDAY.
+                Text(section.title.uppercased())
+                    .font(DeskType.data(10.5))
+                    .tracking(1.7)
+                    .foregroundStyle(section == .new ? FlimTheme.newRed : FlimTheme.textTertiary)
+            } else {
+                Text(section.title)
+                    .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(section == .new ? accent : FlimTheme.textSecondary)
+            }
             Spacer()
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, AppInfo.is17 ? 24 : 18)
         .padding(.top, section == sections.first?.section ? 4 : 20)
         .padding(.bottom, 8)
     }
@@ -297,7 +342,7 @@ struct ActivityFeedView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(activityActionText(item.kind))
                         .flimFont(14, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                     if case .spotlight(let weekKey) = item.kind {
@@ -312,7 +357,7 @@ struct ActivityFeedView: View {
             Button { openDestination(item) } label: { thumbnail(item) }
                 .buttonStyle(.plain)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
+        .padding(.horizontal, AppInfo.is17 ? 24 : 18).padding(.vertical, 10)
     }
 
     private func actorRow(_ item: ActivityItem, actor: UserProfile) -> some View {
@@ -352,7 +397,7 @@ struct ActivityFeedView: View {
                     .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
+        .padding(.horizontal, AppInfo.is17 ? 24 : 18).padding(.vertical, 10)
     }
 
     private func openDestination(_ item: ActivityItem) {
@@ -437,7 +482,7 @@ struct ActivityFeedView: View {
                 }
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.08), lineWidth: 1))
 
                 badge(item.kind).offset(x: 6, y: 6)
             }
@@ -456,7 +501,7 @@ struct ActivityFeedView: View {
                 }
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.08), lineWidth: 1))
 
                 badge(item.kind).offset(x: 6, y: 6)
             }
@@ -489,7 +534,7 @@ struct ActivityFeedView: View {
             case .placeholder:
                 Image(systemName: "questionmark.square.dashed")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(FlimTheme.textPrimary.opacity(0.85))
                     .frame(width: 20, height: 20)
                     .background(FlimTheme.bg, in: Circle())
                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
@@ -537,12 +582,12 @@ private struct ActivityLine: View {
         name.font = .system(size: size, weight: .semibold)
         // Set explicitly: a link run would otherwise take the accent colour, and a handle tinted
         // differently from the sentence it starts reads as a mistake rather than as emphasis.
-        name.foregroundColor = .white
+        name.foregroundColor = FlimTheme.textPrimary
         name.link = Self.handleURL
 
         var rest = AttributedString(" " + action)
         rest.font = .system(size: size)
-        rest.foregroundColor = .white
+        rest.foregroundColor = FlimTheme.textPrimary
         rest.link = Self.bodyURL
 
         return name + rest
@@ -576,6 +621,28 @@ private struct ActivityLine: View {
         case .mentioned: return "at"
         case .replied: return "arrowshape.turn.up.left.fill"
         case .spotlight: return SpotlightGlyph.systemName
+        }
+    }
+}
+
+/// The sheet's inline title and Done (1.6), or nothing but the system back button when 1.7
+/// pushes Activity onto the Feed (its Caslon title is in the content).
+private struct ActivityChrome: ViewModifier {
+    let embedded: Bool
+    let dismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if embedded {
+            content
+        } else {
+            content
+                .flimInlineTitle("Activity")
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
+                    }
+                }
         }
     }
 }
