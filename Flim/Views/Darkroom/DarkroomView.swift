@@ -54,6 +54,9 @@ struct DarkroomView: View {
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
     @State private var isSelecting = false
+    /// 1.7: the shots Post opens with, and whether Save is running.
+    @State private var deskPostPhotos: [Photo] = []
+    @State private var deskSaving = false
     @State private var selectedIDs: Set<UUID> = []
     /// A failure that must not fail silently, e.g. "Set as profile photo" not sticking.
     @State private var errorToast: String?
@@ -506,6 +509,18 @@ Text("Darkroom")
     }
 
     var body: some View {
+        bodyContent
+            // 1.7's Post, for the selection (Blend 3, 9b).
+            .fullScreenCover(isPresented: Binding(get: { !deskPostPhotos.isEmpty }, set: { if !$0 { deskPostPhotos = [] } })) {
+                DeskPostView(photos: deskPostPhotos,
+                             urls: Dictionary(uniqueKeysWithValues: deskPostPhotos.compactMap { p in vm.signedURLCache[p.id].map { (p.id, $0) } })) { _ in
+                    isSelecting = false
+                    selectedIDs = []
+                }
+            }
+    }
+
+    private var bodyContent: some View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
 
@@ -586,7 +601,9 @@ Text("Darkroom")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
-            if isSelecting {
+            if isSelecting, AppInfo.is17 {
+                deskSelectBar
+            } else if isSelecting {
                 Button(role: .destructive) { deleteSelected() } label: {
                     Text(selectedIDs.isEmpty ? "Select photos to delete" : "Delete \(selectedIDs.count)")
                         .flimFont(15, weight: .semibold)
@@ -1198,6 +1215,71 @@ Text("Darkroom")
     private func toggleSelect(_ id: UUID) {
         if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
         Haptics.tap()
+    }
+
+    /// The selection, developed shots only (a developing one can't be saved or posted yet).
+    private var selectedDeveloped: [Photo] {
+        vm.developedPhotos.filter { selectedIDs.contains($0.id) }
+    }
+
+    /// What Post N would post: selected, developed, not already up.
+    private var selectedPostable: [Photo] {
+        selectedDeveloped.filter { !feed.myPostedPhotoIds.contains($0.id) }
+    }
+
+    /// 1.7's Select bar (Blend 3, 9a): Delete and Save on the left, Post N solid on the right,
+    /// on a box-tone pill where the tab bar was. Posted shots can be saved or deleted, never
+    /// posted twice.
+    private var deskSelectBar: some View {
+        HStack(spacing: 18) {
+            Button(role: .destructive) { deleteSelected() } label: {
+                Label("Delete", systemImage: "trash")
+                    .flimFont(15, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(selectedIDs.isEmpty ? FlimTheme.textTertiary : DeskColor.red)
+            }
+            .disabled(selectedIDs.isEmpty)
+            Button { saveSelected() } label: {
+                Label(deskSaving ? "Saving…" : "Save", systemImage: "arrow.down.to.line")
+                    .flimFont(15, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(selectedDeveloped.isEmpty ? FlimTheme.textTertiary : FlimTheme.textPrimary)
+            }
+            .disabled(selectedDeveloped.isEmpty || deskSaving)
+            Spacer(minLength: 8)
+            Button {
+                deskPostPhotos = selectedPostable
+            } label: {
+                DeskPill(selectedPostable.count > 1 ? "Post \(selectedPostable.count)" : "Post", style: .solid)
+                    .opacity(selectedPostable.isEmpty ? 0.4 : 1)
+            }
+            .disabled(selectedPostable.isEmpty)
+        }
+        .padding(.leading, 22)
+        .padding(.trailing, 8)
+        .frame(minHeight: 62)
+        .background(Capsule().fill(FlimTheme.surface))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+
+    private func saveSelected() {
+        let toSave = selectedDeveloped
+        guard !toSave.isEmpty else { return }
+        deskSaving = true
+        Task {
+            let saved = await DeskSaveToPhotos.save(toSave, photoService: photoService)
+            deskSaving = false
+            switch saved {
+            case nil:
+                Haptics.error()
+                UndoCenter.shared.showNotice("FLIM can't save to Photos. Turn it on in Settings.")
+            case 0?:
+                Haptics.error()
+                UndoCenter.shared.showNotice("Couldn't save. Check your connection and try again.")
+            case let n?:
+                Haptics.success()
+                UndoCenter.shared.showConfirmation(n == 1 ? "Saved to Photos" : "Saved \(n) to Photos")
+            }
+        }
     }
 
     private func deleteSelected() {

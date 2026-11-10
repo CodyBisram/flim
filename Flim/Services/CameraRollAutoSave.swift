@@ -160,7 +160,7 @@ final class CameraRollAutoSave {
 
     /// One `performChanges` per photo, from the ORIGINAL master bytes (never a re-decoded
     /// `UIImage`), so the asset written to the library is pixel-identical to what was captured.
-    private static func addToLibrary(_ data: Data) async -> Bool {
+    static func addToLibrary(_ data: Data) async -> Bool {
         await withCheckedContinuation { continuation in
             PHPhotoLibrary.shared().performChanges({
                 let request = PHAssetCreationRequest.forAsset()

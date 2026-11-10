@@ -170,6 +170,7 @@
 		5CE110813E0248422EC20423 /* PendingRollInviteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F58EA5779DD43E35F781DB /* PendingRollInviteTests.swift */; };
 		5D76CCD63A28B493709782C5 /* Spotlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6E8518EB4C4E400A8B9938 /* Spotlight.swift */; };
 		5E2974194C8828B625B4F7F4 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = DBEC3FD4AF48540B14AE6BD2 /* Supabase */; };
+		5E3C4F9B5850ABC72D2D862C /* DeskPostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A9182958073A17DB4EB031 /* DeskPostView.swift */; };
 		5EBAABA4E963AA61971DCCFC /* flim.cube in Resources */ = {isa = PBXBuildFile; fileRef = 17436C2A3F9564EB8D028D07 /* flim.cube */; };
 		600275ED04C4A5523C2558B0 /* ShareToFeedSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E893C8B42F4C60F36E74FF1 /* ShareToFeedSheet.swift */; };
 		6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A42EF6E37ED2ED362069BA /* JoinRollView.swift */; };
@@ -700,6 +701,7 @@
 		87BABB21BC29B14176BD0FF1 /* ChapterContactSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterContactSheetTests.swift; sourceTree = "<group>"; };
 		887740F010C7010E90BF5DFF /* ChapterRecapPagerMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterRecapPagerMappingTests.swift; sourceTree = "<group>"; };
 		88F0B8C5B056D1D3786284B1 /* DarkroomMonthSummaryV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthSummaryV2.swift; sourceTree = "<group>"; };
+		89A9182958073A17DB4EB031 /* DeskPostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskPostView.swift; sourceTree = "<group>"; };
 		8AF7A9B3928342965F5CD02F /* RemotePushReregistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePushReregistrationTests.swift; sourceTree = "<group>"; };
 		8B1D734336418D8747D99B43 /* EmojiBackfillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiBackfillTests.swift; sourceTree = "<group>"; };
 		8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionSaveOutcomeTests.swift; sourceTree = "<group>"; };
@@ -908,6 +910,7 @@
 				B4931AFEABEA1CBB75E5BD06 /* DarkroomZoom.swift */,
 				7E7E1AAE63D02823A39DE078 /* DarkroomZoomBar.swift */,
 				B2D7A316AA53EE4FC8AB1D8D /* DarkroomZoomRows.swift */,
+				89A9182958073A17DB4EB031 /* DeskPostView.swift */,
 				A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */,
 				1023C54C67509092736FA8F3 /* SortDeckComposeSheet.swift */,
 				F41D0B57C8881A275E755159 /* SortDeckView.swift */,
@@ -1900,6 +1903,7 @@
 				1713A05A7A1BE842F4004BE9 /* DayContactSheet.swift in Sources */,
 				1B664A83E954383B5605789F /* Desk.swift in Sources */,
 				4422AB8F59ED0942AE23D063 /* DeskComponents.swift in Sources */,
+				5E3C4F9B5850ABC72D2D862C /* DeskPostView.swift in Sources */,
 				75FC774DE8504AD9164B4F2D /* DeskTabBar.swift in Sources */,
 				5BAC7C2E253501071449E682 /* DiscoverRanking.swift in Sources */,
 				82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */,

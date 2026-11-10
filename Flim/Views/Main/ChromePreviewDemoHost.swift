@@ -60,6 +60,22 @@ struct PagerPreviewDemoHost: View {
     @State private var fixture = PagerPreviewDemoHost.makeFixture()
 
     var body: some View {
+        if ProcessInfo.processInfo.arguments.contains("-deskPost") {
+            // 1.7's Post (Blend 3, 9b) on the same fixture frames.
+            // Presented as the Darkroom presents it, a full-screen cover, so the status bar
+            // follows the cover's own colour scheme as it does in the app.
+            FlimTheme.bg.ignoresSafeArea()
+                .fullScreenCover(isPresented: .constant(true)) {
+                    DeskPostView(photos: Array(fixture.photos.prefix(3)), urls: fixture.urls)
+                        .environment(auth)
+                }
+                .task { auth.currentUser = AppUser(id: Self.ownerId, createdAt: .now) }
+        } else {
+            pager
+        }
+    }
+
+    private var pager: some View {
         PhotoPagerView(photos: fixture.photos,
                        signedURLs: fixture.urls,
                        showsComments: true,
