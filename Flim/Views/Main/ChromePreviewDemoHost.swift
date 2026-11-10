@@ -64,7 +64,7 @@ struct PagerPreviewDemoHost: View {
             // 1.7's Post (Blend 3, 9b) on the same fixture frames.
             // Presented as the Darkroom presents it, a full-screen cover, so the status bar
             // follows the cover's own colour scheme as it does in the app.
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
                 .fullScreenCover(isPresented: .constant(true)) {
                     DeskPostView(photos: Array(fixture.photos.prefix(3)), urls: fixture.urls)
                         .environment(auth)

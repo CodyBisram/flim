@@ -187,7 +187,7 @@ struct UserPageView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
+                DeskGround()
                 ScrollView {
                     VStack(spacing: 18) {
                         pageHeader(topInset: geo.safeAreaInsets.top)

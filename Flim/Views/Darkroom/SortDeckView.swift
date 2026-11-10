@@ -127,7 +127,7 @@ struct SortDeckView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             VStack(spacing: 0) {
                 header
                 if loadFailed {

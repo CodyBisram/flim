@@ -156,7 +156,7 @@ struct ActivityFeedView: View {
     var body: some View {
         if embedded {
             content
-                .background(FlimTheme.bg.ignoresSafeArea())
+                .background(DeskGround())
         } else {
             NavigationStack {
                 content

@@ -85,7 +85,7 @@ struct RollsView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             // The header rides `flimTopBar`, the same as Feed's: on iOS 26 the list scrolls
             // under it with the scroll edge effect, below 26 it stacks above as before.

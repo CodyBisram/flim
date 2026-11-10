@@ -184,7 +184,7 @@ struct ChapterStatsPickerDemoHost: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             Button("Reopen") { showSheet = true }
                 .foregroundStyle(.white)
         }

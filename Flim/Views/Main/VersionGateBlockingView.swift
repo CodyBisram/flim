@@ -13,7 +13,7 @@ struct VersionGateBlockingView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             VStack(spacing: 16) {
                 Spacer()
                 Image(systemName: "arrow.up.circle")

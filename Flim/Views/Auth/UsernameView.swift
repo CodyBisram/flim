@@ -14,7 +14,7 @@ struct UsernameView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer()

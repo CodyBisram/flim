@@ -55,6 +55,7 @@ struct ProfileView: View {
     @AppStorage("accentColor") private var accentColor = "amber"
     /// 1.7: the desk (Paper, Slate or the phone's setting), read by `DeskEnvironment` at the root.
     @AppStorage(Desk.storageKey) private var deskRaw = Desk.fallback.rawValue
+    @AppStorage(DeskGround.grainKey) private var deskGrain = true
 
     /// Film Lab is already TestFlight-only; restricted further to the owner's account
     /// specifically. An unexplained "skip the FLIM look" toggle in a beta tester's own Settings
@@ -135,6 +136,14 @@ struct ProfileView: View {
                 Section {
                     if AppInfo.is17 { deskRow }
                     accentRow
+                    if AppInfo.is17 {
+                        // Blend 1, 5a: grain on the desk, never on a photograph.
+                        Toggle(isOn: $deskGrain) {
+                            Text("Grain").flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
+                        }
+                        .tint(accent)
+                        .listRowBackground(FlimTheme.bgElevated)
+                    }
                 } header: { sectionHeader("Appearance") }
 
                 Section {

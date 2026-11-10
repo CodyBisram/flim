@@ -71,7 +71,7 @@ struct RollDetailDemoHost: View {
             Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) { Color.black }
             Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
                 NavigationStack(path: $path) {
-                    FlimTheme.bg.ignoresSafeArea()
+                    DeskGround()
                         .navigationDestination(for: Roll.self) { roll in
                             RollDetailView(roll: roll, demoFixture: fixture)
                         }

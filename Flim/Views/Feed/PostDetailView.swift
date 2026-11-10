@@ -131,7 +131,7 @@ struct PostDetailView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {

@@ -6,7 +6,7 @@ struct SplashView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             VStack(spacing: 14) {
                 Image(systemName: "camera.aperture")
                     .font(.system(size: 48, weight: .ultraLight))

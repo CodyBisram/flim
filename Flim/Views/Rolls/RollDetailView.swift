@@ -318,7 +318,7 @@ struct RollDetailView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             VStack(spacing: 0) {
                 FlimNavTitle(roll.name)

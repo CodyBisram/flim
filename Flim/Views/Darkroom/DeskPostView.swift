@@ -52,7 +52,7 @@ struct DeskPostView: View {
             .scrollDismissesKeyboard(.interactively)
             postButton
         }
-        .background(FlimTheme.bg.ignoresSafeArea())
+        .background(DeskGround())
         // The Post screen is always Slate (the board), whatever the desk: the colours, and the
         // status bar and keyboard with them.
         .environment(\.colorScheme, .dark)

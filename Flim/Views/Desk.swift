@@ -170,3 +170,62 @@ extension EnvironmentValues {
         set { self[DeskLayoutKey.self] = newValue }
     }
 }
+
+/// The desk under a screen (Blend 1, "Tokens"): its colour and, in 1.7, a fixed noise grain over
+/// it, 3% on Paper and 5% on Slate. Under the content, never on a photograph: screens draw their
+/// photographs on top of this. Ignores the safe area itself. In the App Store app it is exactly
+/// 1.6's plain `FlimTheme.bg`.
+struct DeskGround: View {
+    static let grainKey = "deskGrain"
+
+    @AppStorage(DeskGround.grainKey) private var grain = true
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        if AppInfo.is17 {
+            ZStack {
+                FlimTheme.bg
+                if grain {
+                    Image(uiImage: DeskGrain.tile)
+                        .resizable(resizingMode: .tile)
+                        .opacity(scheme == .dark ? 0.05 : 0.03)
+                        .blendMode(scheme == .dark ? .screen : .multiply)
+                }
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        } else {
+            FlimTheme.bg.ignoresSafeArea()
+        }
+    }
+}
+
+/// A 256pt noise tile, drawn once from a fixed seed so the grain never shimmers between launches.
+enum DeskGrain {
+    static let tile: UIImage = {
+        let size = 256
+        var generator = SplitMix64(seed: 0x464C494D)
+        var pixels = [UInt8](repeating: 0, count: size * size)
+        for index in pixels.indices { pixels[index] = UInt8(truncatingIfNeeded: generator.next() >> 56) }
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let image = CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 8,
+                                  bytesPerRow: size, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
+                                  decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { return UIImage() }
+        return UIImage(cgImage: image, scale: 1, orientation: .up)
+    }()
+
+    private struct SplitMix64 {
+        var state: UInt64
+        init(seed: UInt64) { state = seed }
+        mutating func next() -> UInt64 {
+            state &+= 0x9E3779B97F4A7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+            return z ^ (z >> 31)
+        }
+    }
+}

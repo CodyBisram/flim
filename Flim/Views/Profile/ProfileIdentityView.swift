@@ -444,7 +444,7 @@ private struct FlankPreview: View {
     var body: some View {
         let split = ProfileBadgeFlank.split(badges)
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             AvatarBadgeFlanking(leftBadges: split.left, rightBadges: split.right) {
                 Circle()
                     .fill(accent.opacity(0.18))

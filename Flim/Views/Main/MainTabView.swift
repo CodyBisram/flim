@@ -307,7 +307,7 @@ struct MainTabView: View {
             .overlay(alignment: .bottom) {
                 if !layout.usesRail { deskBar(layout) }
             }
-            .background(FlimTheme.bg.ignoresSafeArea())
+            .background(DeskGround())
             .environment(\.deskLayout, layout)
         }
         .task(id: auth.currentUser?.avatarPath) {
@@ -353,7 +353,7 @@ struct MainTabView: View {
             if let uid = auth.currentUser?.id {
                 UserPageView(userId: uid)
             } else {
-                FlimTheme.bg.ignoresSafeArea()
+                DeskGround()
             }
         }
     }

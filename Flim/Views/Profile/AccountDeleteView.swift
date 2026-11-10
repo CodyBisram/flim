@@ -65,7 +65,7 @@ struct AccountDeleteView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             if isWorking && mode == .deleteAccount {
                 deletingState
             } else {

@@ -39,7 +39,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             VStack(spacing: 0) {
                 Spacer(minLength: 24)

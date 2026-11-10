@@ -68,7 +68,7 @@ struct DeskUpdateCard: View {
             .padding(.horizontal, 28)
             .padding(.bottom, 16)
         }
-        .background(FlimTheme.bg.ignoresSafeArea())
+        .background(DeskGround())
     }
 
     private func deskButton(_ choice: Desk) -> some View {

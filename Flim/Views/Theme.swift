@@ -402,10 +402,13 @@ private struct FlimSheetSurfaceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if AppInfo.is17 {
-            // 1.7: a solid sheet on the desk colour, no glass (the Blend board, 2c).
+            // 1.7: a solid sheet on the desk, grain and all, no glass (the Blend board, 2c). A
+            // sheet is its own presentation, so it takes the desk itself: changing the desk in
+            // Settings (a sheet) recolours that sheet at once, not just the screen behind it.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .presentationBackground(FlimTheme.sheetSurfaceSolid)
+                .presentationBackground { DeskGround() }
+                .modifier(DeskEnvironment())
         } else if #available(iOS 26, *) {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

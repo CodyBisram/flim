@@ -349,7 +349,7 @@ struct CameraView: View {
     /// below.
     private var deskLayer: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             VStack(spacing: 0) {
                 // Pinned to the top at the full width it can have (3:4, what it shows is the

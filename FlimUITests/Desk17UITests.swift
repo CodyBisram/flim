@@ -101,11 +101,12 @@ final class Desk17UITests: XCTestCase {
         }
     }
 
-    /// Settings on Paper, from your page (the chapters demo renders your own page): the desk
-    /// picker is there, and choosing Slate takes.
+    /// Settings from your page (the chapters demo renders your own page): the desk picker is
+    /// there, and choosing a desk recolours Settings at once.
     func testSettingsOffersTheDesks() {
         app.terminate()
-        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "paper"]
+        // No -desk argument: a launch argument pins the setting, and the picker could not move it.
+        app.launchArguments = ["-chaptersPreviewDemo"]
         app.launch()
         let gear = app.buttons["Settings"].firstMatch
         XCTAssertTrue(gear.waitForExistence(timeout: 15))
@@ -113,6 +114,13 @@ final class Desk17UITests: XCTestCase {
         let slate = app.buttons["Slate"].firstMatch
         if !slate.waitForExistence(timeout: 5) { app.swipeUp() }
         XCTAssertTrue(slate.waitForExistence(timeout: 5), "no desk picker in Settings")
+        slate.tap()
+        sleep(1)
+        shot("settings_slate")
+        // Choosing Paper recolours Settings itself at once, not only the screen behind it.
+        app.buttons["Paper"].firstMatch.tap()
+        sleep(1)
+        XCTAssertTrue(app.buttons["Paper"].firstMatch.isSelected, "Paper did not become the desk")
         shot("settings_paper")
         app.swipeUp()
         shot("settings_paper_lower")

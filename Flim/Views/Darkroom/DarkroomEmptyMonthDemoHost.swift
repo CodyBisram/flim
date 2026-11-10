@@ -40,7 +40,7 @@ struct DarkroomEmptyMonthDemoHost: View {
 
     private var darkroom: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
             VStack(spacing: 0) {
                 HStack(spacing: 6) {
                     Text("Darkroom")

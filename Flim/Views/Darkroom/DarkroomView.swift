@@ -522,7 +522,7 @@ Text("Darkroom")
 
     private var bodyContent: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
 
             VStack(spacing: 0) {
                 darkroomHeader

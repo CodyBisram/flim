@@ -250,7 +250,7 @@ struct FeedView: View {
 
     var body: some View {
         ZStack {
-            FlimTheme.bg.ignoresSafeArea()
+            DeskGround()
                 // On the always-mounted background, and `initial`, so it also runs when the
                 // entry arrives before the feed's list mounts: someone who uses Spotlight before
                 // reading the 1.6.0 line never needs it, even after taking the frame down.
