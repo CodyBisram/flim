@@ -16,6 +16,9 @@ struct DeskTabBar: View {
     var avatarKey: String?
     var initial: String
 
+    /// The Duo's rail (Blend 2, 6a to 6j): the same five, stood up on one edge.
+    var vertical = false
+
     @Environment(\.flimAccent) private var accent
 
     static let camera = 0, darkroom = 1, rolls = 2, feed = 3, you = 4
@@ -23,20 +26,40 @@ struct DeskTabBar: View {
     static let height: CGFloat = 64
     /// Space between the bar and the home indicator's safe area.
     static let bottomGap: CGFloat = 4
+    /// The rail's width, and the gap between it and the display's edge.
+    static let railWidth: CGFloat = 76
+    static let railGap: CGFloat = 14
 
+    @ViewBuilder
     var body: some View {
-        HStack(spacing: 0) {
-            item(Self.darkroom, "Darkroom", symbol: MainTabSymbol.darkroom, dot: false)
-            item(Self.rolls, "Rolls", symbol: MainTabSymbol.rolls, dot: rollsDot)
-            cameraButton
-            item(Self.feed, "Feed", symbol: MainTabSymbol.feed, dot: feedDot)
-            youItem
+        if vertical {
+            VStack(spacing: 0) {
+                items
+            }
+            .padding(.vertical, 8)
+            .frame(width: Self.railWidth)
+            .frame(maxHeight: .infinity)
+            .background(Capsule().fill(DeskColor.box))
+            .padding(.vertical, 12)
+        } else {
+            HStack(spacing: 0) {
+                items
+            }
+            .padding(.horizontal, 6)
+            .frame(height: Self.height)
+            .background(Capsule().fill(DeskColor.box))
+            .padding(.horizontal, 16)
+            .padding(.bottom, Self.bottomGap)
         }
-        .padding(.horizontal, 6)
-        .frame(height: Self.height)
-        .background(Capsule().fill(DeskColor.box))
-        .padding(.horizontal, 16)
-        .padding(.bottom, Self.bottomGap)
+    }
+
+    @ViewBuilder
+    private var items: some View {
+        item(Self.darkroom, "Darkroom", symbol: MainTabSymbol.darkroom, dot: false)
+        item(Self.rolls, "Rolls", symbol: MainTabSymbol.rolls, dot: rollsDot)
+        cameraButton
+        item(Self.feed, "Feed", symbol: MainTabSymbol.feed, dot: feedDot)
+        youItem
     }
 
     private func tap(_ value: Int) {
@@ -55,7 +78,8 @@ struct DeskTabBar: View {
                 label(title, active: active)
             }
             .foregroundStyle(active ? DeskColor.ink : DeskColor.ink3)
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(maxWidth: .infinity, maxHeight: vertical ? .infinity : nil)
+            .frame(minHeight: 48)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -89,7 +113,8 @@ struct DeskTabBar: View {
                         .font(.system(size: 19, weight: .medium))
                         .foregroundStyle(active ? Color(white: 0.1) : DeskColor.onSolid)
                 }
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity, maxHeight: vertical ? .infinity : nil)
+                .frame(minHeight: 52)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -122,7 +147,8 @@ struct DeskTabBar: View {
                 label("You", active: active)
             }
             .foregroundStyle(active ? DeskColor.ink : DeskColor.ink3)
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(maxWidth: .infinity, maxHeight: vertical ? .infinity : nil)
+            .frame(minHeight: 48)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

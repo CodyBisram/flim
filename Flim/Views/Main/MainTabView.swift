@@ -171,6 +171,7 @@ struct MainTabView: View {
     @State private var feedPath = NavigationPath()
     /// Your avatar for 1.7's You tab, paired with the path it was signed for.
     @State private var myAvatar: SignedPath?
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #if FLIM_V2
     /// FLIM Beta: a route to a print or a page covers v2's frame instead of pushing onto Friends.
     @State private var v2Route: V2Route?
@@ -284,38 +285,64 @@ struct MainTabView: View {
     /// instead of the system's tab bar. The system bar is hidden on every tab's root and on every
     /// screen pushed onto it (`deskTabRoot`), so pushed screens keep the desk's bar as 1.6's did.
     private var deskTabs: some View {
-        TabView(selection: selection) {
-            Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
-                CameraView().deskTabRoot()
+        GeometryReader { proxy in
+            let layout = DeskLayout.resolve(horizontalSizeClass: horizontalSizeClass, proxy: proxy)
+            // One TabView in one place whatever the layout, so folding or unfolding the Duo never
+            // rebuilds the tabs and loses where you were. On the Duo the bar stands up as a rail
+            // beside the tabs, trailing closed and leading open (Blend 2, part 6): beside, not
+            // over, so the tabs get the narrower frame outright and nothing lays out under it. On
+            // the phone it floats over the tabs, and each tab reserves its height (`deskTabRoot`),
+            // because a TabView does not pass an inset set on it down into its tabs.
+            HStack(spacing: 0) {
+                if layout.usesRail, layout.railEdge == .leading {
+                    deskBar(layout).padding(.leading, DeskTabBar.railGap)
+                }
+                deskTabView(layout)
+                if layout.usesRail, layout.railEdge == .trailing {
+                    deskBar(layout).padding(.trailing, DeskTabBar.railGap)
+                }
             }
-            Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) {
-                darkroomStack.deskTabRoot()
+            .overlay(alignment: .bottom) {
+                if !layout.usesRail { deskBar(layout) }
             }
-            Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
-                rollsStack.deskTabRoot()
-            }
-            Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) {
-                feedStack.deskTabRoot()
-            }
-            Tab("You", systemImage: "person.crop.circle", value: DeskTabBar.you) {
-                youStack.deskTabRoot()
-            }
-        }
-        // The bar floats over the tabs; each tab reserves its height itself (`deskTabRoot`),
-        // because a TabView does not pass an inset set on it down into its tabs.
-        .overlay(alignment: .bottom) {
-            DeskTabBar(selection: selection,
-                       rollsDot: signals.rollsHaveUnwatched,
-                       feedDot: signals.feedHasUnread,
-                       youDot: false,
-                       avatarURL: myAvatar?.url,
-                       avatarKey: myAvatar?.path,
-                       initial: String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
+            .background(FlimTheme.bg.ignoresSafeArea())
+            .environment(\.deskLayout, layout)
         }
         .task(id: auth.currentUser?.avatarPath) {
             guard let path = auth.currentUser?.avatarPath else { myAvatar = nil; return }
             myAvatar = await SignedPath.sign(path) { await feed.signedURL(for: $0) }
         }
+    }
+
+    private func deskTabView(_ layout: DeskLayout) -> some View {
+        TabView(selection: selection) {
+            Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
+                CameraView().deskTabRoot(layout)
+            }
+            Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) {
+                darkroomStack.deskTabRoot(layout)
+            }
+            Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
+                rollsStack.deskTabRoot(layout)
+            }
+            Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) {
+                feedStack.deskTabRoot(layout)
+            }
+            Tab("You", systemImage: "person.crop.circle", value: DeskTabBar.you) {
+                youStack.deskTabRoot(layout)
+            }
+        }
+    }
+
+    private func deskBar(_ layout: DeskLayout) -> some View {
+        DeskTabBar(selection: selection,
+                   rollsDot: signals.rollsHaveUnwatched,
+                   feedDot: signals.feedHasUnread,
+                   youDot: false,
+                   avatarURL: myAvatar?.url,
+                   avatarKey: myAvatar?.path,
+                   initial: String((auth.currentUser?.username ?? "?").prefix(1)).uppercased(),
+                   vertical: layout.usesRail)
     }
 
     /// Your own page, as its own tab (1.7). Pages and posts it opens push onto this stack.
@@ -999,11 +1026,16 @@ private struct FollowBackListener: ViewModifier {
 private extension View {
     /// A 1.7 tab's root: hides the system tab bar here and on every screen pushed onto it (each
     /// push resolves the bar's visibility again, so it is set on the stack's whole subtree).
-    func deskTabRoot() -> some View {
-        toolbarVisibility(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+    @ViewBuilder
+    func deskTabRoot(_ layout: DeskLayout) -> some View {
+        let hidden = toolbarVisibility(.hidden, for: .tabBar).environment(\.deskLayout, layout)
+        if layout.usesRail {
+            hidden
+        } else {
+            hidden.safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: DeskTabBar.height + DeskTabBar.bottomGap)
                     .allowsHitTesting(false)
             }
+        }
     }
 }

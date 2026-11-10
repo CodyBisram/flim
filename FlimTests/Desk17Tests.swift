@@ -22,3 +22,17 @@ final class Desk17Tests: XCTestCase {
         XCTAssertFalse(AppInfo.is17)
     }
 }
+
+final class DeskLayoutTests: XCTestCase {
+    func testPhonesKeepTheBarAndTheDuoGetsARail() {
+        // iPhone 17 Pro, the Duo closed and open, as the board draws them.
+        XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 402, height: 874)), .phone)
+        XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 375, height: 667)), .phone)
+        XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 466, height: 678)), .closed)
+        XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .regular, size: CGSize(width: 890, height: 626)), .open)
+        XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 890, height: 626)), .open)
+        XCTAssertFalse(DeskLayout.phone.usesRail)
+        XCTAssertEqual(DeskLayout.closed.railEdge, .trailing)
+        XCTAssertEqual(DeskLayout.open.railEdge, .leading)
+    }
+}

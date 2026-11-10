@@ -122,3 +122,49 @@ enum DeskType {
         return String(format: "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
     }
 }
+
+/// Where 1.7 is being drawn: a regular iPhone, or the iPhone Duo closed or open (Blend 2, part 6).
+/// The phone keeps the bar at the bottom; the Duo stands it up as a rail, on the trailing edge
+/// closed and the leading edge open, and the open display lays the big tabs out in two columns.
+///
+/// Decided by size class and the screen's shape, never by device name or a fixed size (the same
+/// rule v2 used): a phone in portrait is over twice as tall as it is wide, the Duo's outer
+/// display is under one and a half, and the open display is regular width.
+enum DeskLayout: Equatable {
+    case phone, closed, open
+
+    static func resolve(horizontalSizeClass: UserInterfaceSizeClass?, size: CGSize) -> DeskLayout {
+        if horizontalSizeClass == .regular { return .open }
+        guard size.width > 0 else { return .phone }
+        if size.width > size.height { return .open }
+        return size.height / size.width < shortAspectThreshold ? .closed : .phone
+    }
+
+    /// Judged on the full display, safe areas included: the keyboard shrinks a view but not the
+    /// display, and judging the shrunk size would turn a phone with its keyboard up into the Duo.
+    static func resolve(horizontalSizeClass: UserInterfaceSizeClass?, proxy: GeometryProxy) -> DeskLayout {
+        let full = CGSize(width: proxy.size.width + proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing,
+                          height: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom)
+        return resolve(horizontalSizeClass: horizontalSizeClass, size: full)
+    }
+
+    /// Between the Duo's outer display (about 1.45) and the shortest current iPhone (about 2.1).
+    static let shortAspectThreshold: CGFloat = 1.75
+
+    /// The tab bar stands up as a rail on the Duo.
+    var usesRail: Bool { self != .phone }
+    /// Which edge the rail sits on.
+    var railEdge: HorizontalEdge { self == .open ? .leading : .trailing }
+}
+
+private struct DeskLayoutKey: EnvironmentKey {
+    static let defaultValue: DeskLayout = .phone
+}
+
+extension EnvironmentValues {
+    /// Set once at the root of 1.7's tabs; screens read it to switch to their Duo layouts.
+    var deskLayout: DeskLayout {
+        get { self[DeskLayoutKey.self] }
+        set { self[DeskLayoutKey.self] = newValue }
+    }
+}
