@@ -41,7 +41,7 @@ struct CreateRollView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                 }
             }
         }
@@ -67,11 +67,11 @@ struct CreateRollView: View {
 
                 TextField("", text: $name, prompt: Text("Summer Road Trip").foregroundStyle(FlimTheme.placeholder))
                     .flimFont(17, relativeTo: .body)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .tint(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
-                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                     // Cut at the server's limit as it is typed or pasted, with the count beside
                     // it, instead of Create greying out past 60 with nothing to say why.
                     .onChange(of: name) { _, new in
@@ -115,7 +115,7 @@ struct CreateRollView: View {
                     VStack(spacing: 8) {
                         Text(roll.name)
                             .flimFont(22, weight: .thin, relativeTo: .title3)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
                         Text(followUpOf.map { "Everyone from \($0.name) has been invited. The code works for anyone else." }
                              ?? "Share this code with friends")
                             .flimFont(14, relativeTo: .subheadline)
@@ -126,7 +126,7 @@ struct CreateRollView: View {
                     Text(roll.inviteCode)
                         .flimFont(36, weight: .thin, design: .monospaced, relativeTo: .title)
                         .tracking(8)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .padding(.vertical, 20)
                         .padding(.horizontal, 28)
                         // The code IS the content here, not a control floating over it: an
@@ -147,7 +147,7 @@ struct CreateRollView: View {
                             Label(copied ? "Copied" : "Copy code",
                                   systemImage: copied ? "checkmark" : "doc.on.doc")
                                 .flimFont(14, weight: .semibold)
-                                .foregroundStyle(copied ? accent : .white)
+                                .foregroundStyle(copied ? accent : FlimTheme.textPrimary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
                                 .glassCapsule(interactive: true)

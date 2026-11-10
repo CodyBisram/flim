@@ -79,7 +79,7 @@ struct RollMembersView: View {
             Text("INVITE CODE")
                 .flimFont(11, weight: .medium, relativeTo: .caption)
                 .tracking(2)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle((AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.4)))
             Button {
                 UIPasteboard.general.string = roll.inviteCode
                 withAnimation { codeCopied = true }
@@ -92,11 +92,11 @@ struct RollMembersView: View {
                     Text(roll.inviteCode)
                         .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
                         .tracking(6)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                     Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 14))
                         .contentTransition(.symbolEffect(.replace))
-                        .foregroundStyle(codeCopied ? accent : Color(white: 0.5))
+                        .foregroundStyle(codeCopied ? accent : (AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.5)))
                 }
             }
         }
@@ -136,11 +136,11 @@ struct RollMembersView: View {
                                         // A blocked co-member's identity stays omitted: no name,
                                         // no avatar, just the blocked glyph.
                                         Circle()
-                                            .fill(Color(white: 0.15))
+                                            .fill(AppInfo.is17 ? FlimTheme.well : Color(white: 0.15))
                                             .frame(width: 36, height: 36)
                                             .overlay(Image(systemName: "hand.raised.slash")
                                                 .font(.system(size: 13))
-                                                .foregroundStyle(Color(white: 0.4)))
+                                                .foregroundStyle((AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.4))))
                                     } else {
                                         AvatarView(path: member.avatarPath, name: member.username, size: 36)
                                     }
@@ -156,14 +156,14 @@ struct RollMembersView: View {
                                         } label: {
                                             Text(isBlocked ? "Blocked user" : "@\(member.username ?? "unknown")")
                                                 .flimFont(15, weight: .medium, relativeTo: .body)
-                                                .foregroundStyle(isBlocked ? Color(white: 0.45) : .white)
+                                                .foregroundStyle(isBlocked ? (AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.45)) : FlimTheme.textPrimary)
                                         }
                                         .buttonStyle(.plain)
                                         .disabled(isBlocked)
                                         if member.id == roll.createdBy {
                                             Text("Creator")
                                                 .flimFont(11, relativeTo: .caption)
-                                                .foregroundStyle(Color(white: 0.4))
+                                                .foregroundStyle((AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.4)))
                                         }
                                     }
 
@@ -172,12 +172,12 @@ struct RollMembersView: View {
                                     if member.id == auth.currentUser?.id {
                                         Text("You")
                                             .flimFont(12, relativeTo: .caption)
-                                            .foregroundStyle(Color(white: 0.4))
+                                            .foregroundStyle((AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.4)))
                                     }
                                 }
                                 .padding(.vertical, 4)
                                 .listRowBackground(FlimTheme.sheetRow)
-                                .listRowSeparatorTint(Color(white: 0.12))
+                                .listRowSeparatorTint(AppInfo.is17 ? FlimTheme.stroke : Color(white: 0.12))
                                 .swipeActions(edge: .trailing) {
                                     // Creator can remove anyone but themselves; anyone else
                                     // can leave their own roll.
@@ -231,7 +231,7 @@ struct RollMembersView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
         }

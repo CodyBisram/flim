@@ -96,7 +96,7 @@ struct BadgePickerSheet: View {
                 .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                        Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                     }
                 }
             }
@@ -240,7 +240,7 @@ private struct BadgePickerContent: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -339,7 +339,7 @@ private struct BadgePickerContent: View {
             ForEach(Array(rankedBadges.enumerated()), id: \.element.id) { index, badge in
                 badgeRow(badge)
                 if index < rankedBadges.count - 1 {
-                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
+                    Rectangle().fill(AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
                 }
             }
         }
@@ -473,7 +473,7 @@ private struct BadgePickerContent: View {
             Image(systemName: "seal")
                 .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
             Text("Nothing to choose from yet")
-                .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+                .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
             Text("Once you earn a badge, you can pick which ones lead on your profile.")
                 .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
@@ -525,7 +525,7 @@ private struct BadgePickerContent: View {
                     ForEach(Array(lockedKinds.enumerated()), id: \.element) { index, kind in
                         lockedRow(kind)
                         if index < lockedKinds.count - 1 {
-                            Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
+                            Rectangle().fill(AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
                         }
                     }
                 }
@@ -874,7 +874,7 @@ struct BadgePickerDemoHost: View {
         ZStack {
             DeskGround()
             Button("Reopen") { showSheet = true }
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
         }
         .sheet(isPresented: $showSheet) {
             BadgePickerContent(

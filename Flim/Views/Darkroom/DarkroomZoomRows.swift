@@ -130,7 +130,7 @@ struct DarkroomYearRow: View {
 
     private var unexposedCell: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(Color(white: 0.078))
+            .fill(AppInfo.is17 ? FlimTheme.well : Color(white: 0.078))
             .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
     }
@@ -251,7 +251,7 @@ struct DarkroomAllTimeRow: View {
 
         VStack(spacing: 2) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(white: 0.078))
+                .fill(AppInfo.is17 ? FlimTheme.well : Color(white: 0.078))
                 .frame(width: 26, height: 26)
                 .overlay { monthCover(monthTopCoverPath(month)) }
                 .overlay(
@@ -261,7 +261,7 @@ struct DarkroomAllTimeRow: View {
             Text(Self.monthInitials[month - 1])
                 .flimFont(8)
                 .tracking(0.3)
-                .foregroundStyle(isAnchor ? accent : Color(white: 0.36))
+                .foregroundStyle(isAnchor ? accent : (AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.36)))
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())

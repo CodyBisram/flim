@@ -62,10 +62,10 @@ struct SpotlightFrameCell: View {
                         CachedImage(url: feed.spotlightURLs[path], maxPixel: 340, cacheKey: path) {
                             $0.resizable().scaledToFill()
                         } placeholder: {
-                            Color.white.opacity(0.06)
+                            FlimTheme.well
                         }
                     } else {
-                        Color.white.opacity(0.06)
+                        FlimTheme.well
                     }
                 }
                 .overlay { SpotlightOpeningIndicator(isOpening: isOpening) }
@@ -319,7 +319,7 @@ struct SpotlightClosingRowView: View {
                         CachedImage(url: urls[frame.photo.id], maxPixel: 200, cacheKey: frame.photo.viewPath) {
                             $0.resizable().scaledToFill()
                         } placeholder: {
-                            Color.white.opacity(0.06)
+                            FlimTheme.well
                         }
                         .frame(width: 54, height: 72)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -530,7 +530,7 @@ struct SpotlightWeeksSheet: View {
                         }
 
                         if !loaded {
-                            ProgressView().tint(.white)
+                            ProgressView().tint(FlimTheme.textPrimary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 40)
                         } else if weeks.isEmpty && !failed && !feed.spotlightPastWeeksHasMore {
@@ -610,7 +610,7 @@ struct SpotlightWeeksSheet: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .navigationDestination(item: $route) { route in
@@ -715,10 +715,10 @@ struct SpotlightChosenCallout: View {
                         CachedImage(url: feed.spotlightURLs[path], maxPixel: 260, cacheKey: path) {
                             $0.resizable().scaledToFill()
                         } placeholder: {
-                            Color.white.opacity(0.06)
+                            FlimTheme.well
                         }
                     } else {
-                        Color.white.opacity(0.06)
+                        FlimTheme.well
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -791,7 +791,7 @@ struct SpotlightShareSheet: View {
                 ZStack {
                     Text("Share your frame")
                         .flimFont(16, weight: .medium, relativeTo: .body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                     HStack {
                         Button { Haptics.tap(); dismiss() } label: {
                             Image(systemName: "xmark")
@@ -824,7 +824,7 @@ struct SpotlightShareSheet: View {
                 .aspectRatio(9.0 / 16.0, contentMode: .fit)
                 .frame(maxHeight: 360)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder((AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.08)), lineWidth: 1))
                 .padding(.top, 16)
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -994,10 +994,10 @@ struct SpotlightShelfView: View {
                         CachedImage(url: feed.spotlightURLs[path], maxPixel: 340, cacheKey: path) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
-                            Color.white.opacity(0.06)
+                            FlimTheme.well
                         }
                     } else {
-                        Color.white.opacity(0.06)
+                        FlimTheme.well
                     }
                 }
 

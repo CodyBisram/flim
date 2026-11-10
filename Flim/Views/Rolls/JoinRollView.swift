@@ -33,7 +33,7 @@ struct JoinRollView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                 }
             }
         }
@@ -62,7 +62,7 @@ struct JoinRollView: View {
                     .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .tint(.white)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.characters)
@@ -71,7 +71,7 @@ struct JoinRollView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 20)
-                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
             }
 
             if let error {
@@ -112,7 +112,7 @@ struct JoinRollView: View {
                     .foregroundStyle(FlimTheme.textSecondary)
                 Text(roll.name)
                     .flimFont(26, weight: .thin, relativeTo: .title3)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
             }
             // A joined roll can turn out already developed if the server accepted the join
             // (older backend, or the roll finished mid-request): the reveal promise below would

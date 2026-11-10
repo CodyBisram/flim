@@ -839,7 +839,7 @@ struct RollDetailView: View {
                         .foregroundStyle(.red.opacity(0.9))
                     Text(saveAllError)
                         .flimFont(13, weight: .medium)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .lineLimit(2)
                     Spacer(minLength: 6)
                     Button("Retry") { saveAll() }
@@ -1235,7 +1235,7 @@ struct RollDetailView: View {
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
             .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
-            .foregroundStyle(Color(white: 0.4))
+            .foregroundStyle((AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.4)))
     }
 
     private func sectionHeader(_ title: String) -> some View {
