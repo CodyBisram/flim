@@ -297,6 +297,8 @@ struct PhotoPagerView: View {
     /// two flows must never share one variable, same reasoning as `taggingPhoto` vs.
     /// `composerPhoto` above.
     @State private var shareSheetPhoto: Photo?
+    /// 1.7: the shot Post opens with (DeskPostView instead of ShareToFeedSheet).
+    @State private var deskPostPhoto: Photo?
     /// The header menu's Spotlight item: its first-time sheet and take-out ask, presented from
     /// the pager, never from inside the menu (see `SpotlightPutUpFlow`).
     @State private var spotlightFirstTimePost: Post?
@@ -435,6 +437,12 @@ struct PhotoPagerView: View {
                 // The photo viewer is full bleed; only the pushed profile wants a bar.
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+        }
+        .modifier(DeskViewerScheme())
+        // 1.7's Post, for this one shot (Blend 3, 9b).
+        .fullScreenCover(item: $deskPostPhoto) { photo in
+            DeskPostView(photos: [photo],
+                         urls: (signedURLs[photo.id] ?? rackThumbURLs[photo.id]).map { [photo.id: $0] } ?? [:])
         }
     }
 
@@ -1654,6 +1662,8 @@ struct PhotoPagerView: View {
             // actually do next. Post it, or, once it is posted, change who is in it.
             HStack(spacing: 8) {
                 if showsTagCapsule { tagCapsule } else { postCapsule }
+                // 1.7 (Blend 3, 9d): a posted shot can come down again.
+                if AppInfo.is17, showsTagCapsule { unpostButton }
             }
             .opacity(current?.isReady == true ? 1 : 0.45)
             .disabled(current?.isReady != true)
@@ -1696,7 +1706,7 @@ struct PhotoPagerView: View {
         Button {
             guard let photo = current else { return }
             Haptics.tap()
-            shareSheetPhoto = photo
+            if AppInfo.is17 { deskPostPhoto = photo } else { shareSheetPhoto = photo }
         } label: {
             Text("Post")
                 .flimFont(13, weight: .medium)
@@ -1704,6 +1714,36 @@ struct PhotoPagerView: View {
                 .padding(.horizontal, 14)
                 .frame(minHeight: 32)
                 .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+        }
+    }
+
+    /// Takes the post down, behind the undo capsule like every other removal. The shot stays in
+    /// the Darkroom, just not posted.
+    private var unpostButton: some View {
+        Button {
+            guard let photo = current, let uid = auth.currentUser?.id else { return }
+            Haptics.warning()
+            let service = feed
+            let photoId = photo.id
+            let known = service.ownPostsByPhotoId[photoId]?.id
+            service.myPostedPhotoIds.remove(photoId)
+            UndoCenter.shared.stage(
+                title: "Unposted",
+                subtitle: "It's back in your Darkroom only",
+                failureText: "Couldn't unpost. It's still up.",
+                revert: { service.myPostedPhotoIds.insert(photoId) },
+                commit: {
+                    var postId = known
+                    if postId == nil { postId = await service.postId(forPhotoId: photoId, userId: uid) }
+                    guard let postId else { return false }
+                    return await service.deletePost(id: postId) ?? true
+                })
+        } label: {
+            Text("Unpost")
+                .flimFont(13, weight: .semibold)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 32)
         }
     }
 
@@ -2357,6 +2397,18 @@ private struct PageFrameModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         } else {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// 1.7's viewer is always Slate (Blend 1, 3b), so the photograph reads true whatever the desk;
+/// the status bar follows. 1.6 is dark already.
+private struct DeskViewerScheme: ViewModifier {
+    func body(content: Content) -> some View {
+        if AppInfo.is17 {
+            content.environment(\.colorScheme, .dark).preferredColorScheme(.dark)
+        } else {
+            content
         }
     }
 }
