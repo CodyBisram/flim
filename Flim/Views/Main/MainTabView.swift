@@ -1046,9 +1046,20 @@ private extension View {
             hidden
         } else {
             hidden.safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: DeskTabBar.height + DeskTabBar.bottomGap)
-                    .allowsHitTesting(false)
+                DeskTabBarSpace()
             }
         }
+    }
+}
+
+/// The room a 1.7 tab keeps clear under the floating bar: taller at accessibility text sizes,
+/// where the bar grows (DeskTabBar.height(for:)).
+private struct DeskTabBarSpace: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        Color.clear
+            .frame(height: DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap)
+            .allowsHitTesting(false)
     }
 }

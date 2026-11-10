@@ -20,6 +20,15 @@ struct DeskTabBar: View {
     var vertical = false
 
     @Environment(\.flimAccent) private var accent
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// At accessibility text sizes the bar grows and its labels go, as iOS does for its own tab
+    /// bars (Blend 4, 16b); holding a tab shows its name large (the Large Content Viewer), and
+    /// VoiceOver reads every tab by name at any size.
+    private var large: Bool { typeSize.isAccessibilitySize }
+
+    /// The bar's height for a text size, for the space each tab keeps clear under it.
+    static func height(for size: DynamicTypeSize) -> CGFloat { size.isAccessibilitySize ? 84 : height }
 
     static let camera = 0, darkroom = 1, rolls = 2, feed = 3, you = 4
     /// The bar's height without the home indicator, for screens that need to sit above it.
@@ -46,7 +55,7 @@ struct DeskTabBar: View {
                 items
             }
             .padding(.horizontal, 6)
-            .frame(height: Self.height)
+            .frame(height: Self.height(for: typeSize))
             .background(Capsule().fill(DeskColor.box))
             .padding(.horizontal, 16)
             .padding(.bottom, Self.bottomGap)
@@ -72,10 +81,14 @@ struct DeskTabBar: View {
         return Button { tap(value) } label: {
             VStack(spacing: 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .regular))
-                    .frame(height: 22)
+                    .font(.system(size: large ? 26 : 17, weight: .regular))
+                    .frame(height: large ? 30 : 22)
                     .overlay(alignment: .topTrailing) { if dot { Self.redDot.offset(x: 5, y: -1) } }
-                label(title, active: active)
+                if large {
+                    Rectangle().fill(active ? DeskColor.ink : .clear).frame(width: 18, height: 1.5)
+                } else {
+                    label(title, active: active)
+                }
             }
             .foregroundStyle(active ? DeskColor.ink : DeskColor.ink3)
             .frame(maxWidth: .infinity, maxHeight: vertical ? .infinity : nil)
@@ -86,6 +99,7 @@ struct DeskTabBar: View {
         .accessibilityLabel(title)
         .accessibilityValue(dot ? "New" : "")
         .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityShowsLargeContentViewer { Label(title, systemImage: symbol) }
     }
 
     private func label(_ title: String, active: Bool) -> some View {
@@ -107,7 +121,7 @@ struct DeskTabBar: View {
         return Button { tap(Self.camera) } label: {
             Circle()
                 .fill(active ? accent : DeskColor.solid)
-                .frame(width: 52, height: 52)
+                .frame(width: large ? 62 : 52, height: large ? 62 : 52)
                 .overlay {
                     Image(systemName: MainTabSymbol.camera)
                         .font(.system(size: 19, weight: .medium))
@@ -120,6 +134,7 @@ struct DeskTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Camera")
         .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityShowsLargeContentViewer { Label("Camera", systemImage: MainTabSymbol.camera) }
     }
 
     private var youItem: some View {
@@ -144,7 +159,11 @@ struct DeskTabBar: View {
                     .frame(height: 26)
                     .overlay(alignment: .topTrailing) { if youDot { Self.redDot.offset(x: 2, y: 0) } }
                     .frame(height: 22)
-                label("You", active: active)
+                if large {
+                    Rectangle().fill(active ? DeskColor.ink : .clear).frame(width: 18, height: 1.5)
+                } else {
+                    label("You", active: active)
+                }
             }
             .foregroundStyle(active ? DeskColor.ink : DeskColor.ink3)
             .frame(maxWidth: .infinity, maxHeight: vertical ? .infinity : nil)
@@ -155,6 +174,7 @@ struct DeskTabBar: View {
         .accessibilityLabel("You")
         .accessibilityValue(youDot ? "New" : "")
         .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityShowsLargeContentViewer { Label("You", systemImage: "person.crop.circle") }
     }
 
     static var redDot: some View {
