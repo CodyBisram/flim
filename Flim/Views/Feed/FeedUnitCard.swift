@@ -158,7 +158,9 @@ struct FeedUnitCard: View {
     private var current: FeedItem { unit.items[min(selection, unit.items.count - 1)] }
     private var post: Post { current.post }
     private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
-    private var photoWidth: CGFloat { max(1, width - 32) }
+    /// The card's side margin: 16 in 1.6, the desk's 24 in 1.7 (Blend 2a).
+    private var margin: CGFloat { AppInfo.is17 ? 24 : 16 }
+    private var photoWidth: CGFloat { max(1, width - margin * 2) }
     private var photoHeight: CGFloat { photoWidth * 4 / 3 }
 
     private var reactions: [PostReaction] {
@@ -202,25 +204,25 @@ struct FeedUnitCard: View {
                     resolveURLs: { await feed.signedURLs(for: $0) },
                     openOverflow: { showContactSheet = true }
                 )
-                .padding(.horizontal, 16)
+                .padding(.horizontal, margin)
             }
             pager
                 .padding(.top, 6)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, margin)
             ReactionBar(
                 defaults: photos.reactionDefaults(for: post.photoId),
                 counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
                 mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
             ) { toggleReaction($0) }
             .padding(.top, 7)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, margin)
             // The row belongs to the frame on screen; swiping re-renders it. The id ties the
             // bar's internal ordering state to the frame, so chip order never leaks between
             // shots.
             .id("reactions-\(post.id)")
             thread
                 .padding(.top, 8)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, margin)
         }
         .task(id: unit.id) {
             if let path = unit.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
@@ -372,10 +374,16 @@ struct FeedUnitCard: View {
                 HStack(spacing: 11) {
                     avatar
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(unit.author.handle)
-                            .flimFont(17, weight: .light, relativeTo: .body)
-                            .tracking(0.4)
-                            .foregroundStyle(FlimTheme.textPrimary)
+                        if AppInfo.is17 {
+                            Text(unit.author.handle)
+                                .flimFont(16, weight: .semibold, relativeTo: .body)
+                                .foregroundStyle(FlimTheme.textPrimary)
+                        } else {
+                            Text(unit.author.handle)
+                                .flimFont(17, weight: .light, relativeTo: .body)
+                                .tracking(0.4)
+                                .foregroundStyle(FlimTheme.textPrimary)
+                        }
                         // Derived metadata never wraps: one wrap adds a line box and pushes
                         // the unit past the fold. Generated text, so truncation is safe.
                         Text(unit.metaLine)
@@ -388,11 +396,20 @@ struct FeedUnitCard: View {
             .buttonStyle(.plain)
             Spacer(minLength: 8)
             if unseenRemaining > 0 {
-                Text("\(unseenRemaining) new")
-                    .flimFont(11, relativeTo: .caption2)
-                    .foregroundStyle(accent)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .overlay(Capsule().strokeBorder(accent.opacity(0.42), lineWidth: 1))
+                if AppInfo.is17 {
+                    // Red, like every "something new" mark (Blend 2a).
+                    Text("\(unseenRemaining) new")
+                        .flimFont(12, weight: .semibold, relativeTo: .caption2)
+                        .foregroundStyle(FlimTheme.newRed)
+                        .padding(.horizontal, 10).padding(.vertical, 3)
+                        .overlay(Capsule().strokeBorder(FlimTheme.newRed, lineWidth: 1.5))
+                } else {
+                    Text("\(unseenRemaining) new")
+                        .flimFont(11, relativeTo: .caption2)
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .overlay(Capsule().strokeBorder(accent.opacity(0.42), lineWidth: 1))
+                }
             }
             Menu {
                 postActions
@@ -406,15 +423,15 @@ struct FeedUnitCard: View {
             .accessibilityLabel("Post options")
         }
         .padding(.top, 10)
-        .padding(.leading, 16)
-        .padding(.trailing, 6)
+        .padding(.leading, margin)
+        .padding(.trailing, margin - 10)
         .padding(.bottom, 6)
     }
 
     private var avatar: some View {
         Circle()
-            .fill(accent.opacity(0.18))
-            .frame(width: 32, height: 32)
+            .fill(AppInfo.is17 ? FlimTheme.surface : accent.opacity(0.18))
+            .frame(width: AppInfo.is17 ? 38 : 32, height: AppInfo.is17 ? 38 : 32)
             .overlay {
                 if let avatarURL {
                     CachedImage(url: avatarURL, maxPixel: 100, cacheKey: unit.author.avatarPath) {
@@ -471,7 +488,7 @@ struct FeedUnitCard: View {
             ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                Rectangle().fill(Color.white.opacity(0.06))
+                Rectangle().fill(FlimTheme.well)
             }
             .id("page-\(item.post.id)-\(retryTokens[item.post.id] ?? 0)")
             .frame(width: photoWidth, height: photoHeight)
@@ -510,13 +527,13 @@ struct FeedUnitCard: View {
     /// failure is an expired one) and refetches that one image, blocking nothing.
     private func brokenWell(item: FeedItem) -> some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.white.opacity(0.06))
+            .fill(FlimTheme.well)
             .frame(width: photoWidth, height: photoHeight)
             .overlay {
                 VStack(spacing: 11) {
                     Image(systemName: "photo.badge.exclamationmark")
                         .font(.system(size: 27, weight: .light))
-                        .foregroundStyle(Color.white.opacity(0.37))
+                        .foregroundStyle(AppInfo.is17 ? FlimTheme.textTertiary : Color.white.opacity(0.37))
                     Text("This shot didn't load")
                         .flimFont(13.5, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
@@ -1079,7 +1096,7 @@ private struct FilmStrip: View {
             while x < size.width {
                 context.fill(
                     Path(CGRect(x: x, y: 0, width: 4, height: size.height)),
-                    with: .color(Color(red: 0.165, green: 0.165, blue: 0.165)))
+                    with: .color(AppInfo.is17 ? FlimTheme.textPrimary.opacity(0.2) : Color(red: 0.165, green: 0.165, blue: 0.165)))
                 x += 10
             }
         }
@@ -1095,13 +1112,13 @@ private struct FilmStrip: View {
                 // Kept, never dropped: removing it renumbers the day and makes "14 shots"
                 // false, and the reader still needs to swipe past it.
                 Rectangle()
-                    .fill(Color(red: 0.07, green: 0.07, blue: 0.07))
-                    .overlay(Rectangle().strokeBorder(Color.white.opacity(0.19), lineWidth: 1))
+                    .fill(AppInfo.is17 ? FlimTheme.well : Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .overlay(Rectangle().strokeBorder(AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.19), lineWidth: 1))
             } else {
                 CachedImage(url: thumbURLs[item.post.id], maxPixel: 120, cacheKey: item.post.indexPath) {
                     $0.resizable().scaledToFill()
                 } placeholder: {
-                    Rectangle().fill(Color.black)
+                    Rectangle().fill(AppInfo.is17 ? FlimTheme.well : Color.black)
                 }
             }
         }

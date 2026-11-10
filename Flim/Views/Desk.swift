@@ -73,6 +73,8 @@ enum DeskColor {
     /// The filled control: dark ink on Paper, cream on Slate.
     static let solid = pair(paper: 0x2A2420, slate: 0xF3E7DC)
     static let onSolid = pair(paper: 0xF3E7DC, slate: 0x1C1917)
+    /// New things (dots, "1 new"), destructive actions and errors (Blend 2's one addition).
+    static let red = pair(paper: 0xB3362A, slate: 0xF26B5B)
 }
 
 /// The chosen desk at the app root. It sets the system's appearance, so on Paper the status bar,

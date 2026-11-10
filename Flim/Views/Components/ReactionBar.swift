@@ -225,7 +225,7 @@ struct ReactionBar: View {
                                         Button { pick(emoji) } label: {
                                             Text(emoji).flimFont(26)
                                                 .frame(width: 44, height: 44)
-                                                .background(mine.contains(emoji) ? accent.opacity(0.28) : Color.white.opacity(0.08), in: Circle())
+                                                .background(mine.contains(emoji) ? accent.opacity(0.28) : (AppInfo.is17 ? FlimTheme.chip : Color.white.opacity(0.08)), in: Circle())
                                         }
                                         .accessibilityLabel("React \(emoji)")
                                     }
@@ -269,9 +269,9 @@ struct ReactionBar: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .frame(width: 36, height: 32)
-                .background(Color.white.opacity(0.12), in: Capsule())
+                .background(FlimTheme.chip, in: Capsule())
         }
         .accessibilityLabel("More emoji")
     }
@@ -290,13 +290,13 @@ struct ReactionBar: View {
                 if count > 0 {
                     Text("\(count)")
                         .flimFont(13, weight: .semibold, relativeTo: .footnote)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .contentTransition(.numericText())          // digits roll when the count changes
                 }
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            .background(isMine ? accent.opacity(0.28) : Color.white.opacity(0.12), in: Capsule())
+            .background(isMine ? accent.opacity(0.28) : FlimTheme.chip, in: Capsule())
             .overlay(Capsule().strokeBorder(isMine ? accent : .clear, lineWidth: 1))
             .scaleEffect(pressed == emoji && !reduceMotion ? 1.18 : 1)   // little bounce on tap
         }
@@ -316,7 +316,7 @@ struct ReactionBar: View {
         case .placeholder:
             Image(systemName: "questionmark.square.dashed")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(FlimTheme.textPrimary.opacity(0.85))
         }
     }
 

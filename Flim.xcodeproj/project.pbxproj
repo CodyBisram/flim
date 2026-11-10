@@ -122,6 +122,7 @@
 		410927C61580C55C921D591F /* AppUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44986F8867E5B522EBEABEE8 /* AppUser.swift */; };
 		4115FC907B0F49EF7C95C712 /* AccountEpochTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */; };
 		4121B75894BB251E2F8FBB0B /* DarkroomYearMonth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B836AA433FC02113BC1E3BA8 /* DarkroomYearMonth.swift */; };
+		4422AB8F59ED0942AE23D063 /* DeskComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7B8402D37A60C3C1D180B7C /* DeskComponents.swift */; };
 		4480B3972FE7723102195B87 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */; };
 		45DE74E630BF0B9AF1B648DF /* VersionGateNudgeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D6CE2A66AC5924234B0396 /* VersionGateNudgeSheet.swift */; };
 		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
@@ -787,6 +788,7 @@
 		C4E4408D99715C85F7767AC1 /* RollLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollLiveActivity.swift; sourceTree = "<group>"; };
 		C5CF40AEDBC8243F837F246F /* UndoCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoCenter.swift; sourceTree = "<group>"; };
 		C70C734A3C9E58C37BDA61F9 /* QuickTagChipsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTagChipsTests.swift; sourceTree = "<group>"; };
+		C7B8402D37A60C3C1D180B7C /* DeskComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskComponents.swift; sourceTree = "<group>"; };
 		C81D2E2A6B686741E639151E /* FlimToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimToast.swift; sourceTree = "<group>"; };
 		C83B56B27D38D1F33442EDBD /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		C8C2F70774B76385A97528D7 /* RevealCover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealCover.swift; sourceTree = "<group>"; };
@@ -1182,6 +1184,7 @@
 			isa = PBXGroup;
 			children = (
 				7ED6775C46E2C6D962C527D7 /* Desk.swift */,
+				C7B8402D37A60C3C1D180B7C /* DeskComponents.swift */,
 				FA04DBB3261C344B5DD64806 /* Haptics.swift */,
 				57C3947082A0D5033379C318 /* SoundFX.swift */,
 				8118D8FA0343F18F835415D3 /* Theme.swift */,
@@ -1896,6 +1899,7 @@
 				61ED019161D768683F7BBA8C /* DarkroomZoomRows.swift in Sources */,
 				1713A05A7A1BE842F4004BE9 /* DayContactSheet.swift in Sources */,
 				1B664A83E954383B5605789F /* Desk.swift in Sources */,
+				4422AB8F59ED0942AE23D063 /* DeskComponents.swift in Sources */,
 				75FC774DE8504AD9164B4F2D /* DeskTabBar.swift in Sources */,
 				5BAC7C2E253501071449E682 /* DiscoverRanking.swift in Sources */,
 				82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */,

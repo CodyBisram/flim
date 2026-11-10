@@ -267,8 +267,14 @@ struct FeedView: View {
                     } else if let error = feed.feedError {
                         // A failed load is not an empty feed; don't tell someone with no
                         // signal that nobody they follow has posted.
-                        ErrorState(message: error) { await reload() }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if AppInfo.is17 {
+                            // Blend 2, 8i: the screen's own first line, then the reason.
+                            DeskFailedState(title: "Couldn't load your feed.", message: DeskFailedState.standardMessage) { await reload() }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            ErrorState(message: error) { await reload() }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     } else if followsNobody {
                         // A newcomer who follows nobody still meets Spotlight: it is the one
                         // place other people's photographs reach them.
@@ -470,7 +476,78 @@ struct FeedView: View {
 
     /// The screen's name and its three buttons. No count: the new days are the ones at the
     /// top, and each says how many of its shots are new.
+    @ViewBuilder
     private var header: some View {
+        if AppInfo.is17 { deskHeader } else { v1Header }
+    }
+
+    /// Opens Activity, keeping the previous visit so it can mark what's new.
+    private func openActivity() {
+        // Capture the PREVIOUS visit before stamping this one, so Activity can put what you
+        // haven't looked at under "New". The watermark moves only once Activity has shown its
+        // content (its `onLoaded`).
+        activitySeenBefore = lastActivitySeen > 0 ? Date(timeIntervalSince1970: lastActivitySeen) : nil
+        showActivity = true
+    }
+
+    /// 1.7's header (Blend 1, 2a): the title in Caslon, then Find and Activity as plain glyphs,
+    /// no circles. Adding friends lives in Find; your page has its own tab.
+    private var deskHeader: some View {
+        HStack(spacing: 20) {
+            Text("Feed")
+                .font(DeskType.serif(30, relativeTo: .largeTitle))
+                .foregroundStyle(FlimTheme.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+
+            #if DEBUG
+            Button {
+                Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
+            } label: {
+                Image(systemName: "ladybug")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            .accessibilityLabel("Seed demo feed")
+            #endif
+
+            Button { showDiscover = true } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 19, weight: .regular))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Find")
+
+            Button { openActivity() } label: {
+                Image(systemName: "bell")
+                    .font(.system(size: 19, weight: .regular))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .flimSymbolBounce(value: unreadActivity)
+                    .overlay(alignment: .topTrailing) {
+                        if unreadActivity > 0 {
+                            Circle()
+                                .fill(FlimTheme.newRed)
+                                .frame(width: 8, height: 8)
+                                .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
+                                .offset(x: 2, y: -1)
+                                .transition(.scale.combined(with: .opacity))
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Activity")
+            .accessibilityValue(unreadActivity > 0 ? "\(unreadActivity) new" : "")
+        }
+        .padding(.leading, 24)
+        .padding(.trailing, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+    }
+
+    private var v1Header: some View {
         HStack(spacing: 10) {
             Text("Feed")
                 .flimFont(17, weight: .light, relativeTo: .body)
@@ -865,7 +942,7 @@ struct FeedView: View {
 
     private var seamStops: [Gradient.Stop] {
         let fade = containerWidth > 0 ? min(0.45, 48 / containerWidth) : 0.12
-        let stroke = Color(red: 0.14, green: 0.14, blue: 0.14)
+        let stroke = AppInfo.is17 ? FlimTheme.stroke : Color(red: 0.14, green: 0.14, blue: 0.14)
         return [
             .init(color: .clear, location: 0),
             .init(color: stroke, location: fade),
@@ -881,15 +958,27 @@ struct FeedView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(accent)
                 .frame(width: 24, height: 2)
-            Text("You're caught up")
-                .flimFont(19, weight: .light, relativeTo: .body)
-                .tracking(0.4)
-                .foregroundStyle(FlimTheme.textPrimary)
-            Text(caughtLine)
-                .flimFont(12.5, relativeTo: .footnote)
-                .foregroundStyle(FlimTheme.textTertiary)
-                .multilineTextAlignment(.center)
-                .lineSpacing(3)
+            if AppInfo.is17 {
+                Text("You're caught up")
+                    .font(DeskType.serif(24, relativeTo: .title2))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .padding(.top, 6)
+                Text(caughtLine)
+                    .flimFont(15, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+            } else {
+                Text("You're caught up")
+                    .flimFont(19, weight: .light, relativeTo: .body)
+                    .tracking(0.4)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                Text(caughtLine)
+                    .flimFont(12.5, relativeTo: .footnote)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+            }
             Button {
                 NotificationCenter.default.post(name: .openCamera, object: nil)
             } label: {
@@ -916,7 +1005,32 @@ struct FeedView: View {
     /// reason and offers the two things that exist. FLIM is invite-only, so there is no
     /// suggested-strangers rail, no discovery surface, and no list of people you have not
     /// followed yet: a guilt list ranks people, which this design refuses everywhere else.
+    @ViewBuilder
     private var firstRunState: some View {
+        if AppInfo.is17 { deskFirstRunState } else { v1FirstRunState }
+    }
+
+    /// 1.7's no-friends Feed (Blend 2, 8a): the accent rule, one Caslon line, one sentence, and
+    /// the two things that exist: Find friends (solid) and Invite a friend (box tone).
+    private var deskFirstRunState: some View {
+        VStack(spacing: 10) {
+            Spacer()
+            DeskEmptyState(title: "No friends here yet.",
+                           message: "Add a few friends and their shots land here the same day, newest first.") {
+                Button { showDiscover = true } label: { DeskPill("Find friends", style: .solid) }
+                if inviteQuota != .remaining(0), let code = auth.currentUser?.inviteCode {
+                    ShareLink(item: AppInfo.personalInviteMessage(code: code)) { DeskPill("Invite a friend", style: .box) }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            Activation.log(.inviteSent); Usage.log(.inviteSharedFeed)
+                        })
+                }
+            }
+            Spacer()
+            Spacer()
+        }
+    }
+
+    private var v1FirstRunState: some View {
         VStack(spacing: 11) {
             Spacer()
             Text("You don't follow anyone yet")
@@ -1353,7 +1467,7 @@ struct FeedUnitSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
-                Circle().fill(Color.white.opacity(0.06)).frame(width: 32, height: 32)
+                Circle().fill(FlimTheme.well).frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 6) {
                     bar(width: 84, height: 11)
                     bar(width: 134, height: 8)
@@ -1365,17 +1479,17 @@ struct FeedUnitSkeleton: View {
             .padding(.bottom, 6)
 
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.06))
+                .fill(FlimTheme.well)
                 .aspectRatio(3 / 4, contentMode: .fit)
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
 
             HStack(spacing: 4) {
                 ForEach(0..<6, id: \.self) { _ in
-                    Circle().fill(Color.white.opacity(0.06)).frame(width: 30, height: 30)
+                    Circle().fill(FlimTheme.well).frame(width: 30, height: 30)
                 }
                 Spacer()
-                Circle().fill(Color.white.opacity(0.06)).frame(width: 30, height: 30)
+                Circle().fill(FlimTheme.well).frame(width: 30, height: 30)
             }
             .padding(.horizontal, 16)
             .padding(.top, 13)
@@ -1385,7 +1499,7 @@ struct FeedUnitSkeleton: View {
 
     private func bar(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 3)
-            .fill(Color.white.opacity(0.06))
+            .fill(FlimTheme.well)
             .frame(width: width, height: height)
             .opacity(breathing ? 1 : 0.5)
             .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: breathing)

@@ -50,6 +50,14 @@ enum FlimTheme {
     static let placeholder = AppInfo.is17 ? DeskColor.ink3 : Color(white: 0.3)
     /// Skeletons, at the real geometry of what is coming. Pulsed 35 to 70 percent by the caller.
     static let loading = AppInfo.is17 ? DeskColor.box : Color(white: 0.11)
+    /// An image well before (or instead of) its photograph, and quiet chips: 6% white in 1.6,
+    /// the box tone in 1.7.
+    static let well = AppInfo.is17 ? DeskColor.box : Color.white.opacity(0.06)
+    /// Reaction chips and similar pills: 12% white in 1.6, the box tone in 1.7.
+    static let chip = AppInfo.is17 ? DeskColor.box : Color.white.opacity(0.12)
+    /// The "something new" dot and "N new" pill: system red in 1.6 (owner rule, 2026-10-02),
+    /// the desk's red in 1.7.
+    static let newRed = AppInfo.is17 ? DeskColor.red : Color.red
     /// "Not yet saved", "queued offline": the accent with a warning glyph, deliberately not a
     /// third colour. A state to attend to, not an error.
     static func warning(_ accent: Color) -> Color { accent }

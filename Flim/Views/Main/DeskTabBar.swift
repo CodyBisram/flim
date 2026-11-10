@@ -158,6 +158,6 @@ struct DeskTabBar: View {
     }
 
     static var redDot: some View {
-        Circle().fill(Color.red).frame(width: 7, height: 7)
+        Circle().fill(FlimTheme.newRed).frame(width: 7, height: 7)
     }
 }

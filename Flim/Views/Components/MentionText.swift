@@ -23,7 +23,7 @@ struct MentionText: View {
     /// Held as `@ScaledMetric` rather than styled with `.flimFont` because the size goes into an
     /// AttributedString run, not onto a view, so a view modifier can't reach it.
     @ScaledMetric private var size: CGFloat
-    var color: Color = .white
+    var color: Color = FlimTheme.textPrimary
     /// A bold handle prefixed onto the same paragraph, ahead of `text`, so a wrapped second line
     /// returns to the leading edge instead of indenting under a separately-laid-out body. Only the
     /// feed card's comment preview needs this (its own row puts handle and body side by side); the
@@ -38,7 +38,7 @@ struct MentionText: View {
     /// The tapped mention's lowercased username.
     let onMention: (String) -> Void
 
-    init(text: String, size: CGFloat = 14, color: Color = .white,
+    init(text: String, size: CGFloat = 14, color: Color = FlimTheme.textPrimary,
          handle: String? = nil, onHandleTap: (() -> Void)? = nil, onBodyTap: (() -> Void)? = nil,
          onMention: @escaping (String) -> Void) {
         self.text = text
@@ -81,7 +81,7 @@ struct MentionText: View {
         if let handle {
             var piece = AttributedString("\(handle) ")
             piece.font = .system(size: size, weight: .semibold)
-            piece.foregroundColor = .white
+            piece.foregroundColor = FlimTheme.textPrimary
             if onHandleTap != nil {
                 piece.link = URL(string: "\(Self.handleScheme)://tap")
             }
