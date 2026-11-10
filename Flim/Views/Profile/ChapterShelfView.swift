@@ -16,7 +16,9 @@ struct ChapterShelfView: View {
     let onSelect: (ChapterSummary) -> Void
 
     var body: some View {
-        if !chapters.isEmpty {
+        if AppInfo.is17, !chapters.isEmpty {
+            deskShelf
+        } else if !chapters.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
                     Text("Chapters")
@@ -45,6 +47,64 @@ struct ChapterShelfView: View {
                 }
             }
         }
+    }
+
+    /// 1.7's shelf (Blend 1, 4a): "ON YOUR SHELF" stamped in mono with the count of months, and
+    /// each finished month as a rounded cover with its month stamped on, not a lidded box.
+    private var deskShelf: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("ON YOUR SHELF")
+                    .font(DeskType.data(10.5))
+                    .tracking(1.7)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                Spacer()
+                Text("\(chapters.count) month\(chapters.count == 1 ? "" : "s")")
+                    .flimFont(13, relativeTo: .footnote)
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            .padding(.horizontal, 24)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(chapters) { chapter in
+                        Button {
+                            Haptics.tap()
+                            onSelect(chapter)
+                        } label: {
+                            deskCover(chapter)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(chapter.monthName()), \(chapter.statsLine). Plays the month.")
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+        }
+    }
+
+    private func deskCover(_ chapter: ChapterSummary) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            Group {
+                if let path = chapter.coverPaths.first {
+                    CachedImage(url: coverURLs[path], maxPixel: 300, cacheKey: path) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: { FlimTheme.well }
+                } else {
+                    FlimTheme.well
+                }
+            }
+            .frame(width: 80, height: 104)
+            .clipped()
+            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+            Text(chapter.monthName().prefix(3).uppercased())
+                .font(DeskType.data(10))
+                .tracking(1.4)
+                .foregroundStyle(Color(white: 0.98))
+                .padding(.leading, 8)
+                .padding(.bottom, 7)
+        }
+        .frame(width: 80, height: 104)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     /// Fixed 118pt wide at the frame aspect, per the handoff. `Color.clear` sizes the box, the

@@ -92,7 +92,7 @@ struct BadgePickerSheet: View {
                     ProgressView().tint(.white)
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .flimInlineTitle("Badges")
+                .flimInlineTitle(AppInfo.is17 ? "Seals" : "Badges")
                 .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -236,7 +236,7 @@ private struct BadgePickerContent: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Badges")
+            .flimInlineTitle(AppInfo.is17 ? "Seals" : "Badges")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
