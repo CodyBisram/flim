@@ -566,6 +566,8 @@ final class CameraViewModel: NSObject {
     /// The raw `videoZoomFactor` that equals "1×" on this device. On a device with an ultra-wide
     /// lens, factor 1.0 is the 0.5× lens and the main lens starts at the switch-over factor.
     private var baseZoomFactor: CGFloat = 1
+    /// Highest display zoom the camera offers.
+    static var maxDisplayZoom: CGFloat { AppInfo.is17 ? 5 : 3 }
     /// Lowest display zoom (0.5 when an ultra-wide is present, else 1).
     var minDisplayZoom: CGFloat { 1 / baseZoomFactor }
 
@@ -637,7 +639,8 @@ final class CameraViewModel: NSObject {
     /// `displayZoom` is what the user sees (0.5×, 1×, 2×…). Convert to the device's raw factor.
     func zoom(to displayZoom: CGFloat) {
         guard let device = currentDevice, (try? device.lockForConfiguration()) != nil else { return }
-        let deviceMax = min(device.activeFormat.videoMaxZoomFactor, baseZoomFactor * 3)
+        // 1.7's zoom dial runs to 5× (Blend 1, 1d); 1.6 stops at 3×.
+        let deviceMax = min(device.activeFormat.videoMaxZoomFactor, baseZoomFactor * Self.maxDisplayZoom)
         let rawFactor = max(1, min(displayZoom * baseZoomFactor, deviceMax))
         device.videoZoomFactor = rawFactor
         device.unlockForConfiguration()

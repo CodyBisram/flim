@@ -447,12 +447,9 @@ struct CameraView: View {
                     .padding(.top, 6)
             }
             .overlay(alignment: .bottom) {
-                zoomControl
-                    .padding(Self.zoomTapInset)
+                DeskZoomDial(camera: camera, presets: zoomPresets, label: zoomLabel)
                     .reportsControlRegion()
-                    .padding(EdgeInsets(top: -Self.zoomTapInset.top, leading: -Self.zoomTapInset.leading,
-                                       bottom: -Self.zoomTapInset.bottom, trailing: -Self.zoomTapInset.trailing))
-                    .padding(.bottom, 14)
+                    .padding(.bottom, 10)
             }
             .frame(maxWidth: .infinity)
     }
@@ -1340,4 +1337,174 @@ private struct RollPickerSheet: View {
         .presentationDetents([.medium])
         .flimSheetSurface()
     }
+}
+
+/// 1.7's zoom (Blend 1, 1d), working like the iOS Camera. Tapping 1× or 2× jumps between them.
+/// Holding or dragging sideways on either opens the chips into a dial from 1× to 5×, with a light
+/// tick at each step and a firmer one at each whole number; a pinch on the viewfinder opens it
+/// too. Let go and it folds back into the chips after 1.5s, showing where you landed ("2.4×").
+/// With the dial off in Appearance, the chips only tap, as in 1.6; pinch still works.
+private struct DeskZoomDial: View {
+    static let enabledKey = "zoomDialEnabled"
+
+    let camera: CameraViewModel
+    let presets: [CGFloat]
+    let label: (CGFloat) -> String
+
+    @AppStorage(DeskZoomDial.enabledKey) private var enabled = true
+    @Environment(\.flimAccent) private var accent
+    @State private var open = false
+    @State private var dragStart: CGFloat?
+    @State private var closeTask: Task<Void, Never>?
+    /// Set by a chip tap, so the zoom change it causes doesn't open the dial.
+    @State private var chipTapped = false
+    @State private var lastStep = 10
+
+    private let dialWidth: CGFloat = 230
+    private var lo: CGFloat { 1 }
+    private var hi: CGFloat { CameraViewModel.maxDisplayZoom }
+
+    private var activePreset: CGFloat {
+        presets.min(by: { abs($0 - camera.zoomFactor) < abs($1 - camera.zoomFactor) }) ?? 1
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if open {
+                dial.transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottom)))
+            } else {
+                chips.transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.22), value: open)
+        .onChange(of: camera.zoomFactor) { _, _ in
+            // A pinch (or anything but a chip tap) opens the dial while it moves.
+            guard enabled, !chipTapped, dragStart == nil else { chipTapped = false; return }
+            open = true
+            scheduleClose()
+        }
+    }
+
+    private var chips: some View {
+        HStack(spacing: 10) {
+            ForEach(presets, id: \.self) { level in
+                let active = level == activePreset
+                Text(active ? label(camera.zoomFactor) : label(level))
+                    .font(DeskType.data(12))
+                    .foregroundStyle(active ? Color(white: 0.1) : .white)
+                    .frame(minWidth: 38, minHeight: 38)
+                    .padding(.horizontal, active && camera.zoomFactor != level ? 6 : 0)
+                    .background(active ? accent : Color.black.opacity(0.45), in: Capsule())
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        chipTapped = true
+                        withAnimation(.snappy(duration: 0.2)) { camera.zoom(to: level) }
+                        Haptics.tap()
+                    }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.3).onEnded { _ in
+                        guard enabled else { return }
+                        Haptics.tap()
+                        open = true
+                        scheduleClose()
+                    })
+                    .simultaneousGesture(enabled ? dialDrag : nil)
+                    .accessibilityLabel("\(label(level)) zoom")
+                    .accessibilityAddTraits(active ? [.isSelected] : [])
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAdjustableAction { direction in
+            let step: CGFloat = direction == .increment ? 0.5 : -0.5
+            camera.zoom(to: min(hi, max(lo, camera.zoomFactor + step)))
+        }
+    }
+
+    private var dial: some View {
+        VStack(spacing: 8) {
+            Text(String(format: "%.1f×", camera.zoomFactor))
+                .font(DeskType.data(12))
+                .foregroundStyle(Color(white: 0.1))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 26)
+                .background(accent, in: Capsule())
+            ZStack(alignment: .leading) {
+                HStack(spacing: 0) {
+                    let steps = Int(((hi - lo) * 10).rounded())
+                    ForEach(0...steps, id: \.self) { i in
+                        let whole = i % 10 == 0
+                        Rectangle()
+                            .fill(Color.white.opacity(whole ? 0.95 : 0.55))
+                            .frame(width: whole ? 1.5 : 1, height: whole ? 18 : 9)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(width: dialWidth, height: 20, alignment: .bottom)
+                Rectangle()
+                    .fill(accent)
+                    .frame(width: 2, height: 26)
+                    .offset(x: position(for: camera.zoomFactor) - 1)
+            }
+            HStack(spacing: 0) {
+                ForEach(Int(lo)...Int(hi), id: \.self) { n in
+                    Text("\(n)×")
+                        .font(DeskType.data(10))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(width: dialWidth + dialWidth / CGFloat(Int(hi - lo) * 10))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(Rectangle())
+        .gesture(dialDrag)
+        .accessibilityElement()
+        .accessibilityLabel("Zoom")
+        .accessibilityValue(String(format: "%.1f times", camera.zoomFactor))
+        .accessibilityAdjustableAction { direction in
+            let step: CGFloat = direction == .increment ? 0.5 : -0.5
+            camera.zoom(to: min(hi, max(lo, camera.zoomFactor + step)))
+        }
+    }
+
+    private func position(for zoom: CGFloat) -> CGFloat {
+        (min(hi, max(lo, zoom)) - lo) / (hi - lo) * dialWidth
+    }
+
+    /// Sideways drag: the full dial's width covers 1× to 5×.
+    private var dialDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                if dragStart == nil {
+                    dragStart = camera.zoomFactor
+                    closeTask?.cancel()
+                    open = true
+                }
+                let start = dragStart ?? camera.zoomFactor
+                let next = min(hi, max(lo, start + value.translation.width / dialWidth * (hi - lo)))
+                let step = Int((next * 10).rounded())
+                if step != lastStep {
+                    if step % 10 == 0 { Haptics.tap() } else { DeskZoomDial.selection.selectionChanged() }
+                    lastStep = step
+                }
+                camera.zoom(to: CGFloat(step) / 10)
+            }
+            .onEnded { _ in
+                dragStart = nil
+                scheduleClose()
+            }
+    }
+
+    private func scheduleClose() {
+        closeTask?.cancel()
+        closeTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, dragStart == nil else { return }
+            open = false
+        }
+    }
+
+    private static let selection = UISelectionFeedbackGenerator()
 }

@@ -47,6 +47,16 @@ final class Desk17UITests: XCTestCase {
         assertNoSystemTabBar()
         shot("camera")
 
+        // Holding 1× opens the zoom dial (Blend 1, 1d); it folds back on its own.
+        let oneX = app.descendants(matching: .any)["1× zoom"].firstMatch
+        if oneX.waitForExistence(timeout: 3) {
+            oneX.press(forDuration: 0.6)
+            shot("zoom_dial")
+            // The chips give way to the dial while it's open.
+            XCTAssertFalse(app.descendants(matching: .any)["2× zoom"].exists, "the zoom dial did not open")
+            sleep(2)
+        }
+
         for label in ["Darkroom", "Rolls", "You", "Feed"] {
             bar(label).tap()
             XCTAssertTrue(bar(label).isSelected, "\(label) did not become the selected tab")
