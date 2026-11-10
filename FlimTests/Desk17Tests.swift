@@ -36,3 +36,12 @@ final class DeskLayoutTests: XCTestCase {
         XCTAssertEqual(DeskLayout.open.railEdge, .leading)
     }
 }
+
+final class SpotlightStampTests: XCTestCase {
+    func testWeekKeysStampAsISOWeeks() {
+        XCTAssertEqual(SpotlightWeekLabel.weekNumber("2026-11-02"), 45)
+        XCTAssertEqual(SpotlightWeekLabel.stamp("2026-11-02"), "SPOTLIGHT · WK 45")
+        XCTAssertEqual(SpotlightWeekLabel.weekNumber("2026-12-28"), 53)
+        XCTAssertEqual(SpotlightWeekLabel.stamp("nonsense"), "SPOTLIGHT")
+    }
+}

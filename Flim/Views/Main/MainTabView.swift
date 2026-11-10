@@ -447,7 +447,8 @@ struct MainTabView: View {
         // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
             // FLIM Beta says it in its own top row (V2TopRow).
-            if !AppInfo.isV2, !network.isConnected {
+            // 1.7's Feed says it in its own banner under the title (DeskOfflineBanner).
+            if !AppInfo.isV2, !network.isConnected, !(AppInfo.is17 && selected == 3) {
                 FlimToast("No connection", kind: .info, symbol: "wifi.slash")
                     .padding(.top, 8)
                     // It sits over the camera's self timer and roll picker; it only informs,

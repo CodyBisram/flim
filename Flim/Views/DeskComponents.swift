@@ -121,3 +121,33 @@ struct DeskFailedState: View {
         }
     }
 }
+
+/// "You're offline." under a tab's title while the connection is gone (Blend 2, 8h). It goes on
+/// its own when the connection comes back; saved shots stay readable under it.
+struct DeskOfflineBanner: View {
+    @Environment(NetworkMonitor.self) private var network
+
+    var body: some View {
+        if !network.isConnected {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "wifi.slash")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .padding(.top, 2)
+                (Text("You're offline. ").fontWeight(.semibold).foregroundColor(FlimTheme.textPrimary)
+                 + Text("Showing what was saved. The camera still works, and posts go out when you're back.")
+                    .foregroundColor(FlimTheme.textSecondary))
+                    .flimFont(13.5, relativeTo: .footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FlimTheme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 24)
+            .padding(.bottom, 8)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityElement(children: .combine)
+        }
+    }
+}

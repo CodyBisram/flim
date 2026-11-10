@@ -321,7 +321,17 @@ struct FeedView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .flimTopBar { header }
+            .flimTopBar {
+                if AppInfo.is17 {
+                    VStack(spacing: 0) {
+                        header
+                        DeskOfflineBanner()
+                    }
+                    .animation(.easeInOut(duration: 0.3), value: network.isConnected)
+                } else {
+                    header
+                }
+            }
         }
         .background(GeometryReader { proxy in
             Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in

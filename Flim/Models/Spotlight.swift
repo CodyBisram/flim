@@ -273,6 +273,21 @@ struct SpotlightPutUpResult: Decodable, Equatable {
 /// read it as month 9 of that calendar. The `calendar` a caller passes contributes only its
 /// time zone.
 enum SpotlightWeekLabel {
+    /// The ISO week number of a week key ("2026-11-02" is week 45), for 1.7's stamp.
+    static func weekNumber(_ weekKey: String) -> Int? {
+        guard var parts = components(weekKey) else { return nil }
+        parts.hour = 12
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = TimeZone(identifier: "UTC")!
+        guard let date = iso.date(from: parts) else { return nil }
+        return iso.component(.weekOfYear, from: date)
+    }
+
+    /// "SPOTLIGHT · WK 45"; just "SPOTLIGHT" for a key that doesn't parse.
+    static func stamp(_ weekKey: String) -> String {
+        weekNumber(weekKey).map { "SPOTLIGHT · WK \($0)" } ?? "SPOTLIGHT"
+    }
+
     static func components(_ weekKey: String) -> DateComponents? {
         let parts = weekKey.split(separator: "-")
         guard parts.count == 3,

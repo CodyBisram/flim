@@ -148,7 +148,60 @@ struct SpotlightStrip: View {
 
     private var weekPhrase: String { SpotlightWeekLabel.phrase(week.weekKey) }
 
+    @ViewBuilder
     var body: some View {
+        if AppInfo.is17 { deskBody } else { v1Body }
+    }
+
+    /// 1.7's strip (Blend 3, 11a), on 1.6's rules: the week's published frames on a box-tone
+    /// card, "SPOTLIGHT · WK 44" stamped in mono, See the week on the right. It scrolls away with
+    /// the feed like 1.6's.
+    private var deskBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                Haptics.tap()
+                onOpenWeeks()
+            } label: {
+                HStack(spacing: 8) {
+                    Text(SpotlightWeekLabel.stamp(week.weekKey))
+                        .font(DeskType.data(11))
+                        .tracking(1.6)
+                        .foregroundStyle(accent)
+                    if isNew {
+                        Text("new")
+                            .flimFont(12, weight: .semibold, relativeTo: .caption2)
+                            .foregroundStyle(FlimTheme.newRed)
+                            .padding(.horizontal, 8).padding(.vertical, 1)
+                            .overlay(Capsule().strokeBorder(FlimTheme.newRed, lineWidth: 1.5))
+                    }
+                    Spacer(minLength: 8)
+                    HStack(spacing: 4) {
+                        Text("See the week")
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+                    }
+                    .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Spotlight, \(weekPhrase)\(isNew ? ", new" : ""). See the week")
+            .accessibilityAddTraits(.isButton)
+            .padding(.horizontal, 14)
+
+            SpotlightFramesRow(frames: week.frames, openingId: openingId, onOpen: onOpenFrame)
+                .padding(.bottom, 14)
+        }
+        .padding(.top, 4)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(FlimTheme.surface))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+    }
+
+    private var v1Body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 Haptics.tap()
