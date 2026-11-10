@@ -264,3 +264,7 @@ Date	App Name	App Apple Identifier	Download Type	App Version	Device	Platform Ver
 2026-11-06	FLIM: Disposable Camera	6786079629	Redownload	1.6.3	iPhone	iOS 27.0	App Store browse	No page		US	1
 2026-11-07	FLIM: Disposable Camera	6786079629	First-time download	1.6.3	iPhone	iOS 27.2	App Store browse	Store sheet		US	1
 2026-11-07	FLIM: Disposable Camera	6786079629	First-time download	1.6.3	iPhone	iOS 27.2	App referrer	Store sheet		KR	1
+2026-11-08	FLIM: Disposable Camera	6786079629	First-time download	1.6.3	iPhone	iOS 26.6	Web referrer	Product page		GB	1
+2026-11-08	FLIM: Disposable Camera	6786079629	First-time download	1.6.3	iPad	iOS 27.0	App Store browse	No page		CN	1
+2026-11-08	FLIM: Disposable Camera	6786079629	First-time download	1.6.3	iPhone	iOS 27.0	Web referrer	Product page		US	1
+2026-11-08	FLIM: Disposable Camera	6786079629	Redownload	1.6.3	iPhone	iOS 26.6	App Store search	Product page		US	1
