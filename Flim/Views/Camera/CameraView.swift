@@ -373,6 +373,15 @@ struct CameraView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 88)
+                // Blend 2, 7f: once, under the shutter, until the first shot (or a tap).
+                .overlay(alignment: .bottom) {
+                    if !hasSeenCoach, camera.permission == .authorized {
+                        deskFirstShotHint
+                            .offset(y: 48)
+                            .transition(.opacity)
+                    }
+                }
+                .zIndex(1)
                 Spacer(minLength: 0)
             }
 
@@ -395,7 +404,6 @@ struct CameraView: View {
                 }
                 .animation(.snappy(duration: 0.25), value: rollDevelopedFallbackToast)
 
-                coachOverlay
 
                 if let countdown, countdown > 0 {
                     Text("\(countdown)")
@@ -409,6 +417,27 @@ struct CameraView: View {
             }
         }
         .task(id: photos.pendingCaptureCount) { await refreshLastShot() }
+    }
+
+    /// The first-run hint (Blend 2, 7f), standing in for 1.6's full-screen coach. Seeing it
+    /// counts as having seen the coach, so the notification ask still waits for it.
+    private var deskFirstShotHint: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) { hasSeenCoach = true }
+        } label: {
+            Text("Take your first shot. It waits in your Darkroom until you post it.")
+                .flimFont(14, relativeTo: .footnote)
+                .foregroundStyle(DeskColor.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(DeskColor.rgb(0xFBF6F0), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+                .environment(\.colorScheme, .light)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 32)
+        .accessibilityHint("Dismisses the hint")
     }
 
     private var deskViewfinder: some View {
@@ -721,6 +750,8 @@ struct CameraView: View {
         // A self-timer can run out after the camera was taken away mid-countdown.
         guard !camera.isInterrupted else { Haptics.error(); return }
         Haptics.shutter()
+        // 1.7's first-shot hint goes with the first shot.
+        if AppInfo.is17, !hasSeenCoach { withAnimation(.easeInOut(duration: 0.3)) { hasSeenCoach = true } }
         // No app shutter sound, AVCapturePhotoOutput plays the system camera-shutter sound itself
         // at the actual capture (correctly timed, and after the flash fires). Playing our own too
         // caused a double shutter noise with flash on.

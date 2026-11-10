@@ -51,25 +51,41 @@ struct OnboardingView: View {
                     // sitting on the page. A dark viewfinder is black with a hairline edge and
                     // the faintest warm centre, which is what a real one shows before the feed
                     // starts.
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: AppInfo.is17 ? 12 : 4)
                         .fill(
                             RadialGradient(colors: [Color(red: 0.055, green: 0.045, blue: 0.035), Color(red: 0.012, green: 0.012, blue: 0.012)],
                                            center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 360)
                         )
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: AppInfo.is17 ? 12 : 4).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                     VStack(spacing: 12) {
-                        Text("\(AppInfo.appName) is a camera.")
-                            .flimFont(26, weight: .thin, relativeTo: .title2)
-                            .foregroundStyle(.white)
-                        Text("Point and shoot. The frame comes back with the look already on it.")
+                        if AppInfo.is17 {
+                            // Blend 2, 7d: the reason before the system's one-time ask.
+                            Image(systemName: "camera")
+                                .font(.system(size: 22, weight: .regular))
+                                .foregroundStyle(accent)
+                                .frame(width: 64, height: 64)
+                                .background(Circle().fill(Color.white.opacity(0.06)))
+                            Text("\(AppInfo.appName) needs your camera")
+                                .font(DeskType.serif(28, relativeTo: .title))
+                                .foregroundStyle(Color(white: 0.95))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        } else {
+                            Text("\(AppInfo.appName) is a camera.")
+                                .flimFont(26, weight: .thin, relativeTo: .title2)
+                                .foregroundStyle(.white)
+                        }
+                        Text(AppInfo.is17 ? "Shots go to your Darkroom first. Nothing is posted until you choose."
+                                          : "Point and shoot. The frame comes back with the look already on it.")
                             .flimFont(15, relativeTo: .body)
-                            .foregroundStyle(FlimTheme.textSecondary)
+                            // On the dark viewfinder whatever the desk, so never Paper's dark ink.
+                            .foregroundStyle(AppInfo.is17 ? Color(white: 0.72) : FlimTheme.textSecondary)
                             .multilineTextAlignment(.center)
                             .lineSpacing(3)
                             .padding(.horizontal, 40)
 
                         Button(action: openCamera) {
-                            Text("Take a shot")
+                            Text(AppInfo.is17 ? "Allow camera" : "Take a shot")
                                 .flimFont(16, weight: .semibold, relativeTo: .body)
                                 .foregroundStyle(.black)
                                 .padding(.horizontal, 28)
