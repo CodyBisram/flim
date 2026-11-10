@@ -208,8 +208,13 @@ struct UserPageView: View {
                         } else if loaded && profile == nil {
                             // No profile came back, so the page has nothing real on it. Offer a
                             // retry instead of an empty grid under a blank header.
-                            ErrorState(message: "Couldn't load this profile.") { await load() }
-                                .padding(.top, 30)
+                            if AppInfo.is17 {
+                                DeskFailedState(title: "Couldn't load this page.", message: DeskFailedState.standardMessage) { await load() }
+                                    .padding(.top, 30)
+                            } else {
+                                ErrorState(message: "Couldn't load this profile.") { await load() }
+                                    .padding(.top, 30)
+                            }
                         } else if !loaded && gridPosts.isEmpty {
                             // First visit this session, nothing seeded from `profilePostsCache`:
                             // a shimmer grid instead of the blank void under the header while
@@ -259,13 +264,25 @@ struct UserPageView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)   // let the cover show under the back/gear
         .onAppear { pageExit.pageAppeared() }
         .onDisappear { pageExit.pageDisappeared() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if isSelf {
+                if isSelf, AppInfo.is17 {
+                    // Blend 1, 4a: add a friend and Settings, top right, in ink.
+                    HStack(spacing: 4) {
+                        Button { showInvite = true } label: {
+                            Image(systemName: "person.badge.plus").foregroundStyle(FlimTheme.textPrimary)
+                        }
+                        .accessibilityLabel("Invite a friend")
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape").foregroundStyle(FlimTheme.textPrimary)
+                        }
+                        .accessibilityLabel("Settings")
+                    }
+                } else if isSelf {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape").foregroundStyle(accent)
                     }
@@ -282,7 +299,7 @@ struct UserPageView: View {
                             Button(role: .destructive) { blockAccount() } label: { Label("Block", systemImage: "hand.raised") }
                         }
                     } label: {
-                        Image(systemName: "ellipsis").foregroundStyle(accent)
+                        Image(systemName: "ellipsis").foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : accent)
                     }
                     .accessibilityLabel("More")
                 }
@@ -296,6 +313,11 @@ struct UserPageView: View {
                 showInvite = true
             }
             await load()
+            // 1.7's header counts friends (mutual follows) from your own follow sets.
+            if AppInfo.is17, isSelf, let uid = auth.currentUser?.id {
+                await feed.loadFollowing(userId: uid)
+                await feed.loadFollowers(userId: uid)
+            }
             // Only the owner's own page shows a count, and it fails soft to `.unknown`, which
             // renders a plain "Invite" rather than a number that could be wrong.
             if isSelf { inviteQuota = await auth.ownInviteQuota() }
@@ -404,7 +426,107 @@ struct UserPageView: View {
             })
     }
 
+    @ViewBuilder
     private func pageHeader(topInset: CGFloat) -> some View {
+        if AppInfo.is17 { deskPageHeader(topInset: topInset) } else { v1PageHeader(topInset: topInset) }
+    }
+
+    /// Mutual follows: 1.7's friends. Known for your own page only (your follow sets are loaded).
+    private var deskFriendCount: Int? {
+        guard isSelf else { return nil }
+        return feed.followingIds.intersection(feed.followerIds).count
+    }
+
+    /// 1.7's page header (Blend 1, 4a and 4b; Blend 4, 12d): avatar left, the name in Caslon,
+    /// the handle and friends under it, the one chosen seal on the right. Your page: Edit page,
+    /// Friends, Seals. Someone else's: Add friend, Requested or Friends.
+    private func deskPageHeader(topInset: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Color.clear.frame(height: topInset + 26)
+            HStack(spacing: 16) {
+                Button { if avatarURL != nil { showAvatarViewer = true } } label: {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 64, height: 64)
+                        .overlay {
+                            if let avatarURL {
+                                CachedImage(url: avatarURL, maxPixel: 200, cacheKey: profile?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                            } else {
+                                Text(String((profile?.username ?? "?").prefix(1)).uppercased())
+                                    .font(DeskType.serif(26, relativeTo: .title))
+                                    .foregroundStyle(Color(white: 0.98))
+                            }
+                        }
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile photo")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(profile?.name ?? "…")
+                        .font(DeskType.serif(26, relativeTo: .title))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text([profile?.handle ?? "@…", deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" }]
+                            .compactMap { $0 }.joined(separator: " · "))
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if let seal = displayedBadges.first, !isBlocked {
+                    ProfileBadgePill(badge: seal, onTap: { badgeTapped($0) })
+                }
+            }
+            if !isSelf && !isBlocked && followsMe && !isFollowing {
+                Text("Wants to be friends")
+                    .flimFont(12, weight: .semibold, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textSecondary)
+            }
+            if let bio = profile?.bio, !bio.isEmpty {
+                Text(bio)
+                    .flimFont(14, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textSecondary)
+            }
+            if isSelf {
+                HStack(spacing: 8) {
+                    deskBoxButton("Edit page") { showEditProfile = true }
+                    deskBoxButton("Friends") { followList = .following }
+                    deskBoxButton(unseenBadgeCount > 0 ? "Seals ·" : "Seals") { showBadgePicker = true }
+                        .overlay(alignment: .topTrailing) {
+                            if unseenBadgeCount > 0 {
+                                Circle().fill(FlimTheme.newRed).frame(width: 8, height: 8).offset(x: -6, y: 4)
+                            }
+                        }
+                }
+                FirstVisitLine(surface: .profile)
+            } else if !isBlocked {
+                let state = FeedService.FollowRelationship.deskState(following: isFollowing, followsMe: followsMe)
+                Button { toggleFollow() } label: {
+                    DeskPill(FeedService.FollowRelationship.deskLabel(state),
+                             systemImage: state == .add ? "person.badge.plus" : (state == .friends ? "checkmark" : nil),
+                             style: state == .add ? .solid : .box)
+                }
+                .disabled(followBusy)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private func deskBoxButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(FlimTheme.surface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func v1PageHeader(topInset: CGFloat) -> some View {
         VStack(spacing: 12) {
             // Cover banner extends up behind the nav bar (topInset), so the back/gear overlap it.
             ZStack(alignment: .bottom) {
