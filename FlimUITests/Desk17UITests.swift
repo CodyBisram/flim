@@ -87,4 +87,21 @@ final class Desk17UITests: XCTestCase {
             shot("pushed")
         }
     }
+
+    /// Settings on Paper, from your page (the chapters demo renders your own page): the desk
+    /// picker is there, and choosing Slate takes.
+    func testSettingsOffersTheDesks() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "paper"]
+        app.launch()
+        let gear = app.buttons["Settings"].firstMatch
+        XCTAssertTrue(gear.waitForExistence(timeout: 15))
+        gear.tap()
+        let slate = app.buttons["Slate"].firstMatch
+        if !slate.waitForExistence(timeout: 5) { app.swipeUp() }
+        XCTAssertTrue(slate.waitForExistence(timeout: 5), "no desk picker in Settings")
+        shot("settings_paper")
+        app.swipeUp()
+        shot("settings_paper_lower")
+    }
 }

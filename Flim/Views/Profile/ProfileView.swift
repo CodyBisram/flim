@@ -53,6 +53,8 @@ struct ProfileView: View {
     @AppStorage("soundEffects") private var soundEffects = true
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"
+    /// 1.7: the desk (Paper, Slate or the phone's setting), read by `DeskEnvironment` at the root.
+    @AppStorage(Desk.storageKey) private var deskRaw = Desk.fallback.rawValue
 
     /// Film Lab is already TestFlight-only; restricted further to the owner's account
     /// specifically. An unexplained "skip the FLIM look" toggle in a beta tester's own Settings
@@ -131,6 +133,7 @@ struct ProfileView: View {
                 .listRowBackground(FlimTheme.sheetRow)
 
                 Section {
+                    if AppInfo.is17 { deskRow }
                     accentRow
                 } header: { sectionHeader("Appearance") }
 
@@ -156,7 +159,7 @@ struct ProfileView: View {
                     Section {
                         Toggle(isOn: $neutralCapture) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Neutral capture").foregroundStyle(.white)
+                                Text("Neutral capture").foregroundStyle(FlimTheme.textPrimary)
                                 Text("Shots skip the FLIM look (LUT calibration)")
                                     .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             }
@@ -222,10 +225,10 @@ struct ProfileView: View {
             .scrollContentBackground(.hidden)
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Settings")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .sheet(isPresented: $showBlockedUsers) {
@@ -338,7 +341,7 @@ struct ProfileView: View {
                     .foregroundStyle(accent)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                    Text(title).flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                     Text(subtitle).flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                 }
                 Spacer()
@@ -356,13 +359,45 @@ struct ProfileView: View {
                     .font(.system(size: 15))
                     .foregroundStyle(accent)
                     .frame(width: 22)
-                Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                Text(title).flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(FlimTheme.textTertiary)
             }
         }
+        .listRowBackground(FlimTheme.bgElevated)
+    }
+
+    /// 1.7's desk choice (Blend 1, 5a): three small cards, Paper, Slate and Match system.
+    private var deskRow: some View {
+        HStack(spacing: 10) {
+            ForEach(Desk.allCases) { desk in
+                let chosen = (Desk(rawValue: deskRaw) ?? Desk.fallback) == desk
+                Button {
+                    Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.3)) { deskRaw = desk.rawValue }
+                } label: {
+                    VStack(spacing: 8) {
+                        DeskSwatch(desk: desk)
+                            .frame(height: 74)
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(chosen ? FlimTheme.textPrimary : FlimTheme.stroke, lineWidth: chosen ? 2 : 1))
+                        Text(desk.label)
+                            .flimFont(13, weight: .semibold, relativeTo: .footnote)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(desk.label)
+                .accessibilityAddTraits(chosen ? [.isSelected] : [])
+            }
+        }
+        .padding(.vertical, 8)
         .listRowBackground(FlimTheme.bgElevated)
     }
 
@@ -377,7 +412,7 @@ struct ProfileView: View {
                     Circle()
                         .fill(swatch.color)
                         .frame(width: 30, height: 30)
-                        .overlay(Circle().strokeBorder(.white, lineWidth: accentColor == swatch.rawValue ? 2.5 : 0))
+                        .overlay(Circle().strokeBorder(FlimTheme.textPrimary, lineWidth: accentColor == swatch.rawValue ? 2.5 : 0))
                         .frame(width: 44, height: 44)   // the target; the swatch itself stays 30
                         .contentShape(Rectangle())
                 }
@@ -476,10 +511,10 @@ struct EditProfileView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Edit profile")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .sheet(isPresented: $showEditName) {
@@ -584,13 +619,13 @@ struct EditProfileView: View {
     }
 
     private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
+        Rectangle().fill(AppInfo.is17 ? FlimTheme.stroke : Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
     }
 
     private func editRow(_ title: String, value: String, isPlaceholder: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                Text(title).flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 Spacer()
                 Text(value)
                     .flimFont(15, relativeTo: .body)
@@ -635,10 +670,10 @@ private struct EditBioSheet: View {
                     TextField("A little about you…", text: $bio, axis: .vertical)
                         .lineLimit(1...4)
                         .flimFont(17, relativeTo: .body)
-                        .foregroundStyle(.white)
-                        .tint(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .tint(FlimTheme.textPrimary)
                         .padding(16)
-                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                     Text("\(bio.count)/140")
                         .flimFont(12, relativeTo: .caption)
                         .foregroundStyle(FlimTheme.textTertiary)
@@ -653,10 +688,10 @@ private struct EditBioSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Bio")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
@@ -704,10 +739,10 @@ private struct EditNameSheet: View {
                         .textContentType(.givenName)
                         .autocorrectionDisabled()
                         .flimFont(17, relativeTo: .body)
-                        .foregroundStyle(.white)
-                        .tint(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .tint(FlimTheme.textPrimary)
                         .padding(16)
-                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                         // Stops at the limit as you type, the same limit signup keeps, so Save
                         // never has anything to cut. It used to save the first 40 and drop the
                         // rest with no counter and no word, which read as the app eating names.
@@ -730,10 +765,10 @@ private struct EditNameSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Name")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
@@ -787,12 +822,12 @@ private struct EditUsernameSheet: View {
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .flimFont(17, relativeTo: .body)
-                            .foregroundStyle(.white)
-                            .tint(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .tint(FlimTheme.textPrimary)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
-                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
 
                     // Same live reason the SIGN-UP screen gives. That fix never made it here, so
                     // changing your username later left Save greyed out saying nothing, which is
@@ -822,10 +857,10 @@ private struct EditUsernameSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Edit username")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
         }
@@ -844,5 +879,48 @@ private struct EditUsernameSheet: View {
             self.error = (error as? AuthError)?.errorDescription ?? UserFacingError.messageIfNotCancelled(for: error)
         }
         isSaving = false
+    }
+}
+
+/// A desk drawn small: its ground, a box-tone card, two lines of ink. Match system is split
+/// corner to corner, Paper over Slate.
+private struct DeskSwatch: View {
+    let desk: Desk
+
+    var body: some View {
+        switch desk {
+        case .paper: card(ground: DeskColor.rgb(0xF3E7DC), box: DeskColor.rgb(0xC9A27A), ink: DeskColor.rgb(0x2A2420))
+        case .slate: card(ground: DeskColor.rgb(0x1C1917), box: DeskColor.rgb(0x7A5A3C), ink: DeskColor.rgb(0xF3E7DC))
+        case .system:
+            ZStack {
+                DeskColor.rgb(0xF3E7DC)
+                DeskColor.rgb(0x1C1917).clipShape(DiagonalHalf())
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func card(ground: Color, box: Color, ink: Color) -> some View {
+        ZStack(alignment: .topLeading) {
+            ground
+            VStack(alignment: .leading, spacing: 5) {
+                RoundedRectangle(cornerRadius: 4).fill(box).frame(height: 26)
+                Capsule().fill(ink).frame(width: 40, height: 4)
+                Capsule().fill(ink.opacity(0.4)).frame(width: 26, height: 4)
+            }
+            .padding(10)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct DiagonalHalf: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }
