@@ -32,6 +32,8 @@ struct OnboardingView: View {
         isOpening = true
         Haptics.tap()
         hasOnboarded = true
+        // A new account starts on 1.7; the "what moved" card is for people coming from 1.6.
+        UserDefaults.standard.set(true, forKey: DeskUpdateCard.seenKey)
         Activation.log(.onboardingFinished)
     }
 

@@ -105,6 +105,7 @@
 		35261E7F6A84FE744D6C09E5 /* V2Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72386D84C6F4111AF41C9B29 /* V2Layout.swift */; };
 		36C845464452CA008332A8D7 /* FeedService+Spotlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2193184E4978410B12F2807 /* FeedService+Spotlight.swift */; };
 		3764DD443F769BADCDB5371D /* OptimisticRollbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0F438C8D66777D1E2AFB3D /* OptimisticRollbackTests.swift */; };
+		37C54E4FC6542E1FAACBEF2A /* DeskUpdateCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 489A75E0316F239B6C9CFD90 /* DeskUpdateCard.swift */; };
 		3867802F2389D9765988E950 /* Activation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 861FB2928E71AE4B67024C57 /* Activation.swift */; };
 		38A6FEF2AD81D86634308EE0 /* FeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */; };
 		3A185DD5541644068ABB02B4 /* RollDevelopAskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F999D7EC066CFB6B9D2D7F /* RollDevelopAskSheet.swift */; };
@@ -594,6 +595,7 @@
 		46744648380F2F94FFA7161E /* FrameCreditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameCreditTests.swift; sourceTree = "<group>"; };
 		4727E0F91D5CBF486124674F /* ClockWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockWindowTests.swift; sourceTree = "<group>"; };
 		4814024C4A3A6941353B8213 /* RollDetailDemoHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailDemoHost.swift; sourceTree = "<group>"; };
+		489A75E0316F239B6C9CFD90 /* DeskUpdateCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskUpdateCard.swift; sourceTree = "<group>"; };
 		48E604C6FB5140A9788F87E4 /* BurstGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstGrouping.swift; sourceTree = "<group>"; };
 		498109790A8BAE9899A4F515 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
 		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -967,6 +969,7 @@
 			children = (
 				005E47AB939B00CD50B55188 /* ChromePreviewDemoHost.swift */,
 				91762EF5866C342B62CC88D2 /* DeskTabBar.swift */,
+				489A75E0316F239B6C9CFD90 /* DeskUpdateCard.swift */,
 				0A093E4509E9F7972F5B26E7 /* MainTabView.swift */,
 				40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */,
 				147B2BC0EFA598B20C13C00A /* VersionGateBlockingView.swift */,
@@ -1905,6 +1908,7 @@
 				4422AB8F59ED0942AE23D063 /* DeskComponents.swift in Sources */,
 				5E3C4F9B5850ABC72D2D862C /* DeskPostView.swift in Sources */,
 				75FC774DE8504AD9164B4F2D /* DeskTabBar.swift in Sources */,
+				37C54E4FC6542E1FAACBEF2A /* DeskUpdateCard.swift in Sources */,
 				5BAC7C2E253501071449E682 /* DiscoverRanking.swift in Sources */,
 				82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */,
 				E53D957844CA00D2B88C5608 /* EmojiCatalog.swift in Sources */,

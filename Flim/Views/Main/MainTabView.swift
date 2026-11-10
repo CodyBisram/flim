@@ -125,6 +125,8 @@ struct MainTabView: View {
     /// A frame a widget tap asked for, handed to the Darkroom to open in its pager.
     @State private var openPhotoId: UUID?
     @AppStorage("hasOnboarded") private var hasOnboarded = false
+    /// 1.7: the one-time "what moved" card has been shown (DeskUpdateCard).
+    @AppStorage(DeskUpdateCard.seenKey) private var deskUpdateCardSeen = false
     /// The camera's first-run coach, written by its "Got it" (`CameraView.coachOverlay`). Read
     /// here only to time the notification primer after it; see `maybeShowNotifPrimer`.
     @AppStorage("hasSeenCameraCoach") private var hasSeenCameraCoach = false
@@ -460,6 +462,13 @@ struct MainTabView: View {
         // The app-wide undo capsule, above the tab bar. Screens presented OVER this
         // (the photo pager's fullScreenCover) host their own copy; see `UndoCapsuleHost`.
         .undoCapsuleHost()
+        // 1.7's update card, once, for an account that was already here (Blend 1, 5b). Always
+        // Slate when it opens; the desk it sets takes over after Continue.
+        .fullScreenCover(isPresented: Binding(get: { AppInfo.is17 && hasOnboarded && !deskUpdateCardSeen }, set: { _ in })) {
+            DeskUpdateCard { deskUpdateCardSeen = true }
+                .environment(\.colorScheme, .dark)
+                .preferredColorScheme(.dark)
+        }
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
             #if FLIM_V2
             V2Onboarding()

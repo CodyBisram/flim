@@ -35,7 +35,7 @@ struct ChromePreviewDemoHost: View {
             // is removed.
             let defaults = UserDefaults.standard
             var firstRunDone: [String: Any] = [:]
-            for key in ["hasOnboarded", "hasSeenCameraCoach", "didShowNotifPrimer", "didRetryUnaskedNotifPrimer"] {
+            for key in ["hasOnboarded", "hasSeenCameraCoach", "didShowNotifPrimer", "didRetryUnaskedNotifPrimer", DeskUpdateCard.seenKey] {
                 if defaults.object(forKey: key) != nil, !defaults.bool(forKey: key) {
                     defaults.removeObject(forKey: key)
                 }
