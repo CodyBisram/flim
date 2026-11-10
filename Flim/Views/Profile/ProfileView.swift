@@ -58,6 +58,7 @@ struct ProfileView: View {
     @AppStorage(DeskGround.grainKey) private var deskGrain = true
     /// 1.7's camera zoom dial (Blend 1, 1d and 5a); the key `DeskZoomDial` reads.
     @AppStorage("zoomDialEnabled") private var zoomDial = true
+    @AppStorage(DeskLightLeak.enabledKey) private var cameraLeak = true
 
     /// Film Lab is already TestFlight-only; restricted further to the owner's account
     /// specifically. An unexplained "skip the FLIM look" toggle in a beta tester's own Settings
@@ -142,6 +143,11 @@ struct ProfileView: View {
                         // Blend 1, 5a: grain on the desk, never on a photograph.
                         Toggle(isOn: $deskGrain) {
                             Text("Grain").flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
+                        }
+                        .tint(accent)
+                        .listRowBackground(FlimTheme.bgElevated)
+                        Toggle(isOn: $cameraLeak) {
+                            Text("Light leak on the camera").flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                         }
                         .tint(accent)
                         .listRowBackground(FlimTheme.bgElevated)

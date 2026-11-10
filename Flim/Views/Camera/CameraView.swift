@@ -79,6 +79,8 @@ struct CameraView: View {
     // Whether to schedule a local "your photo developed" reminder (toggled in Profile).
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var unsortedCount = 0
+    /// 1.7: the warm leak on the viewfinder, switchable in Appearance.
+    @AppStorage(DeskLightLeak.enabledKey) private var cameraLeak = true
     /// 1.7: your newest personal shot, bottom right; tapping it opens the Darkroom.
     @State private var lastShot: Photo?
     @State private var lastShotURL: URL?
@@ -414,6 +416,8 @@ struct CameraView: View {
             // Dark under the picture, so the frame reads as a frame while the camera starts.
             .background(Color.black)
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            // The warm leak sits on the viewfinder only (Blend 1, 1a); the saved photo never has it.
+            .overlay { if cameraLeak { DeskLightLeak() } }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 if let reticle = camera.focusReticle {
@@ -1507,4 +1511,23 @@ private struct DeskZoomDial: View {
     }
 
     private static let selection = UISelectionFeedbackGenerator()
+}
+
+/// A warm light leak from the viewfinder's top left (Blend 1, 1a): on the preview only, never in
+/// the photograph, which is captured from the camera, not this view.
+struct DeskLightLeak: View {
+    static let enabledKey = "cameraLightLeak"
+
+    var body: some View {
+        GeometryReader { proxy in
+            RadialGradient(colors: [Color(red: 0.98, green: 0.74, blue: 0.36).opacity(0.32),
+                                    Color(red: 0.85, green: 0.59, blue: 0.23).opacity(0.12),
+                                    .clear],
+                           center: .topLeading, startRadius: 0,
+                           endRadius: max(proxy.size.width, proxy.size.height) * 0.6)
+                .scaleEffect(x: 1.4, y: 1, anchor: .topLeading)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
