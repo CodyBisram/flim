@@ -76,7 +76,7 @@ struct WaitlistSheet: View {
             .toolbar {
                 if joinedEmail == nil {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                        Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                     }
                 }
             }
@@ -89,7 +89,7 @@ struct WaitlistSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(Waitlist.Copy.title)
                     .flimFont(22, weight: .light, relativeTo: .title3)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 Text(Waitlist.Copy.body)
                     .flimFont(14, relativeTo: .subheadline)
@@ -153,7 +153,7 @@ struct WaitlistSheet: View {
                 .accessibilityHidden(true)
             input()
                 .flimFont(17, relativeTo: .body)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .tint(accent)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
@@ -165,7 +165,7 @@ struct WaitlistSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(Waitlist.Copy.joinedTitle)
                 .flimFont(22, weight: .light, relativeTo: .title3)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Text(Waitlist.Copy.joinedBody(email: email))
                 .flimFont(14, relativeTo: .subheadline)

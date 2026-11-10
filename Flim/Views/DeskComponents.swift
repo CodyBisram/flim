@@ -151,3 +151,23 @@ struct DeskOfflineBanner: View {
         }
     }
 }
+
+
+/// A screen title: Caslon in 1.7, the 1.6 treatment (passed in) otherwise.
+struct DeskTitleOr<V1: View>: ViewModifier {
+    let size: CGFloat
+    let v1: (AnyView) -> V1
+
+    init(size: CGFloat, @ViewBuilder v1: @escaping (AnyView) -> V1) {
+        self.size = size
+        self.v1 = v1
+    }
+
+    func body(content: Content) -> some View {
+        if AppInfo.is17 {
+            content.font(DeskType.serif(size, relativeTo: .title))
+        } else {
+            v1(AnyView(content))
+        }
+    }
+}

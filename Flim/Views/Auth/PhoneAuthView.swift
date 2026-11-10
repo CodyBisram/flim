@@ -47,10 +47,17 @@ struct EmailAuthView: View {
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(AppInfo.appName)
-                        .flimFont(34, weight: .thin, relativeTo: .title3)
-                        .tracking(12)
-                        .foregroundStyle(.white)
+                    if AppInfo.is17 {
+                        // Blend 2, 7a: the wordmark in Caslon.
+                        Text(AppInfo.appName)
+                            .font(DeskType.serif(48, relativeTo: .largeTitle))
+                            .foregroundStyle(FlimTheme.textPrimary)
+                    } else {
+                        Text(AppInfo.appName)
+                            .flimFont(34, weight: .thin, relativeTo: .title3)
+                            .tracking(12)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                    }
                     // One line, not a pitch. The camera says the rest by being the next screen.
                     Text("Just your email to get started.")
                         .font(.system(size: subtitleSize))
@@ -70,11 +77,11 @@ struct EmailAuthView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .flimFont(17, relativeTo: .body)
-                        .foregroundStyle(.white)
-                        .tint(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .tint(FlimTheme.textPrimary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
-                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                 }
 
                 if let error {
@@ -132,7 +139,7 @@ struct EmailAuthView: View {
             if inviteExpanded {
                 Text(needsInvite ? "You'll need an invite code to join" : "Have an invite code?")
                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                 Text(needsInvite
                      ? "Enter the code a friend sent you and we'll get you straight in."
                      : "New here? Enter it now and you'll go straight in. Members can leave it blank.")
@@ -145,8 +152,8 @@ struct EmailAuthView: View {
                     .flimFont(24, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-                    .tint(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .tint(FlimTheme.textPrimary)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.characters)
                     .focused($codeFocused)
@@ -157,7 +164,7 @@ struct EmailAuthView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
-                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                     .padding(.top, 6)
 
                 if let inviteError {
@@ -181,18 +188,18 @@ struct EmailAuthView: View {
                 if let inviter {
                     HStack(spacing: 12) {
                         Circle()
-                            .fill(Color.white.opacity(0.1))
+                            .fill(FlimTheme.textPrimary.opacity(0.1))
                             .frame(width: 34, height: 34)
                             .overlay {
                                 Text(String(inviter.shownName.trimmingCharacters(in: CharacterSet(charactersIn: "@")).prefix(1)).uppercased())
                                     .flimFont(15, weight: .light, relativeTo: .body)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(FlimTheme.textPrimary)
                             }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(inviter.rollName.map { "\(inviter.shownName) invited you to \($0)." }
                                  ?? (inviter.isCampaign ? "You're in with \(inviter.shownName)'s code." : "\(inviter.shownName) invited you."))
                                 .flimFont(15, weight: .medium, relativeTo: .subheadline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(FlimTheme.textPrimary)
                             Text(inviter.rollName == nil
                                  ? "You will follow them once you are in."
                                  : "You will follow them, and the roll is waiting once you are in.")

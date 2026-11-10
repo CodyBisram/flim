@@ -11,10 +11,16 @@ struct SplashView: View {
                 Image(systemName: "camera.aperture")
                     .font(.system(size: 48, weight: .ultraLight))
                     .foregroundStyle(accent)
-                Text(AppInfo.appName)
-                    .flimFont(30, weight: .thin, design: .default, relativeTo: .title)
-                    .tracking(12)
-                    .foregroundStyle(.white)
+                if AppInfo.is17 {
+                    Text(AppInfo.appName)
+                        .font(DeskType.serif(44, relativeTo: .largeTitle))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                } else {
+                    Text(AppInfo.appName)
+                        .flimFont(30, weight: .thin, design: .default, relativeTo: .title)
+                        .tracking(12)
+                        .foregroundStyle(.white)
+                }
             }
             .opacity(opacity)
             .onAppear {

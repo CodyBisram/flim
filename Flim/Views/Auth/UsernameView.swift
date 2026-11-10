@@ -21,8 +21,8 @@ struct UsernameView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Pick a username.")
-                        .flimFont(28, weight: .thin, relativeTo: .title3)
-                        .foregroundStyle(.white)
+                        .modifier(DeskTitleOr(size: 28) { $0.flimFont(28, weight: .thin, relativeTo: .title3) })
+                        .foregroundStyle(FlimTheme.textPrimary)
                     Text("3 to 20 characters. Letters, numbers and underscores.")
                         .flimFont(15, relativeTo: .body)
                         .foregroundStyle(FlimTheme.textSecondary)
@@ -42,15 +42,15 @@ struct UsernameView: View {
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .flimFont(17, relativeTo: .body)
-                            .foregroundStyle(.white)
-                            .tint(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .tint(FlimTheme.textPrimary)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
-                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(isValid ? Color.white.opacity(0.2) : Color.clear, lineWidth: 1)
+                            .stroke(isValid ? FlimTheme.textPrimary.opacity(0.2) : Color.clear, lineWidth: 1)
                     )
                 }
 
@@ -64,11 +64,11 @@ struct UsernameView: View {
                         .textContentType(.givenName)
                         .autocorrectionDisabled()
                         .flimFont(17, relativeTo: .body)
-                        .foregroundStyle(.white)
-                        .tint(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .tint(FlimTheme.textPrimary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
-                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        .background((AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1)), in: RoundedRectangle(cornerRadius: 12))
                         // The same limit the profile's Name sheet keeps. This field took any
                         // length, so a long name got in here and was cut the first time it was
                         // edited. Stops as you type; the count appears only once it is near,
@@ -95,7 +95,7 @@ struct UsernameView: View {
                             let selected = accentColor == swatch.rawValue
                             Button { accentColor = swatch.rawValue; Haptics.tap() } label: {
                                 Circle().fill(swatch.color).frame(width: 30, height: 30)
-                                    .overlay(Circle().strokeBorder(.white, lineWidth: selected ? 2.5 : 0))
+                                    .overlay(Circle().strokeBorder(FlimTheme.textPrimary, lineWidth: selected ? 2.5 : 0))
                                     .frame(width: 44, height: 44)   // the target; the swatch itself stays 30
                                     .contentShape(Rectangle())
                             }

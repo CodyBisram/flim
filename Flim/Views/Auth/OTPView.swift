@@ -34,8 +34,8 @@ struct OTPView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Check your email.")
-                        .flimFont(28, weight: .thin, relativeTo: .title3)
-                        .foregroundStyle(.white)
+                        .modifier(DeskTitleOr(size: 28) { $0.flimFont(28, weight: .thin, relativeTo: .title3) })
+                        .foregroundStyle(FlimTheme.textPrimary)
                     // The address is echoed because a typo is otherwise invisible: someone who
                     // typed gmial.com waits for mail that will never arrive, with nothing on
                     // screen to tell them why.
@@ -220,20 +220,20 @@ private struct OTPField: View {
         let isActive = index == chars.count && isFocused
 
         return RoundedRectangle(cornerRadius: 8)
-            .fill(Color(white: 0.1))
+            .fill(AppInfo.is17 ? FlimTheme.surface : Color(white: 0.1))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(
-                        isActive ? Color.white.opacity(0.7) :
-                        !char.isEmpty ? Color.white.opacity(0.3) :
-                        Color(white: 0.2),
+                        isActive ? (AppInfo.is17 ? FlimTheme.accent : Color.white.opacity(0.7)) :
+                        !char.isEmpty ? FlimTheme.textPrimary.opacity(0.3) :
+                        (AppInfo.is17 ? Color.clear : Color(white: 0.2)),
                         lineWidth: isActive ? 1.5 : 1
                     )
             )
             .overlay(
                 Text(char)
                     .flimFont(20, weight: .light, design: .monospaced, relativeTo: .title3)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
             )
             .frame(height: boxHeight)
             .animation(.easeInOut(duration: 0.1), value: isActive)

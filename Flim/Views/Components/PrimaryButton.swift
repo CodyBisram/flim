@@ -24,8 +24,9 @@ struct PrimaryButton: View {
             }
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(.white)
+                // 1.7 (the Blend boards): an amber pill with dark ink; 1.6: the white slab.
+                RoundedRectangle(cornerRadius: AppInfo.is17 ? height / 2 : 14)
+                    .fill(AppInfo.is17 ? FlimTheme.accent : .white)
                     .frame(height: height)
 
                 if isLoading || isRunning {

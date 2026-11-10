@@ -29,7 +29,7 @@ struct ReviewerSignInSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("App Review sign-in")
                         .flimFont(22, weight: .light, relativeTo: .title3)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                     Text("Enter the password from App Review Information for \(email).")
                         .flimFont(14, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
@@ -39,7 +39,7 @@ struct ReviewerSignInSheet: View {
                         .submitLabel(.go)
                         .focused($focused)
                         .flimFont(16, relativeTo: .body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .tint(accent)
                         .padding(.horizontal, 16).padding(.vertical, 14)
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))
@@ -66,7 +66,7 @@ struct ReviewerSignInSheet: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .task { focused = true }
