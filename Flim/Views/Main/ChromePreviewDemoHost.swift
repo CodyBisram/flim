@@ -60,7 +60,11 @@ struct PagerPreviewDemoHost: View {
     @State private var fixture = PagerPreviewDemoHost.makeFixture()
 
     var body: some View {
-        if ProcessInfo.processInfo.arguments.contains("-deskPost") {
+        if ProcessInfo.processInfo.arguments.contains("-deskPrimer") {
+            // 1.7's notification ask (Blend 2, 7e), as MainTabView presents it.
+            FlimTheme.bg.ignoresSafeArea()
+                .sheet(isPresented: .constant(true)) { DeskNotificationPrimer().flimSheetSurface() }
+        } else if ProcessInfo.processInfo.arguments.contains("-deskPost") {
             // 1.7's Post (Blend 3, 9b) on the same fixture frames.
             // Presented as the Darkroom presents it, a full-screen cover, so the status bar
             // follows the cover's own colour scheme as it does in the app.

@@ -490,7 +490,12 @@ struct MainTabView: View {
             V2NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
                 .modifier(V2DeskEnvironment())
             #else
-            NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
+            if AppInfo.is17 {
+                DeskNotificationPrimer(onDecision: { didDecideNotifPrimer = true })
+                    .flimSheetSurface()
+            } else {
+                NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
+            }
             #endif
         }
         .sheet(isPresented: Binding(get: { hostsInviteSheet && inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
