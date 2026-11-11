@@ -856,3 +856,10 @@ Date	App Name	App Apple Identifier	Event	Page Type	Source Type	Engagement Type	D
 2026-11-08	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 26.6	JP	1	1
 2026-11-08	FLIM: Disposable Camera	6786079629	Tap	Product page	App Store browse	Open	iPhone	iOS 26.6	GB	1	1
 2026-11-07	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPhone	iOS 27.0	UG	3	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPad	iOS 27.0	ES	1	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Tap	No page	App Store browse	Update	iPhone	iOS 26.6	US	1	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Page view	Product page	App referrer		iPhone	iOS 27.2	NL	1	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPad	iOS 12.5	UG	1	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Impression	No page	App Store browse		iPhone	iOS 27.2	NL	1	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPad	iOS 27.2	TH	1	1
+2026-11-09	FLIM: Disposable Camera	6786079629	Impression	No page	App Store search		iPad	iOS 26.6	TH	1	1
