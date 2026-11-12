@@ -151,4 +151,25 @@ final class Desk17UITests: XCTestCase {
         sleep(1)
         shot("friends_requests")
     }
+
+    /// The camera on the Duo's open display (Blend 2, 6f), via the debug frame: flip, shutter and
+    /// the last shot stand in a column beside the frame.
+    func testOpenDuoCameraHasItsControlColumn() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        let flip = app.buttons["Flip camera"].firstMatch
+        XCTAssertTrue(flip.waitForExistence(timeout: 15), "no flip button")
+        // The column sits beside the frame, inside the open display (380pt wide when fitted).
+        XCTAssertLessThan(flip.frame.maxX, 380, "the control column is outside the display")
+        shot("open_camera")
+
+        // The other tabs on the open display, for the screenshots.
+        for label in ["Feed", "Darkroom", "Rolls", "You"] {
+            bar(label).tap()
+            XCTAssertTrue(bar(label).isSelected, "\(label) did not become the selected tab")
+            sleep(1)
+            shot("open_\(label.lowercased())")
+        }
+    }
 }

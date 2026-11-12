@@ -293,12 +293,16 @@ struct MainTabView: View {
             // `-deskFrame 890x626`: the app drawn at another display's size, scaled to fit, so the
             // Duo's open display can be built and screenshotted on a simulator that can't unfold.
             GeometryReader { screen in
-                let scale = min(screen.size.width / size.width, screen.size.height / size.height)
+                // `-deskFrameFit W` fits the frame into a narrower width than the window (the Duo
+                // simulator's closed display draws its own strip over the trailing ~85pt).
+                let fitWidth = DeskDebugFrame.fitWidth ?? screen.size.width
+                let scale = min(fitWidth / size.width, screen.size.height / size.height)
                 deskTabsBody
                     .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .scaleEffect(scale)
-                    .frame(width: screen.size.width, height: screen.size.height)
+                    .frame(width: fitWidth, height: screen.size.height)
+                    .frame(width: screen.size.width, height: screen.size.height, alignment: .leading)
             }
             .background(Color.black.ignoresSafeArea())
         } else {
@@ -1111,6 +1115,13 @@ enum DeskDebugFrame {
         let parts = args[i + 1].split(separator: "x").compactMap { Double($0) }
         guard parts.count == 2 else { return nil }
         return CGSize(width: parts[0], height: parts[1])
+    }()
+
+    static let fitWidth: CGFloat? = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-deskFrameFit"), i + 1 < args.count,
+              let w = Double(args[i + 1]) else { return nil }
+        return CGFloat(w)
     }()
 }
 #endif

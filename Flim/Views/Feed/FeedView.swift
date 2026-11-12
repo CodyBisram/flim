@@ -335,7 +335,9 @@ struct FeedView: View {
         }
         .background(GeometryReader { proxy in
             Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
-                containerWidth = width
+                // 1.7: on a wide display (the Duo open) the cards keep a readable width, centred,
+                // rather than one photograph the width of the screen.
+                containerWidth = AppInfo.is17 ? min(width, Self.readableWidth) : width
             }
         })
         // `cachedUnits`'s safety net for `feed.feed` changing outside this
@@ -489,6 +491,9 @@ struct FeedView: View {
     private var header: some View {
         if AppInfo.is17 { deskHeader } else { v1Header }
     }
+
+    /// The widest the feed's column gets in 1.7 (phones are narrower; the Duo open is wider).
+    static let readableWidth: CGFloat = 520
 
     private func activityView(embedded: Bool) -> some View {
         ActivityFeedView(seenBefore: activitySeenBefore, onLoaded: { queriedAt in
@@ -890,6 +895,8 @@ struct FeedView: View {
                         ProgressView().tint(FlimTheme.textTertiary).padding(.vertical, 12)
                     }
                 }
+                .frame(maxWidth: AppInfo.is17 ? Self.readableWidth : .infinity)
+                .frame(maxWidth: .infinity)
                 .padding(.bottom, 24)
             }
             .refreshableToCompletion { await reload() }

@@ -561,6 +561,8 @@ Text("Darkroom")
                         onZoomOut: { zoomOut() },
                         onZoomIn: { zoomIn() }
                     )
+                    // 1.7: one readable column on a wide display (the Duo open), as the Feed has.
+                    .frame(maxWidth: AppInfo.is17 ? FeedView.readableWidth : .infinity)
                 }
 
                 Group {
@@ -570,6 +572,7 @@ Text("Darkroom")
                     case .allTime: allTimeContent
                     }
                 }
+                .frame(maxWidth: AppInfo.is17 ? FeedView.readableWidth : .infinity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.22), value: zoom)
@@ -732,6 +735,9 @@ Text("Darkroom")
                 // with nothing in it, or the empty state, would both be a guess.
                 ScrollView { DarkroomLoadingSkeleton(frameWidth: photoFrameWidth).padding(.top, 8) }
                     .scrollDisabled(true)
+                    // Measured here too, so the skeleton draws at the width the racks will (the
+                    // default is a phone's, which is half the Duo's open display).
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
                     .modifier(MonthLandingHost(pending: pendingMonthLanding) { landOnAnchorMonth($0, proxy: nil) })
                     // The safety net's one automatic fetch, keyed on anchor and generation so it
                     // runs once for each; `startAutomaticAnchorFetch` re-checks everything itself.

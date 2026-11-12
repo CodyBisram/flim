@@ -79,6 +79,8 @@ struct CameraView: View {
     // Whether to schedule a local "your photo developed" reminder (toggled in Profile).
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var unsortedCount = 0
+    /// 1.7: phone, or the Duo closed or open (set by MainTabView's tabs).
+    @Environment(\.deskLayout) private var deskLayout
     /// 1.7: the warm leak on the viewfinder, switchable in Appearance.
     @AppStorage(DeskLightLeak.enabledKey) private var cameraLeak = true
     /// 1.7: your newest personal shot, bottom right; tapping it opens the Darkroom.
@@ -118,7 +120,19 @@ struct CameraView: View {
         Group {
             // 1.7 (FLIM Beta) draws the camera on the desk (the Blend board, 1a/1b); the App Store
             // app keeps 1.6's black camera.
-            if AppInfo.is17 { deskLayer } else { v1Layer }
+            if AppInfo.is17 {
+                // Decided from the camera's own space as well as the tabs' layout: a landscape
+                // space is the Duo's open display however the value arrived.
+                GeometryReader { proxy in
+                    if deskLayout == .open || proxy.size.width > proxy.size.height {
+                        deskOpenLayer
+                    } else {
+                        deskLayer
+                    }
+                }
+            } else {
+                v1Layer
+            }
         }
         // Collected at the ZStack so it hears every branch: the zoom pills now live in an
         // overlay on the viewfinder box, not in the control VStack with the top bar/shutter.
@@ -408,6 +422,66 @@ struct CameraView: View {
         .task(id: photos.pendingCaptureCount) { await refreshLastShot() }
     }
 
+    /// The camera on the Duo's open display (Blend 2, 6f): the viewfinder at full height on the
+    /// left, its top bar above it, and flip, the shutter and the last shot stacked in a column on
+    /// the trailing side, near the thumb. The fold has nothing to tap.
+    private var deskOpenLayer: some View {
+        ZStack {
+            DeskGround()
+            VStack(spacing: 10) {
+                if camera.permission != .denied {
+                    deskTopBar
+                        .reportsControlRegion()
+                }
+                HStack(spacing: 24) {
+                    deskViewfinder
+                    if camera.permission != .denied {
+                        VStack(spacing: 30) {
+                            deskFlipButton
+                            ShutterButton(isCapturing: camera.isCapturing,
+                                          unavailableReason: camera.isInterrupted ? (camera.interruptionReason ?? "Camera unavailable") : nil) { shutter() }
+                            lastShotButton
+                        }
+                        .reportsControlRegion()
+                        .frame(width: 96)
+                    }
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 12)
+            }
+            Color.white
+                .opacity(camera.flashOpacity)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            if let countdown, countdown > 0 {
+                Text("\(countdown)")
+                    .font(.system(size: 104, weight: .thin))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.4), radius: 12)
+                    .transition(.scale.combined(with: .opacity))
+                    .id(countdown)
+                    .allowsHitTesting(false)
+            }
+        }
+        .task(id: photos.pendingCaptureCount) { await refreshLastShot() }
+    }
+
+    private var deskFlipButton: some View {
+        Button {
+            camera.flipCamera()
+            Haptics.tap()
+        } label: {
+            Image(systemName: Self.flipCameraSymbol)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(FlimTheme.textPrimary)
+                .frame(width: 52, height: 52)
+                .background(Circle().fill(FlimTheme.surface))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Flip camera")
+    }
+
     /// The first-run hint (Blend 2, 7f), standing in for 1.6's full-screen coach. Seeing it
     /// counts as having seen the coach, so the notification ask still waits for it.
     private var deskFirstShotHint: some View {
@@ -629,19 +703,7 @@ struct CameraView: View {
             ShutterButton(isCapturing: camera.isCapturing,
                           unavailableReason: camera.isInterrupted ? (camera.interruptionReason ?? "Camera unavailable") : nil) { shutter() }
             HStack {
-                Button {
-                    camera.flipCamera()
-                    Haptics.tap()
-                } label: {
-                    Image(systemName: Self.flipCameraSymbol)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(FlimTheme.textPrimary)
-                        .frame(width: 52, height: 52)
-                        .background(Circle().fill(FlimTheme.surface))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Flip camera")
+                deskFlipButton
 
                 Spacer()
 
