@@ -13,9 +13,9 @@ struct DeskUpdateCard: View {
     @Environment(\.flimAccent) private var accent
 
     private let lines: [(String, String)] = [
-        ("Your page has its own tab.", "Tap You, bottom right."),
+        ("Your page has its own tab.", "Tap You in the tab bar."),
         ("Friends go both ways.", "If you followed each other, you're friends now. One-way follows became requests, waiting in Friends."),
-        ("Months go on a shelf.", "On the 1st, last month moves to your page as one box you can play."),
+        ("Months go on a shelf.", "On the 1st, last month moves to your page as a cover you can play."),
         ("Light or dark.", "Pick a desk below. You can change it in Appearance."),
     ]
 
@@ -25,7 +25,7 @@ struct DeskUpdateCard: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("FLIM 1.7")
+                    Text("\(AppInfo.appName.uppercased()) 1.7")
                         .font(DeskType.data(11))
                         .tracking(2)
                         .foregroundStyle(accent)

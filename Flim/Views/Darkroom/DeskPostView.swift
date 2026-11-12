@@ -20,7 +20,9 @@ struct DeskPostView: View {
     @State private var index = 0
     @State private var captions: [UUID: String] = [:]
     @State private var tags: [PendingTag] = []
-    @State private var sendToSpotlight = false
+    /// The shot "Send to Spotlight too" was turned on for: the one on screen at that moment,
+    /// kept even if you swipe on before posting.
+    @State private var spotlightPhotoId: UUID?
     @State private var showTags = false
     @State private var posting = false
     @FocusState private var captionFocused: Bool
@@ -161,11 +163,15 @@ struct DeskPostView: View {
     }
 
     private var spotlightRow: some View {
-        Toggle(isOn: $sendToSpotlight) {
+        let binding = Binding<Bool>(
+            get: { spotlightPhotoId != nil },
+            set: { spotlightPhotoId = $0 ? current?.id : nil })
+        let shotNumber = spotlightPhotoId.flatMap { id in photos.firstIndex { $0.id == id } }.map { $0 + 1 }
+        return Toggle(isOn: binding) {
             HStack(spacing: 12) {
                 Image(systemName: "star")
                     .foregroundStyle(FlimTheme.textSecondary)
-                Text("Send to Spotlight too")
+                Text(photos.count > 1 && shotNumber != nil ? "Send shot \(shotNumber!) to Spotlight too" : "Send to Spotlight too")
                     .foregroundStyle(FlimTheme.textPrimary)
             }
             .flimFont(15, relativeTo: .body)
@@ -199,7 +205,7 @@ struct DeskPostView: View {
         let ordered = photos.sorted { $0.takenAt < $1.takenAt }
         let capturedCaptions = captions
         let capturedTags = tags
-        let spotlightPhotoId = sendToSpotlight ? current?.id : nil
+        let spotlightPhotoId = self.spotlightPhotoId
         let service = feed
         for photo in ordered { service.myPostedPhotoIds.insert(photo.id) }
         let count = ordered.count
@@ -222,8 +228,8 @@ struct DeskPostView: View {
             if failed > 0 {
                 Haptics.error()
                 UndoCenter.shared.showNotice(failed == count
-                    ? "Couldn't post. Check your connection and try again."
-                    : "\(failed) of \(count) didn't post. Check your connection and try again.")
+                    ? "Couldn't post. Your shots are still in the Darkroom; try again when you're connected."
+                    : "\(failed) of \(count) didn't post. They're still in the Darkroom; try again when you're connected.")
             } else {
                 Haptics.success()
             }

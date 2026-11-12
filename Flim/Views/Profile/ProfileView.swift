@@ -126,7 +126,7 @@ struct ProfileView: View {
                                 if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                             }
                             .flimFont(12.5, weight: .semibold, relativeTo: .caption)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                         }
                     }
                 } header: {
@@ -363,7 +363,7 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 Image(systemName: icon)
                     .font(.system(size: 15))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
@@ -382,7 +382,7 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 Image(systemName: icon)
                     .font(.system(size: 15))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .frame(width: 22)
                 Text(title).flimFont(15, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 Spacer()
@@ -628,7 +628,7 @@ struct EditProfileView: View {
                     } else {
                         Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
                             .flimFont(34, weight: .thin, relativeTo: .title3)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                     }
                 }
                 .clipShape(Circle())
@@ -732,7 +732,7 @@ private struct EditBioSheet: View {
                             }
                         }
                     }
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .disabled(isSaving)
                 }
             }
@@ -809,7 +809,7 @@ private struct EditNameSheet: View {
                             }
                         }
                     }
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .disabled(isSaving)
                 }
             }

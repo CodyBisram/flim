@@ -55,6 +55,20 @@ enum FlimTheme {
     static let well = AppInfo.is17 ? DeskColor.box : Color.white.opacity(0.06)
     /// Reaction chips and similar pills: 12% white in 1.6, the box tone in 1.7.
     static let chip = AppInfo.is17 ? DeskColor.box : Color.white.opacity(0.12)
+    /// The accent as TEXT or an outline. On Slate (and in 1.6) it is the accent itself; on Paper
+    /// the bright accents fall to about 1.5:1 against cream, so text and strokes take a deepened
+    /// value (about 55% brightness, a little more saturated) that reads at AA. Fills keep the
+    /// plain accent. Follows the colour scheme in force, so a screen forced to Slate keeps the
+    /// bright value.
+    static func ink(_ accent: Color) -> Color {
+        guard AppInfo.is17 else { return accent }
+        let bright = UIColor(accent)
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        bright.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        let deep = UIColor(hue: h, saturation: min(1, sat * 1.15), brightness: b * 0.55, alpha: a)
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? bright : deep })
+    }
+
     /// The "something new" dot and "N new" pill: system red in 1.6 (owner rule, 2026-10-02),
     /// the desk's red in 1.7.
     static let newRed = AppInfo.is17 ? DeskColor.red : Color.red

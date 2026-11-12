@@ -137,7 +137,7 @@ struct UsernameView: View {
                         Button("Sign out") {
                             Task { try? await auth.signOut() }
                         }
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                     }
                     .flimFont(12, relativeTo: .caption)
                     .padding(.bottom, 4)

@@ -243,3 +243,14 @@ struct DeskAlwaysSlate: ViewModifier {
         }
     }
 }
+
+/// When 1.7's floating tab bar steps aside: while the keyboard is up (it would otherwise ride
+/// up over the keyboard with the shrinking frame), and while the Darkroom is selecting (its own
+/// action bar takes the bar's place). Tabs give back the room the bar kept clear at the same time.
+@MainActor @Observable
+final class DeskChrome {
+    static let shared = DeskChrome()
+    var keyboardUp = false
+    var selecting = false
+    var hidesBar: Bool { keyboardUp || selecting }
+}

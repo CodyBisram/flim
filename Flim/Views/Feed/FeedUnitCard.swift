@@ -406,9 +406,9 @@ struct FeedUnitCard: View {
                 } else {
                     Text("\(unseenRemaining) new")
                         .flimFont(11, relativeTo: .caption2)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .padding(.horizontal, 8).padding(.vertical, 2)
-                        .overlay(Capsule().strokeBorder(accent.opacity(0.42), lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(FlimTheme.ink(accent).opacity(0.42), lineWidth: 1))
                 }
             }
             Menu {
@@ -440,7 +440,7 @@ struct FeedUnitCard: View {
                 } else {
                     Text(String(unit.author.handle.dropFirst().prefix(1)).uppercased())
                         .flimFont(14, weight: .thin, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                 }
             }
             .clipShape(Circle())
@@ -544,9 +544,9 @@ struct FeedUnitCard: View {
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                             .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .padding(.horizontal, 16).padding(.vertical, 7)
-                            .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                            .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
                     }
                 }
             }
@@ -1024,7 +1024,7 @@ private struct FilmStrip: View {
                 Button(action: openOverflow) {
                     Text("+\(unit.stripOverflow)")
                         .flimFont(11, weight: .semibold, relativeTo: .caption2)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .frame(width: 34, height: 34 * 4 / 3)
                         .background(accent.opacity(selection >= shown ? 0.28 : 0.14))
                         .overlay(Rectangle().strokeBorder(accent.opacity(0.5), lineWidth: 1))

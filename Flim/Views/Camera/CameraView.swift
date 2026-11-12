@@ -378,9 +378,8 @@ struct CameraView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            if camera.permission == .denied {
-                cameraDeniedOverlay
-            } else {
+            // Camera off: said inside the dark frame (Blend 2, 8j), not over the desk.
+            if camera.permission != .denied {
                 VStack(spacing: 0) {
                     deskTopBar
                         .reportsControlRegion()
@@ -457,6 +456,14 @@ struct CameraView: View {
             .overlay { faceIndicators }
             .animation(.easeOut(duration: 0.18), value: camera.faceRects)
             .overlay { cameraUnavailableOverlay.clipShape(shape) }
+            .overlay {
+                if camera.permission == .denied {
+                    // Light text whatever the desk: it sits on the dark frame.
+                    cameraDeniedOverlay
+                        .padding(.bottom, -60)
+                        .environment(\.colorScheme, .dark)
+                }
+            }
             .animation(.easeOut(duration: 0.2), value: camera.isInterrupted)
             .onChange(of: camera.isInterrupted) { _, now in
                 if now { countdown = nil }
@@ -542,11 +549,11 @@ struct CameraView: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .bold))
             }
-            .foregroundStyle(liveRoll == nil ? FlimTheme.textPrimary : accent)
+            .foregroundStyle(liveRoll == nil ? FlimTheme.textPrimary : FlimTheme.ink(accent))
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
             .background(FlimTheme.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(accent.opacity(liveRoll == nil ? 0 : 0.7), lineWidth: 1.5))
+            .overlay(Capsule().strokeBorder(FlimTheme.ink(accent).opacity(liveRoll == nil ? 0 : 0.7), lineWidth: 1.5))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -560,7 +567,7 @@ struct CameraView: View {
         Button(action: action) {
             content()
                 .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(tinted ? accent : FlimTheme.textPrimary)
+                .foregroundStyle(tinted ? FlimTheme.ink(accent) : FlimTheme.textPrimary)
                 .frame(width: 44, height: 44)
                 .background(Circle().fill(FlimTheme.surface))
                 .contentShape(Circle())
@@ -653,16 +660,18 @@ struct CameraView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous).fill(FlimTheme.surface)
                 if liveRoll != nil {
-                    Text("SEALED")
-                        .font(DeskType.data(8))
-                        .foregroundStyle(accent)
+                    // Sealed until the roll opens: a lock, readable at arm's length.
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(FlimTheme.ink(accent))
                 } else if let lastShot, lastShot.isReady, let lastShotURL {
                     CachedImage(url: lastShotURL, maxPixel: 150, cacheKey: lastShot.thumbPath ?? lastShot.storagePath) {
                         $0.resizable().scaledToFill()
                     } placeholder: { Color.clear }
                 } else if lastShot != nil {
-                    Text("DEVELOPING")
-                        .font(DeskType.data(6))
+                    // Still developing.
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(FlimTheme.textTertiary)
                 }
                 if captureStatus?.isInBetween == true {
@@ -1126,10 +1135,10 @@ struct CameraView: View {
         VStack(spacing: 16) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
             Text("\(AppInfo.appName) can't use the camera")
-                .flimFont(20, weight: .light, relativeTo: .title3)
-                .foregroundStyle(.white)
+                .modifier(DeskTitleOr(size: 24) { $0.flimFont(20, weight: .light, relativeTo: .title3) })
+                .foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : .white)
                 .multilineTextAlignment(.center)
             Text("Camera access is off for \(AppInfo.appName) in iOS Settings. You can still see your friends' photos and reply to them.")
                 .flimType(.body)
@@ -1173,7 +1182,7 @@ struct CameraView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "camera.aperture")
                         .font(.system(size: 38, weight: .ultraLight))
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
 
                     Text("Point. Shoot. Sort.")
                         .flimFont(24, weight: .light)
@@ -1331,7 +1340,7 @@ private struct RollPickerSheet: View {
                             Spacer()
                             if selected == nil {
                                 Image(systemName: "checkmark")
-                                    .foregroundStyle(accent)
+                                    .foregroundStyle(FlimTheme.ink(accent))
                             }
                         }
                     }
@@ -1354,7 +1363,7 @@ private struct RollPickerSheet: View {
                                 Spacer()
                                 if selected?.id == roll.id {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(accent)
+                                        .foregroundStyle(FlimTheme.ink(accent))
                                 }
                             }
                         }

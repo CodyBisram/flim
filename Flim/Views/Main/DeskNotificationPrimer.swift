@@ -17,6 +17,9 @@ struct DeskNotificationPrimer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Scrolls at large text sizes; the two buttons stay put below.
+            ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
             Text("Know when a roll opens")
                 .font(DeskType.serif(30, relativeTo: .largeTitle))
                 .foregroundStyle(FlimTheme.textPrimary)
@@ -35,7 +38,7 @@ struct DeskNotificationPrimer: View {
                             .overlay(Text("F").font(DeskType.serif(15)).foregroundStyle(DeskColor.onSolid))
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text("FLIM").font(.system(size: 13, weight: .semibold))
+                                Text(AppInfo.appName).font(.system(size: 13, weight: .semibold))
                                 Spacer()
                                 Text(sample.0).font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
                             }
@@ -50,19 +53,22 @@ struct DeskNotificationPrimer: View {
             .padding(.top, 24)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Examples: a roll opening, a friend saying yes, a comment on your shot.")
-            Spacer(minLength: 20)
+            }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            Spacer(minLength: 12)
             Button {
                 Task { await notifications.requestAuthorizationIfNeeded(); onDecision(); dismiss() }
             } label: {
                 Text("Turn on notifications")
-                    .font(.system(size: 16, weight: .semibold))
+                    .flimFont(16, weight: .semibold, relativeTo: .body)
                     .foregroundStyle(Color(white: 0.1))
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(accent, in: Capsule())
             }
             Button { onDecision(); dismiss() } label: {
                 Text("Not now")
-                    .font(.system(size: 15, weight: .semibold))
+                    .flimFont(15, weight: .semibold, relativeTo: .body)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }

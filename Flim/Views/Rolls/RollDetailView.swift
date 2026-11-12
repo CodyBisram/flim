@@ -424,7 +424,7 @@ struct RollDetailView: View {
                                         } label: {
                                             Label("Start another", systemImage: "plus.square.on.square")
                                                 .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                                                .foregroundStyle(accent)
+                                                .foregroundStyle(FlimTheme.ink(accent))
                                                 .frame(minHeight: 44)
                                                 .contentShape(Rectangle())
                                         }
@@ -464,7 +464,7 @@ struct RollDetailView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { showMembers = true } label: {
                     Image(systemName: "person.2")
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                 }
                 .accessibilityLabel("Members")
                 // Invites end when the roll develops (owner decision, 2026-08-26): a
@@ -477,7 +477,7 @@ struct RollDetailView: View {
                         showInviteShare = true
                     } label: {
                         Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                     }
                     .accessibilityLabel("Share invite")
                 }
@@ -538,7 +538,7 @@ struct RollDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                 }
                 .accessibilityLabel("More")
             }
@@ -844,7 +844,7 @@ struct RollDetailView: View {
                     Spacer(minLength: 6)
                     Button("Retry") { saveAll() }
                         .flimFont(13, weight: .semibold)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                     Button {
                         withAnimation { self.saveAllError = nil }
                     } label: {
@@ -1386,7 +1386,7 @@ struct RollDetailView: View {
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
                 Label("Develops in \(Self.countdown(remaining)), \(RollDevelopAskSheet.whenLabel(for: revealAt))", systemImage: "hourglass")
                     .flimFont(14, weight: .semibold)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
             }
             // Who is in it, by name, so the wait reads as a group and not a timer.
             if !memberNames.isEmpty {

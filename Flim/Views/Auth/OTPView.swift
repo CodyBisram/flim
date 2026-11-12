@@ -66,7 +66,7 @@ struct OTPView: View {
                 if let sentNotice, error == nil {
                     Text(sentNotice)
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .padding(.top, 8)
                 }
 

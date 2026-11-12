@@ -222,7 +222,7 @@ struct EmailAuthView: View {
                 } label: {
                     Text("Have an invite code?")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                 }
                 .buttonStyle(.plain)
             }
@@ -273,7 +273,7 @@ struct EmailAuthView: View {
     private func noCodeActionLabel(_ title: String) -> some View {
         Text(title)
             .flimFont(14, weight: .medium, relativeTo: .subheadline)
-            .foregroundStyle(accent)
+            .foregroundStyle(FlimTheme.ink(accent))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
     }

@@ -283,7 +283,7 @@ struct PostDetailView: View {
                         Button(role: .destructive) { blockAuthor() } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
                     }
                 } label: {
-                    Image(systemName: "ellipsis").foregroundStyle(accent)
+                    Image(systemName: "ellipsis").foregroundStyle(FlimTheme.ink(accent))
                 }
                 .accessibilityLabel("Post options")
             }

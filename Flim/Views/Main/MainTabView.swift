@@ -286,7 +286,30 @@ struct MainTabView: View {
     /// 1.7's five tabs (the Blend board, 1c): the same four stacks plus You, under `DeskTabBar`
     /// instead of the system's tab bar. The system bar is hidden on every tab's root and on every
     /// screen pushed onto it (`deskTabRoot`), so pushed screens keep the desk's bar as 1.6's did.
+    @ViewBuilder
     private var deskTabs: some View {
+        #if DEBUG
+        if let size = DeskDebugFrame.size {
+            // `-deskFrame 890x626`: the app drawn at another display's size, scaled to fit, so the
+            // Duo's open display can be built and screenshotted on a simulator that can't unfold.
+            GeometryReader { screen in
+                let scale = min(screen.size.width / size.width, screen.size.height / size.height)
+                deskTabsBody
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .scaleEffect(scale)
+                    .frame(width: screen.size.width, height: screen.size.height)
+            }
+            .background(Color.black.ignoresSafeArea())
+        } else {
+            deskTabsBody
+        }
+        #else
+        deskTabsBody
+        #endif
+    }
+
+    private var deskTabsBody: some View {
         GeometryReader { proxy in
             let layout = DeskLayout.resolve(horizontalSizeClass: horizontalSizeClass, proxy: proxy)
             // One TabView in one place whatever the layout, so folding or unfolding the Duo never
@@ -305,7 +328,17 @@ struct MainTabView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if !layout.usesRail { deskBar(layout) }
+                if !layout.usesRail, !DeskChrome.shared.hidesBar {
+                    deskBar(layout)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: DeskChrome.shared.hidesBar)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                DeskChrome.shared.keyboardUp = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                DeskChrome.shared.keyboardUp = false
             }
             .background(DeskGround())
             .environment(\.deskLayout, layout)
@@ -1064,7 +1097,20 @@ private struct DeskTabBarSpace: View {
 
     var body: some View {
         Color.clear
-            .frame(height: DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap)
+            .frame(height: DeskChrome.shared.hidesBar ? 0 : DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap)
             .allowsHitTesting(false)
     }
 }
+
+#if DEBUG
+/// `-deskFrame WxH` (Debug only): draw 1.7's tabs at another display's size.
+enum DeskDebugFrame {
+    static let size: CGSize? = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-deskFrame"), i + 1 < args.count else { return nil }
+        let parts = args[i + 1].split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2 else { return nil }
+        return CGSize(width: parts[0], height: parts[1])
+    }()
+}
+#endif

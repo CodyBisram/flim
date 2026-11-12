@@ -110,7 +110,7 @@ struct CreateRollView: View {
                 VStack(spacing: 24) {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
 
                     VStack(spacing: 8) {
                         Text(roll.name)
@@ -223,7 +223,7 @@ struct RevealPromiseNote: View {
         HStack(spacing: 8) {
             Image(systemName: "hourglass")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
             Text("Everyone shoots into it. All the shots reveal together, \(Self.delayText) after the roll starts.")
                 .flimFont(13, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)

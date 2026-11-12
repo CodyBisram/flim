@@ -28,13 +28,13 @@ struct DeskPill: View {
             if let systemImage { Image(systemName: systemImage) }
             Text(title).lineLimit(1)
         }
-        .font(.system(size: small ? 13 : 15, weight: .semibold))
+        .flimFont(small ? 13 : 15, weight: .semibold, relativeTo: small ? .footnote : .body)
         .foregroundStyle(foreground)
         .padding(.horizontal, small ? 16 : 24)
         .frame(minHeight: small ? 34 : 46)
         .background(background, in: Capsule())
         .overlay {
-            if style == .outline { Capsule().strokeBorder(accent, lineWidth: 1.5) }
+            if style == .outline { Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1.5) }
         }
         .contentShape(Capsule())
     }
@@ -43,7 +43,7 @@ struct DeskPill: View {
         switch style {
         case .solid: DeskColor.onSolid
         case .box: FlimTheme.textPrimary
-        case .outline: accent
+        case .outline: FlimTheme.ink(accent)
         case .red: Color(white: 0.98)
         }
     }
@@ -135,7 +135,7 @@ struct DeskOfflineBanner: View {
                     .foregroundStyle(FlimTheme.textSecondary)
                     .padding(.top, 2)
                 (Text("You're offline. ").fontWeight(.semibold).foregroundColor(FlimTheme.textPrimary)
-                 + Text("Showing what was saved. The camera still works, and posts go out when you're back.")
+                 + Text("Showing what was saved. The camera still works, and new shots upload when you're back.")
                     .foregroundColor(FlimTheme.textSecondary))
                     .flimFont(13.5, relativeTo: .footnote)
                     .fixedSize(horizontal: false, vertical: true)

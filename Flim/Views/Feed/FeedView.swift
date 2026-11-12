@@ -605,7 +605,7 @@ struct FeedView: View {
                         // `bell.badge` plus a red "9+" capsule). The count reads out to VoiceOver,
                         // as the value below.
                         Image(systemName: "bell")
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .flimSymbolBounce(value: unreadActivity)
                             .overlay(alignment: .topTrailing) {
                                 if unreadActivity > 0 {
@@ -625,7 +625,7 @@ struct FeedView: View {
 
                     GlassIconButton { showDiscover = true } label: {
                         Image(systemName: "person.2.badge.plus")
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             // On first run this is THE follow affordance, so the empty state glows
                             // it rather than duplicating it as a second control somewhere else; the
                             // reader who comes back tomorrow already knows where the action lives.
@@ -652,7 +652,7 @@ struct FeedView: View {
                                 CachedImage(url: myAvatar.url, maxPixel: 100, cacheKey: myAvatar.path) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                             } else {
                                 Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                    .flimFont(18, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
+                                    .flimFont(18, weight: .thin, relativeTo: .subheadline).foregroundStyle(FlimTheme.ink(accent))
                             }
                         }
                         .clipShape(Circle())
@@ -1003,10 +1003,10 @@ struct FeedView: View {
             } label: {
                 Label("Take a shot", systemImage: "camera.aperture")
                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .padding(.horizontal, 20)
                     .frame(minHeight: 44)
-                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
             }
             .padding(.top, 4)
         }
@@ -1067,13 +1067,13 @@ struct FeedView: View {
                 Button { showDiscover = true } label: {
                     Label("Find your friends", systemImage: "person.2.badge.plus")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         // A floor, not a fixed box: 44 tall at the default size (the old 38
                         // was under the minimum touch target), and taller as the label grows
                         // with Dynamic Type instead of clipping inside it.
                         .padding(.horizontal, 18).padding(.vertical, 10)
                         .frame(minWidth: 212, minHeight: 44)
-                        .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
                 }
                 // Not a screen: the system share sheet carrying an invite link, which keeps
                 // invites out of the app rather than growing a referrals surface.

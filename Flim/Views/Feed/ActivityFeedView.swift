@@ -508,7 +508,7 @@ struct ActivityFeedView: View {
         } else {
             Image(systemName: icon(item.kind))
                 .font(.system(size: 14))
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .frame(width: 44, height: 44)
         }
     }

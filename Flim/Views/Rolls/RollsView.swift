@@ -83,6 +83,9 @@ struct RollsView: View {
         openRolls.first { $0.id.uuidString == activeRollIdRaw } ?? openRolls.first
     }
 
+    /// Side margin: 16 in 1.6, the desk's 24 in 1.7 (Blend 1, 3c), so rolls line up under the title.
+    static var margin: CGFloat { AppInfo.is17 ? 24 : 16 }
+
     var body: some View {
         ZStack {
             DeskGround()
@@ -245,7 +248,7 @@ struct RollsView: View {
                     .foregroundStyle(FlimTheme.textTertiary)
                 Text("\(readyRolls.count) ready")
                     .flimFont(12.5, relativeTo: .footnote)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .shadow(color: accent.opacity(0.55), radius: 6)
             } else if !openRolls.isEmpty {
                 Text("·")
@@ -262,7 +265,7 @@ struct RollsView: View {
             } label: {
                 GlassIcon {
                     Image(systemName: "plus")
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                 }
             }
             .accessibilityLabel("Start a roll or join with a code")
@@ -352,7 +355,7 @@ struct RollsView: View {
                     pickerItem(roll, now: now)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.margin)
         }
         // The trailing fade says "there is more" without a scroll indicator.
         .mask(
@@ -421,7 +424,7 @@ struct RollsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.margin)
 
             NavigationLink(value: roll) {
                 rack(frames: frameCounts[roll.id] ?? 0,
@@ -430,7 +433,7 @@ struct RollsView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.margin)
             .padding(.top, 10)
             .accessibilityLabel("\(frameCounts[roll.id] ?? 0) frames, developing. Opens the roll.")
 
@@ -448,14 +451,14 @@ struct RollsView: View {
                     Text(closing ? "Last frames. Shoot now" : "Shoot into this roll")
                         .flimFont(15, weight: .medium, relativeTo: .body)
                 }
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 46)
-                .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.margin)
             .padding(.top, 14)
         }
         .padding(.top, 16)
@@ -472,7 +475,7 @@ struct RollsView: View {
         // Inside the last hour the WHOLE line goes accent; the deadline is the message.
         return (
             Text("Closes \(closesAt) · ").foregroundStyle(closing ? accent : FlimTheme.textSecondary)
-            + Text(remaining).foregroundStyle(accent)
+            + Text(remaining).foregroundStyle(FlimTheme.ink(accent))
         )
         .flimFont(12.5, relativeTo: .footnote)
     }
@@ -497,7 +500,7 @@ struct RollsView: View {
     /// full-width blank strip read as a loading skeleton (the same reason 3c's was cut).
     @ViewBuilder
     private func rack(frames: Int, fraction: Double, sealed: Bool) -> some View {
-        let capacity = DarkroomDayUnit.stripCapacity(availableWidth: max(0, containerWidth - 32))
+        let capacity = DarkroomDayUnit.stripCapacity(availableWidth: max(0, containerWidth - Self.margin * 2))
         let overflow = frames > capacity ? frames - (capacity - 1) : 0
         let wells = overflow > 0 ? capacity - 1 : min(frames, capacity)
         let slotCount = wells + (overflow > 0 ? 1 : 0)
@@ -515,7 +518,7 @@ struct RollsView: View {
                         rackWell(sealed: sealed) {
                             Text("+\(overflow)")
                                 .flimFont(11, weight: .medium, relativeTo: .caption2)
-                                .foregroundStyle(accent)
+                                .foregroundStyle(FlimTheme.ink(accent))
                         }
                     }
                 }
@@ -561,20 +564,20 @@ struct RollsView: View {
                         Text(frameCounts[roll.id].map { "Reveal · \($0)" } ?? "Reveal")
                             .flimFont(11, weight: .medium, relativeTo: .caption2)
                     }
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .padding(.vertical, 4).padding(.horizontal, 9)
                     .background(accent.opacity(0.16), in: Capsule())
-                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
                 }
-                .padding(.top, 10).padding(.leading, 16).padding(.trailing, 12).padding(.bottom, 5)
+                .padding(.top, 10).padding(.leading, Self.margin).padding(.trailing, 12).padding(.bottom, 5)
 
                 Text(readyMeta(roll))
                     .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
-                    .padding(.horizontal, 16).padding(.bottom, 5)
+                    .padding(.horizontal, Self.margin).padding(.bottom, 5)
 
                 rack(frames: frameCounts[roll.id] ?? 0, fraction: 1, sealed: true)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Self.margin)
                     .padding(.top, 5)
             }
             .contentShape(Rectangle())
@@ -614,9 +617,9 @@ struct RollsView: View {
                 Spacer(minLength: 8)
                 Text("Invited")
                     .flimFont(11, weight: .medium, relativeTo: .caption2)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .padding(.vertical, 4).padding(.horizontal, 9)
-                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
             }
             Text("\(invitedByName(roll)) started another roll with your group. It develops \(RollDevelopAskSheet.whenLabel(for: roll.revealAt)).")
                 .flimFont(12.5, relativeTo: .footnote)
@@ -683,7 +686,7 @@ struct RollsView: View {
             }
             .padding(.top, 2)
         }
-        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+        .padding(.horizontal, Self.margin).padding(.top, 12).padding(.bottom, 10)
     }
 
     private func invitedByName(_ roll: Roll) -> String {
@@ -696,14 +699,14 @@ struct RollsView: View {
             Text("No roll is open")
                 .flimFont(26, weight: .light, relativeTo: .title3)
                 .foregroundStyle(FlimTheme.textPrimary)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Self.margin)
             // The duration must come from the constant: a literal "12 hours" is false in
             // every DEBUG build, and `Roll`'s own doc records exactly that bug.
             Text("A roll closes \(Roll.developDelayPhrase) after it starts. Nobody sees a frame until then.")
                 .flimFont(12.5, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .lineSpacing(4)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Self.margin)
                 .padding(.top, 6)
 
             // No rack here (cut in revision 3): a strip of empty slots carried no state and
@@ -715,10 +718,10 @@ struct RollsView: View {
                         Image(systemName: "plus").font(.system(size: 14))
                         Text("Start a roll").flimFont(15, weight: .medium, relativeTo: .body)
                     }
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 46)
-                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -735,7 +738,7 @@ struct RollsView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.margin)
             .padding(.top, 14)
         }
         .padding(.top, 16)
@@ -754,7 +757,7 @@ struct RollsView: View {
                 LinearGradient(colors: [FlimTheme.stroke, .clear], startPoint: .leading, endPoint: .trailing)
                     .frame(height: 1)
             }
-            .padding(.top, 18).padding(.horizontal, 16).padding(.bottom, 12)
+            .padding(.top, 18).padding(.horizontal, Self.margin).padding(.bottom, 12)
 
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                       spacing: 10) {
@@ -762,7 +765,7 @@ struct RollsView: View {
                     archiveTile(roll)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.margin)
         }
     }
 
@@ -1030,7 +1033,7 @@ struct RollsView: View {
             VStack(spacing: 18) {
                 Image(systemName: "film")
                     .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                 DeskEmptyState(title: "Better with friends.",
                                message: "Start a roll and share the code, or join one with a friend's code.") {
                     Button { showCreate = true } label: { DeskPill("Create", style: .box) }
@@ -1073,7 +1076,7 @@ struct OutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .flimFont(14, weight: .semibold)
-            .foregroundStyle(accent)
+            .foregroundStyle(FlimTheme.ink(accent))
             .padding(.horizontal, 22)
             .padding(.vertical, 11)
             .glassCapsule(interactive: true)

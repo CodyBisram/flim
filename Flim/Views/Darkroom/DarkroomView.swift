@@ -469,7 +469,7 @@ Text("Darkroom")
                     selectedIDs = []
                 }
                 .flimFont(15)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
             }
         }
         .frame(minHeight: 44)
@@ -521,6 +521,15 @@ Text("Darkroom")
     }
 
     private var bodyContent: some View {
+        bodyStack
+            // 1.7: the Select bar takes the tab bar's place (Blend 3, 9a).
+            .onChange(of: isSelecting, initial: true) { _, now in
+                if AppInfo.is17 { DeskChrome.shared.selecting = now }
+            }
+            .onDisappear { if AppInfo.is17 { DeskChrome.shared.selecting = false } }
+    }
+
+    private var bodyStack: some View {
         ZStack {
             DeskGround()
 
@@ -1245,6 +1254,13 @@ Text("Darkroom")
             }
             .disabled(selectedDeveloped.isEmpty || deskSaving)
             Spacer(minLength: 8)
+            if !selectedIDs.isEmpty, selectedPostable.isEmpty {
+                // Say why Post is off rather than leave it dimmed.
+                Text(selectedDeveloped.isEmpty ? "Still developing" : "Already posted")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .lineLimit(1)
+            }
             Button {
                 deskPostPhotos = selectedPostable
             } label: {
@@ -1608,9 +1624,9 @@ Text("Darkroom")
             } label: {
                 Label("Take a shot", systemImage: "camera.aperture")
                     .flimFont(14, weight: .semibold)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .padding(.horizontal, 20).padding(.vertical, 11)
-                    .overlay(Capsule().stroke(accent, lineWidth: 1))
+                    .overlay(Capsule().stroke(FlimTheme.ink(accent), lineWidth: 1))
             }
             .padding(.top, 4)
         }
@@ -2143,7 +2159,7 @@ Text("Darkroom")
                     Circle().fill(accent.opacity(0.12)).frame(width: 112, height: 112)
                     Image(systemName: "sparkles")
                         .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .symbolEffect(.pulse)
                 }
                 .scaleEffect(revealAnim ? 1 : 0.4)
@@ -2154,7 +2170,8 @@ Text("Darkroom")
                         .foregroundStyle(.white)
                     Text("\(revealCount) new \(revealCount == 1 ? "shot" : "shots") developed")
                         .flimFont(14)
-                        .foregroundStyle(FlimTheme.textSecondary)
+                        // On the dark takeover whatever the desk, so never Paper's dark ink.
+                        .foregroundStyle(AppInfo.is17 ? Color(white: 0.72) : FlimTheme.textSecondary)
                 }
                 .opacity(revealAnim ? 1 : 0)
                 .offset(y: revealAnim ? 0 : 14)

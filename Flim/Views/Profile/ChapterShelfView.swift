@@ -13,6 +13,8 @@ struct ChapterShelfView: View {
     /// Keyed by storage path, matching every cover across every card: `CachedImage` keys its
     /// caches on the path, not on which chapter or card position happened to reference it.
     let coverURLs: [String: URL]
+    /// Whose shelf: "ON YOUR SHELF" on your own page, "ON THE SHELF" on someone else's (1.7).
+    var isOwn: Bool = true
     let onSelect: (ChapterSummary) -> Void
 
     var body: some View {
@@ -54,7 +56,7 @@ struct ChapterShelfView: View {
     private var deskShelf: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("ON YOUR SHELF")
+                Text(isOwn ? "ON YOUR SHELF" : "ON THE SHELF")
                     .font(DeskType.data(10.5))
                     .tracking(1.7)
                     .foregroundStyle(FlimTheme.textTertiary)
@@ -96,7 +98,7 @@ struct ChapterShelfView: View {
             .frame(width: 80, height: 104)
             .clipped()
             LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
-            Text(chapter.monthName().prefix(3).uppercased())
+            Text(Self.stamp(chapter))
                 .font(DeskType.data(10))
                 .tracking(1.4)
                 .foregroundStyle(Color(white: 0.98))
@@ -105,6 +107,15 @@ struct ChapterShelfView: View {
         }
         .frame(width: 80, height: 104)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// "NOV", or "NOV 25" for a month from another year, so two Novembers never look alike.
+    static func stamp(_ chapter: ChapterSummary) -> String {
+        let month = chapter.monthName().prefix(3).uppercased()
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: chapter.monthStart)
+        guard year != calendar.component(.year, from: .now) else { return month }
+        return "\(month) \(String(format: "%02d", year % 100))"
     }
 
     /// Fixed 118pt wide at the frame aspect, per the handoff. `Color.clear` sizes the box, the
@@ -154,7 +165,7 @@ struct ChapterShelfView: View {
                     .labelStyle(.chapterRecapTag)
                     .flimFont(9.5, weight: .bold, relativeTo: .caption2)
                     .tracking(0.8)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(.black.opacity(0.55), in: Capsule())
                     .padding(6)

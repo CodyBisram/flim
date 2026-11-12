@@ -35,7 +35,7 @@ struct SpotlightGlyphBadge: View {
             .overlay {
                 Image(systemName: SpotlightGlyph.systemName)
                     .font(.system(size: size * 0.42, weight: .medium))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
             }
             .accessibilityHidden(true)
     }
@@ -166,7 +166,7 @@ struct SpotlightStrip: View {
                     Text(SpotlightWeekLabel.stamp(week.weekKey))
                         .font(DeskType.data(11))
                         .tracking(1.6)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                     if isNew {
                         Text("new")
                             .flimFont(12, weight: .semibold, relativeTo: .caption2)
@@ -223,9 +223,9 @@ struct SpotlightStrip: View {
                     if isNew {
                         Text("new")
                             .flimFont(11, relativeTo: .caption2)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .padding(.horizontal, 8).padding(.vertical, 2)
-                            .overlay(Capsule().strokeBorder(accent.opacity(0.42), lineWidth: 1))
+                            .overlay(Capsule().strokeBorder(FlimTheme.ink(accent).opacity(0.42), lineWidth: 1))
                     }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .semibold))
@@ -561,7 +561,7 @@ struct SpotlightWeeksSheet: View {
                             } label: {
                                 Text("Try again")
                                     .flimType(.control)
-                                    .foregroundStyle(accent)
+                                    .foregroundStyle(FlimTheme.ink(accent))
                                     .frame(minHeight: 44)
                             }
                             .frame(maxWidth: .infinity)

@@ -51,6 +51,8 @@ struct UserPageView: View {
     /// unfollow against the follow still in flight (audit A-11, 1.6.1).
     @State private var followBusy = false
     @State private var showDeskFriends = false
+    /// 1.7: your follow sets have loaded, so the friends count is real (no "0 friends" flash).
+    @State private var deskFollowSetsLoaded = false
     /// The "shared" stat. Distinct from `posts.count`, which is zero until the grid's own fetch
     /// lands and made the whole stats row flash 0 on every open; this seeds from the session
     /// cache (see `FeedService.profileStatsCache`) and settles to the real count when posts do.
@@ -200,7 +202,7 @@ struct UserPageView: View {
                             SpotlightShelfView(weeks: spotlightWeeks, openingId: openingSpotlightFrame) { frame, weekKey in
                                 openSpotlightFrame(frame, weekKey: weekKey)
                             }
-                            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs) { chapter in
+                            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs, isOwn: isSelf) { chapter in
                                 openChapter = chapter
                             }
                         }
@@ -285,7 +287,7 @@ struct UserPageView: View {
                     }
                 } else if isSelf {
                     Button { showSettings = true } label: {
-                        Image(systemName: "gearshape").foregroundStyle(accent)
+                        Image(systemName: "gearshape").foregroundStyle(FlimTheme.ink(accent))
                     }
                     .accessibilityLabel("Settings")
                 } else {
@@ -318,6 +320,7 @@ struct UserPageView: View {
             if AppInfo.is17, isSelf, let uid = auth.currentUser?.id {
                 await feed.loadFollowing(userId: uid)
                 await feed.loadFollowers(userId: uid)
+                deskFollowSetsLoaded = true
             }
             // Only the owner's own page shows a count, and it fails soft to `.unknown`, which
             // renders a plain "Invite" rather than a number that could be wrong.
@@ -436,7 +439,7 @@ struct UserPageView: View {
 
     /// Mutual follows: 1.7's friends. Known for your own page only (your follow sets are loaded).
     private var deskFriendCount: Int? {
-        guard isSelf else { return nil }
+        guard isSelf, deskFollowSetsLoaded else { return nil }
         return feed.followingIds.intersection(feed.followerIds).count
     }
 
@@ -455,9 +458,9 @@ struct UserPageView: View {
                             if let avatarURL {
                                 CachedImage(url: avatarURL, maxPixel: 200, cacheKey: profile?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                             } else {
-                                Text(String((profile?.username ?? "?").prefix(1)).uppercased())
+                                Text(String((profile?.username ?? (isSelf ? auth.currentUser?.username : nil) ?? "").prefix(1)).uppercased())
                                     .font(DeskType.serif(26, relativeTo: .title))
-                                    .foregroundStyle(Color(white: 0.98))
+                                    .foregroundStyle(Color(white: 0.1))
                             }
                         }
                         .clipShape(Circle())
@@ -465,12 +468,13 @@ struct UserPageView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Profile photo")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(profile?.name ?? "…")
+                    Text(profile?.name ?? (isSelf ? auth.currentUser?.displayName ?? auth.currentUser?.username : nil) ?? " ")
                         .font(DeskType.serif(26, relativeTo: .title))
+                        .redacted(reason: profile == nil && !(isSelf && auth.currentUser?.username != nil) ? .placeholder : [])
                         .foregroundStyle(FlimTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text([profile?.handle ?? "@…", deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" }]
+                    Text([profile?.handle ?? (isSelf ? auth.currentUser?.username.map { "@\($0)" } : nil) ?? "@ ", deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" }]
                             .compactMap { $0 }.joined(separator: " · "))
                         .flimFont(14, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
@@ -492,6 +496,12 @@ struct UserPageView: View {
                     .foregroundStyle(FlimTheme.textSecondary)
             }
             if isSelf {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { deskPageButtons }
+                    VStack(spacing: 8) { deskPageButtons }
+                }
+                FirstVisitLine(surface: .profile)
+            } else if false {
                 HStack(spacing: 8) {
                     deskBoxButton("Edit page") { showEditProfile = true }
                     deskBoxButton("Friends") { showDeskFriends = true }
@@ -517,13 +527,27 @@ struct UserPageView: View {
         .padding(.horizontal, 24)
     }
 
+    @ViewBuilder
+    private var deskPageButtons: some View {
+        deskBoxButton("Edit page") { showEditProfile = true }
+        deskBoxButton("Friends") { showDeskFriends = true }
+        deskBoxButton("Seals") { showBadgePicker = true }
+            .overlay(alignment: .topTrailing) {
+                if unseenBadgeCount > 0 {
+                    Circle().fill(FlimTheme.newRed).frame(width: 8, height: 8).offset(x: -6, y: 4)
+                }
+            }
+    }
+
     private func deskBoxButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textPrimary)
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: 40)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(FlimTheme.surface, in: Capsule())
         }
         .buttonStyle(.plain)
@@ -658,7 +682,7 @@ struct UserPageView: View {
                           : "\(unseenBadgeCount) new badges to see",
                           systemImage: "sparkles")
                         .flimFont(12, weight: .semibold, relativeTo: .caption)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(accent.opacity(0.12), in: Capsule())
                 }
@@ -735,7 +759,7 @@ struct UserPageView: View {
                     CachedImage(url: avatarURL, maxPixel: 220, cacheKey: profile?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String((profile?.username ?? "?").prefix(1)).uppercased())
-                        .flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(accent)
+                        .flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(FlimTheme.ink(accent))
                 }
             }
             .clipShape(Circle())
@@ -980,10 +1004,10 @@ struct UserPageView: View {
                     } label: {
                         Label("Take a shot", systemImage: "camera.aperture")
                             .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .padding(.horizontal, 20)
                             .frame(minHeight: 44)
-                            .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                            .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 6)
@@ -1285,7 +1309,7 @@ struct DiscoverPeopleView: View {
                                 .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                             Button("Try again") { answeredQuery = ""; searchFailed = false; searchGeneration += 1 }
                                 .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                                .foregroundStyle(accent)
+                                .foregroundStyle(FlimTheme.ink(accent))
                         }
                         .padding(40)
                         Spacer()
@@ -1310,7 +1334,7 @@ struct DiscoverPeopleView: View {
                             Button { showInvite = true } label: {
                                 Text("Invite them")
                                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                                    .foregroundStyle(accent)
+                                    .foregroundStyle(FlimTheme.ink(accent))
                             }
                         }
                         .padding(40)
@@ -1573,6 +1597,24 @@ struct FollowButton: View {
         let following = feed.isFollowing(userId)
         Button {
             guard let uid = auth.currentUser?.id, !busy else { return }
+            // 1.7: taking back a friend or a request goes behind the undo capsule, like every
+            // other removal (the "Friends ✓" chip reads as a status as much as a button).
+            if AppInfo.is17, following {
+                Haptics.warning()
+                let service = feed
+                let target = userId
+                let wasFriend = feed.followsMe(userId)
+                service.followingIds.remove(target)
+                UndoCenter.shared.stage(
+                    title: wasFriend ? "Removed as a friend" : "Request cancelled",
+                    failureText: "That didn't go through. Check your connection and try again.",
+                    revert: { service.followingIds.insert(target) },
+                    commit: {
+                        service.followingIds.insert(target)   // unfollow flips it out itself
+                        return await service.unfollow(target, from: uid)
+                    })
+                return
+            }
             Haptics.tap()
             busy = true
             Task {
@@ -1623,6 +1665,9 @@ extension FollowButton {
         .frame(minHeight: 34)
         .background(state == .add ? DeskColor.solid : (state == .friends ? FlimTheme.surface : .clear), in: Capsule())
         .overlay { if state == .requested { Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1.5) } }
+        // 34pt to look at, 44pt to hit.
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
         .accessibilityHint(state == .requested ? "Cancels the request" : (state == .friends ? "Removes them as a friend" : ""))
     }
 }

@@ -333,7 +333,7 @@ struct CommentsSheet: View {
             Button { retry() } label: {
                 Text("Try again")
                     .flimType(.control)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .frame(minHeight: 44)
             }
             .disabled(retrying)

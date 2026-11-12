@@ -17,6 +17,10 @@ struct DeskFriendsView: View {
     @State private var loaded = false
     @State private var hidden: Set<UUID> = []
     @State private var notice: String?
+    @State private var showFind = false
+    @Environment(NetworkMonitor.self) private var network
+    /// Offline with nothing loaded: say it failed rather than "No friends yet".
+    private var failed: Bool { loaded && !network.isConnected && followers.isEmpty && following.isEmpty }
 
     private var friends: [UserProfile] {
         following.filter { feed.followsMe($0.id) && feed.isFollowing($0.id) }
@@ -43,6 +47,10 @@ struct DeskFriendsView: View {
                     Spacer()
                     ProgressView().tint(FlimTheme.textPrimary).frame(maxWidth: .infinity)
                     Spacer()
+                } else if failed {
+                    Spacer()
+                    DeskFailedState(title: "Couldn't load your friends.", message: DeskFailedState.standardMessage) { await load() }
+                    Spacer(); Spacer()
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
@@ -64,6 +72,7 @@ struct DeskFriendsView: View {
                 if let notice { FlimToast(notice, kind: .error).padding(.top, 8) }
             }
             .task { await load() }
+            .sheet(isPresented: $showFind, onDismiss: { Task { await load() } }) { DiscoverPeopleView() }
         }
         .flimSheetSurface()
     }
@@ -97,8 +106,10 @@ struct DeskFriendsView: View {
     private var friendsList: some View {
         if friends.isEmpty {
             DeskEmptyState(title: "No friends yet.",
-                           message: "Add someone and they're your friend once they add you back.")
-                .padding(.top, 80)
+                           message: "Add someone and they're your friend once they add you back.") {
+                Button { showFind = true } label: { DeskPill("Find friends", style: .solid) }
+            }
+            .padding(.top, 80)
         } else {
             ForEach(friends) { person in
                 row(person, detail: person.name) {
