@@ -89,14 +89,14 @@ struct PagerPreviewDemoHost: View {
             .task { auth.currentUser = AppUser(id: Self.ownerId, createdAt: .now) }
     }
 
-    private struct Fixture {
+    struct Fixture {
         var photos: [Photo]
         var urls: [UUID: URL]
     }
 
     /// Four developed frames, each a gradient written to the app's temporary directory so the
     /// viewer has a real file URL to load.
-    private static func makeFixture() -> Fixture {
+    static func makeFixture() -> Fixture {
         var fixture = Fixture(photos: [], urls: [:])
         for index in 0..<4 {
             let id = UUID()

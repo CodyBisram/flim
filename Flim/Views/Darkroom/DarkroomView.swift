@@ -53,6 +53,12 @@ struct DarkroomView: View {
     @State private var pagerDeleteEpochs = PagerDeleteEpochs()
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
+    /// 1.7 on the Duo's open display (Blend 2, 6h): the viewer stands docked right of the fold
+    /// instead of covering the grid. `viewingID` is the shot it has turned to, for the grid's
+    /// ring; `dockGeneration` restarts it on a tap, including a tap on the shot it started from.
+    @Environment(\.deskLayout) private var deskLayout
+    @State private var viewingID: UUID?
+    @State private var dockGeneration = 0
     @State private var isSelecting = false
     /// 1.7: the shots Post opens with, and whether Save is running.
     @State private var deskPostPhotos: [Photo] = []
@@ -520,8 +526,67 @@ Text("Darkroom")
             }
     }
 
+    private var docksViewer: Bool { AppInfo.is17 && deskLayout == .open }
+
+    /// The shot the docked viewer opens on: the one tapped, while it is still in the grid, or
+    /// the newest developed one, so the right half is never an empty panel while there are shots.
+    private var dockedStart: Photo? {
+        let ordered = renderOrderPhotos
+        if let picked = selectedPhoto, let live = ordered.first(where: { $0.id == picked.id }) { return live }
+        return ordered.first(where: \.isReady)
+    }
+
+    /// The viewer, docked (Blend 2, 6h): its own Slate panel on either desk, so photos read true.
+    private var deskDockedViewer: some View {
+        let ordered = renderOrderPhotos
+        return Group {
+            if let start = dockedStart, let index = ordered.firstIndex(where: { $0.id == start.id }) {
+                PhotoPagerView(photos: ordered,
+                               startIndex: index,
+                               signedURLs: vm.signedURLCache,
+                               showsNightRack: true,
+                               rollName: { rollName(for: $0) },
+                               onDelete: { Task { await reload() } },
+                               onClose: { selectedPhoto = nil; viewingID = nil },
+                               docked: true,
+                               onShow: { viewingID = $0.id },
+                               onDeletePhase: { handlePagerDelete($0, $1) })
+                    .id("\(start.id)-\(dockGeneration)")
+            } else {
+                Color.black
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var bodyLayout: some View {
+        if docksViewer {
+            GeometryReader { proxy in
+                // The fold is the middle of the display, and the rail has taken its share of the
+                // leading side: the grid stops 14pt short of the fold, the panel starts 16pt past.
+                let fold = max(0, (proxy.size.width - DeskTabBar.railSpace) / 2)
+                HStack(spacing: 0) {
+                    bodyStack
+                        .frame(width: max(0, fold - 14))
+                    deskDockedViewer
+                        .frame(height: max(0, proxy.size.height - 24))
+                        .padding(.leading, 30)
+                        .padding(.trailing, 20)
+                        .padding(.top, 6)
+                        .padding(.bottom, 18)
+                }
+            }
+            .background(DeskGround())
+        } else {
+            bodyStack
+        }
+    }
+
     private var bodyContent: some View {
-        bodyStack
+        bodyLayout
+            // Folding the Duo shut must not throw the docked shot up as a full-screen viewer.
+            .onChange(of: docksViewer) { _, _ in selectedPhoto = nil; viewingID = nil }
             // 1.7: the Select bar takes the tab bar's place (Blend 3, 9a).
             .onChange(of: isSelecting, initial: true) { _, now in
                 if AppInfo.is17 { DeskChrome.shared.selecting = now }
@@ -694,7 +759,7 @@ Text("Darkroom")
                 onPartialFailure: { flashError($0) }
             )
         }
-        .fullScreenCover(item: $selectedPhoto) { photo in
+        .fullScreenCover(item: docksViewer ? .constant(nil) : $selectedPhoto) { photo in
             pager(for: photo)
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
@@ -833,6 +898,7 @@ Text("Darkroom")
                     onTapDeveloped: { photo in
                         selectedURL = vm.signedURLCache[photo.id]
                         selectedPhoto = photo
+                        if docksViewer { viewingID = photo.id; dockGeneration += 1 }
                     },
                     onToggleSelect: { toggleSelect($0) },
                     developedMenu: { AnyView(developedMenu($0)) },
@@ -841,7 +907,8 @@ Text("Darkroom")
                     onMountChange: { dayKey, isMounted in
                         if isMounted { mountedNightDayKeys.insert(dayKey) } else { mountedNightDayKeys.remove(dayKey) }
                         updateMonthAnchorFromScroll()
-                    }
+                    },
+                    viewingID: docksViewer ? (viewingID ?? dockedStart?.id) : nil
                 )
                 if unit.id != lastMonthScopedUnitId {
                     DarkroomUnitSeparator()
@@ -2016,6 +2083,18 @@ Text("Darkroom")
     /// this only forks where it actually changes the result: an anchored pull-to-refresh must
     /// never teleport the person back to the present month they weren't looking at.
     private func reload() async {
+        #if DEBUG
+        // `-darkroomFixture`: four developed frames from today and no network, so the grid and
+        // the Duo's docked viewer can be looked at on a simulator with no account.
+        if ProcessInfo.processInfo.arguments.contains("-darkroomFixture") {
+            if vm.photos.isEmpty {
+                let fixture = PagerPreviewDemoHost.makeFixture()
+                vm.signedURLCache = fixture.urls
+                vm.photos = fixture.photos
+            }
+            return
+        }
+        #endif
         guard let userId = auth.currentUser?.id else { return }
         // Captured once, re-checked before every write past an await below: a sign-out then
         // straight back in as someone else (or a plain account switch) mid-reload is otherwise a

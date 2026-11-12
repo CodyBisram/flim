@@ -172,4 +172,17 @@ final class Desk17UITests: XCTestCase {
             shot("open_\(label.lowercased())")
         }
     }
+
+    /// The Darkroom on the Duo's open display (Blend 2, 6h): the grid on the left of the fold and
+    /// the viewer docked on the right, with no X because it covers nothing.
+    func testOpenDuoDarkroomDocksTheViewer() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabDarkroom", "-darkroomFixture",
+                               "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        let position = app.staticTexts["1 of 4"].firstMatch
+        XCTAssertTrue(position.waitForExistence(timeout: 15), "the docked viewer is not showing the newest shot")
+        XCTAssertFalse(app.buttons["Close"].exists, "the docked viewer has an X")
+        shot("open_darkroom_docked")
+    }
 }

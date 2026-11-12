@@ -37,6 +37,8 @@ struct DeskTabBar: View {
     static let bottomGap: CGFloat = 4
     /// The rail's width, and the gap between it and the display's edge.
     static let railWidth: CGFloat = 76
+    /// What the rail takes from the display's width, its gap included.
+    static var railSpace: CGFloat { railWidth + railGap }
     static let railGap: CGFloat = 14
 
     @ViewBuilder

@@ -199,6 +199,11 @@ struct PhotoPagerView: View {
     /// the chapter player (2026-09-10): presenting the export sheet from inside two stacked
     /// full-screen covers was one layer too many on iOS 26.6, so the chapter now plays inline.
     var onClose: (() -> Void)? = nil
+    /// 1.7 on the Duo's open display: the viewer stands docked beside the Darkroom's grid
+    /// (Blend 2, 6h) rather than over it. Docked, it has no X (there is nothing to go back to),
+    /// leaves the status bar alone, and reports each shot it turns to so the grid can ring it.
+    var docked = false
+    var onShow: (Photo) -> Void = { _ in }
     /// Where a personal delete staged from this pager stands, so the screen underneath can hide
     /// the photo for the undo window the way its own deletes do (`DarkroomView.commitDeleteBatch`
     /// and `pendingHiddenIds`). Without it the capsule said "Photo deleted" while the frame sat
@@ -336,6 +341,8 @@ struct PhotoPagerView: View {
     /// `width x width*4/3` box rather than guessing. 393 is a reasonable first-paint fallback,
     /// same convention `DarkroomView.scrollWidth` uses.
     @State private var screenWidth: CGFloat = 393
+    /// Docked only: the panel's height, which the photo box has to fit inside.
+    @State private var dockedHeight: CGFloat = 600
     /// The rack row's own measured width, for its edge-fade mask.
     @State private var rackWidth: CGFloat = 393
     /// A private namespace for the rack's OWN frame views. Never wired to a real navigation
@@ -404,6 +411,7 @@ struct PhotoPagerView: View {
          onDelete: @escaping () -> Void = {}, onBlock: @escaping () -> Void = {},
          openCommentsOnAppear: Bool = false,
          showsDelete: Bool = true, posts: [UUID: Post] = [:], onClose: (() -> Void)? = nil,
+         docked: Bool = false, onShow: @escaping (Photo) -> Void = { _ in },
          onDeletePhase: @escaping (Photo, DeletePhase) -> Void = { _, _ in }) {
         self.photos = photos
         self.startIndex = startIndex
@@ -421,6 +429,8 @@ struct PhotoPagerView: View {
         self.showsDelete = showsDelete
         self.posts = posts
         self.onClose = onClose
+        self.docked = docked
+        self.onShow = onShow
         self.onDeletePhase = onDeletePhase
         _selection = State(initialValue: min(max(startIndex, 0), max(0, photos.count - 1)))
     }
@@ -508,8 +518,9 @@ struct PhotoPagerView: View {
             }
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screenWidth = $0 }
-        .ignoresSafeArea(.container)
-        .statusBarHidden()
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { dockedHeight = $0 }
+        .ignoresSafeArea(docked ? [] : .container)
+        .statusBarHidden(!docked)
         // This pager is a fullScreenCover painting over MainTabView's capsule host, and
         // reports are staged without leaving the pager, so it hosts its own copy.
         .undoCapsuleHost(bottomPadding: 44)
@@ -593,6 +604,7 @@ struct PhotoPagerView: View {
             // `pinchStart` belongs to that set: leaving it behind means a pinch still in flight
             // when the page turns springs the NEW photo back to the old one's resting scale.
             scale = 1; offset = .zero; lastOffset = .zero; pinchStart = nil
+            if let current { onShow(current) }
             Task { await resolveAround(selection) }
         }
         // Membership can change under an OPEN pager: a presenting view's cover content keeps
@@ -799,11 +811,13 @@ struct PhotoPagerView: View {
     private var nightRackHeader: some View {
         if let photo = current {
             HStack(spacing: 10) {
-                GlassIconButton { close() } label: {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(.white)
+                if !docked {
+                    GlassIconButton { close() } label: {
+                        Image(systemName: "xmark")
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel("Close")
                 }
-                .accessibilityLabel("Close")
 
                 Text(currentNightTitle)
                     .flimFont(15, weight: .medium)
@@ -879,7 +893,7 @@ struct PhotoPagerView: View {
             .glassGroup(spacing: 8)
             .padding(.leading, 20)
             .padding(.trailing, 20)
-            .padding(.top, 60)
+            .padding(.top, docked ? 14 : 60)
         }
     }
 
@@ -1480,8 +1494,14 @@ struct PhotoPagerView: View {
     /// card gutter exactly. This deliberately overrides the Darkroom redesign's original
     /// full-bleed-square spec for the night-rack photo box (owner-ratified 2026-08-26; the
     /// rounded, inset treatment below is the owner's later call, from a device screenshot).
-    private var photoWidth: CGFloat { max(1, screenWidth - 32) }
-    private var photoHeight: CGFloat { photoWidth * 4 / 3 }
+    private var photoWidth: CGFloat { docked ? photoHeight * 3 / 4 : max(1, screenWidth - 32) }
+    private var photoHeight: CGFloat {
+        let full = max(1, screenWidth - 32) * 4 / 3
+        // Docked on the Duo, the panel is shorter than a phone: the box keeps its 3:4 and fits
+        // the height left once the header, the strip and the status row have theirs.
+        return docked ? max(1, min(full, dockedHeight - Self.dockedChromeHeight)) : full
+    }
+    private static let dockedChromeHeight: CGFloat = 190
 
     /// The night rack's own frame geometry, matching `FeedUnitCard.FilmStrip`'s exactly: 30pt
     /// frames, a 2pt gap, a 32pt pitch. Fixed at every count, same reasoning as the feed strip's

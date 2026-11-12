@@ -32,6 +32,8 @@ struct DarkroomDayUnitView: View {
     /// doc for why a mounted-set approximation, rather than true visibility, is the right amount
     /// of precision here.
     var onMountChange: (Date, Bool) -> Void = { _, _ in }
+    /// 1.7 on the Duo's open display: the shot showing in the docked viewer wears the ring.
+    var viewingID: UUID? = nil
 
     private var strips: [DarkroomFilmStrip] { DarkroomDayUnit.cutStrips(photos: unit.photos, capacity: capacity) }
 
@@ -129,6 +131,7 @@ struct DarkroomDayUnitView: View {
                 onTap: { onTapDeveloped(photo) },
                 onToggleSelect: { onToggleSelect(photo.id) },
                 menu: { photo.isReady ? developedMenu(photo) : developingMenu(photo) },
+                isCurrent: viewingID == photo.id ? true : nil,
                 developingFraction: developingFraction,
                 frameWidth: frameWidth
             )
