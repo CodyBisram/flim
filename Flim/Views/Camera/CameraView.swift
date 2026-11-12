@@ -345,45 +345,33 @@ struct CameraView: View {
         return selectedRoll
     }
 
-    /// 1.7's camera: the viewfinder inset on the desk with 12pt corners, its roll picker and
-    /// flash and timer inside the frame, the zoom chips on its foot. Shooting into a roll gives the
-    /// frame an amber edge and a line under it with the roll's countdown. Flip, shutter, last shot
-    /// below.
+    /// 1.7's camera, redrawn on the owner's call (2026-11-11): 1.6's layout on the desk. The top
+    /// band carries where the shot goes (left) with the timer and flash beside it, and the upload
+    /// state on the right; the viewfinder runs full width, centred between the top of the screen
+    /// and the bar; flip, the shutter and your last shot sit in the band below. The 1.7 parts
+    /// stay: Paper or Slate with grain, the box-tone controls, the amber edge and countdown while
+    /// shooting into a roll, the zoom dial and the light leak.
     private var deskLayer: some View {
         ZStack {
             DeskGround()
 
+            // The bands above and below the frame share the leftover height equally, which keeps
+            // the frame centred; each keeps a minimum for its controls, so on a short screen (the
+            // Duo's outer display) the frame gives way rather than the controls.
             VStack(spacing: 0) {
-                // Centred on the screen (owner, 2026-11-10: pinned to the top it looked off): the
-                // frame at the full width it can have (3:4, what it shows is the photo), the line
-                // and the controls under it, and the space split evenly above and below the group.
-                // The frame wins the height negotiation, so on a short screen (the Duo's outer
-                // display) the spacers give way first, then the frame.
-                Spacer(minLength: 6)
+                Color.clear
+                    .frame(minHeight: 60, maxHeight: .infinity)
                 deskViewfinder
-                    .padding(.horizontal, 16)
                     .layoutPriority(1)
-                deskUnderLine
-                    .frame(height: 34)
                 ZStack {
                     if camera.permission != .denied {
                         deskBottomRow
                             .reportsControlRegion()
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 88)
-                // Blend 2, 7f: once, under the shutter, until the first shot (or a tap).
-                .overlay(alignment: .bottom) {
-                    if !hasSeenCoach, camera.permission == .authorized {
-                        deskFirstShotHint
-                            .offset(y: 48)
-                            .transition(.opacity)
-                    }
-                }
-                .zIndex(1)
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, minHeight: 96, maxHeight: .infinity)
             }
+            .ignoresSafeArea(edges: .top)
 
             Color.white
                 .opacity(camera.flashOpacity)
@@ -394,16 +382,18 @@ struct CameraView: View {
                 cameraDeniedOverlay
             } else {
                 VStack(spacing: 0) {
+                    deskTopBar
+                        .reportsControlRegion()
                     if rollDevelopedFallbackToast {
                         FlimToast("That roll isn't accepting shots anymore, so this one went to your Darkroom instead.",
                                   kind: .info, alignment: .leading)
                             .padding(.top, 10)
                             .padding(.horizontal, 24)
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     Spacer()
                 }
                 .animation(.snappy(duration: 0.25), value: rollDevelopedFallbackToast)
-
 
                 if let countdown, countdown > 0 {
                     Text("\(countdown)")
@@ -440,14 +430,19 @@ struct CameraView: View {
         .accessibilityHint("Dismisses the hint")
     }
 
+    /// The viewfinder's corner: 1.6's rounded box, a touch softer than its 36.
+    private static let deskFrameRadius: CGFloat = FlimRadius.viewfinder
+
     private var deskViewfinder: some View {
-        CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
+        let shape = RoundedRectangle(cornerRadius: Self.deskFrameRadius, style: .continuous)
+        return CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
             // Dark under the picture, so the frame reads as a frame while the camera starts.
             .background(Color.black)
+            // Full width at 3:4: what the frame shows is the photo.
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
             // The warm leak sits on the viewfinder only (Blend 1, 1a); the saved photo never has it.
             .overlay { if cameraLeak { DeskLightLeak() } }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(shape)
             .overlay {
                 if let reticle = camera.focusReticle {
                     RoundedRectangle(cornerRadius: 4)
@@ -461,128 +456,163 @@ struct CameraView: View {
             .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
             .overlay { faceIndicators }
             .animation(.easeOut(duration: 0.18), value: camera.faceRects)
-            .overlay { cameraUnavailableOverlay.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
+            .overlay { cameraUnavailableOverlay.clipShape(shape) }
             .animation(.easeOut(duration: 0.2), value: camera.isInterrupted)
             .onChange(of: camera.isInterrupted) { _, now in
                 if now { countdown = nil }
             }
             // Shooting into a roll: an amber edge, so you always know where the shot is going.
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(accent, lineWidth: liveRoll == nil ? 0 : 2)
+                shape.strokeBorder(accent, lineWidth: liveRoll == nil ? 0 : 2.5)
                     .allowsHitTesting(false)
             }
-            .animation(.easeOut(duration: 0.2), value: liveRoll?.id)
-            .overlay(alignment: .top) {
-                deskTopRow
-                    .reportsControlRegion()
-                    .padding(.horizontal, 6)
-                    .padding(.top, 6)
-            }
+            .animation(.easeOut(duration: 0.25), value: liveRoll?.id)
             .overlay(alignment: .bottom) {
-                DeskZoomDial(camera: camera, presets: zoomPresets, label: zoomLabel)
-                    .reportsControlRegion()
-                    .padding(.bottom, 10)
+                VStack(spacing: 12) {
+                    // Blend 2, 7f: once, until the first shot (or a tap).
+                    if !hasSeenCoach, camera.permission == .authorized {
+                        deskFirstShotHint
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                    DeskZoomDial(camera: camera, presets: zoomPresets, label: zoomLabel)
+                        .reportsControlRegion()
+                }
+                .padding(.bottom, 12)
             }
             .frame(maxWidth: .infinity)
     }
 
-    /// Inside the frame's top edge: where the shot goes (left), flash and timer (right). White
-    /// with a soft shadow, because they sit on the live picture.
-    private var deskTopRow: some View {
-        HStack(spacing: 2) {
-            Button { showRollPicker = true } label: {
-                HStack(spacing: 5) {
-                    Text(liveRoll?.name ?? "Personal")
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .padding(.horizontal, 10)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .layoutPriority(-1)
-            .accessibilityLabel("Send photos to")
-            .accessibilityValue(liveRoll?.name ?? "Personal")
-
-            Spacer(minLength: 8)
-
-            if camera.isFlashSupported {
-                Button { cycleFlash() } label: {
-                    Image(systemName: flashIcon)
-                        .font(.system(size: 16, weight: .medium))
-                        .contentTransition(.symbolEffect(.replace))
-                        .foregroundStyle(flashMode == .off ? .white : accent)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Flash")
-                .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
-            }
-
-            Button {
+    /// The top band (1.6's top bar on the desk): where the shot goes, the timer and flash beside
+    /// it, and on the right the upload state or the shots waiting to be sorted.
+    private var deskTopBar: some View {
+        HStack(spacing: 8) {
+            deskRollPill
+                .layoutPriority(-1)
+            deskRoundControl(label: "Self timer",
+                             value: selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds) seconds",
+                             tinted: selfTimerSeconds > 0) {
                 selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
                 Haptics.tap()
-            } label: {
+            } content: {
                 HStack(spacing: 1) {
                     Image(systemName: "timer")
-                        .font(.system(size: 16, weight: .medium))
                     if selfTimerSeconds > 0 {
                         Text("\(selfTimerSeconds)")
                             .font(.system(size: 11, weight: .bold))
                             .fixedSize()
                     }
                 }
-                .foregroundStyle(selfTimerSeconds == 0 ? .white : accent)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
             }
-            .accessibilityLabel("Self timer")
-            .accessibilityValue(selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds) seconds")
+            if camera.isFlashSupported {
+                deskRoundControl(label: "Flash",
+                                 value: flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"),
+                                 tinted: flashMode != .off) {
+                    cycleFlash()
+                } content: {
+                    Image(systemName: flashIcon)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
+            Spacer(minLength: 4)
+            deskStatus
         }
-        .foregroundStyle(.white)
-        .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .animation(.snappy(duration: 0.2), value: liveRoll?.id)
     }
 
-    /// Under the frame: a stuck shot's status first (not saved, or queued with Retry), otherwise
-    /// the roll being shot into, with its countdown and a way back to Personal.
+    /// Where the shot goes: Personal, or the roll with its countdown in mono and an amber ring.
+    private var deskRollPill: some View {
+        Button { showRollPicker = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: liveRoll == nil ? "person.fill" : "film.stack")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(liveRoll?.name ?? "Personal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let roll = liveRoll {
+                    TimelineView(.periodic(from: .now, by: 1)) { tl in
+                        Text(DeskType.clock(roll.revealAt.timeIntervalSince(tl.date)))
+                            .font(DeskType.data(11))
+                            .monospacedDigit()
+                            .fixedSize()
+                    }
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(liveRoll == nil ? FlimTheme.textPrimary : accent)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(FlimTheme.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(accent.opacity(liveRoll == nil ? 0 : 0.7), lineWidth: 1.5))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Send photos to")
+        .accessibilityValue(liveRoll?.name ?? "Personal")
+    }
+
+    private func deskRoundControl<Content: View>(label: String, value: String, tinted: Bool,
+                                                 action: @escaping () -> Void,
+                                                 @ViewBuilder content: () -> Content) -> some View {
+        Button(action: action) {
+            content()
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(tinted ? accent : FlimTheme.textPrimary)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(FlimTheme.surface))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
+
+    /// Right of the top band: a stuck shot (not saved, or queued with Retry), a quiet spinner
+    /// while one uploads ("Saving N" for a burst), or the shots waiting in the sort deck.
     @ViewBuilder
-    private var deskUnderLine: some View {
+    private var deskStatus: some View {
         if let status = captureStatus, !status.isInBetween {
             CaptureStatusChip(status: status, rollName: liveRoll?.name) {
                 Task { await photos.retryFailedUploads() }
             }
-            .padding(.horizontal, 16)
-        } else if let roll = liveRoll {
-            Button {
-                withAnimation(.snappy(duration: 0.25)) { selectedRoll = nil }
-                Haptics.tap()
-            } label: {
-                TimelineView(.periodic(from: .now, by: 1)) { tl in
-                    HStack(spacing: 0) {
-                        Text("Shooting into \(roll.name) · ")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text(DeskType.clock(roll.revealAt.timeIntervalSince(tl.date)))
-                            .font(DeskType.data(12))
-                            .foregroundStyle(accent)
-                            .fixedSize()
-                        Text(" · ")
-                        Text("tap to stop").fontWeight(.semibold).fixedSize()
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(FlimTheme.textSecondary)
+            .frame(maxWidth: 220, alignment: .trailing)
+            .transition(.opacity)
+        } else if captureStatus?.isInBetween == true {
+            HStack(spacing: 6) {
+                ProgressView().tint(FlimTheme.textPrimary).controlSize(.mini)
+                if photos.pendingCaptureCount > 1 {
+                    Text("Saving \(photos.pendingCaptureCount)")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .lineLimit(1).fixedSize()
                 }
-                .padding(.horizontal, 16)
-                .frame(minHeight: 34)
-                .contentShape(Rectangle())
+            }
+            .padding(.horizontal, photos.pendingCaptureCount > 1 ? 12 : 0)
+            .frame(minWidth: 44, minHeight: 44)
+            .background(FlimTheme.surface, in: Capsule())
+            .accessibilityLabel(photos.pendingCaptureCount > 1
+                ? "Saving \(photos.pendingCaptureCount) photos, then uploading"
+                : "Uploading")
+            .transition(.opacity)
+        } else if unsortedCount > 0 {
+            Button { showSortDeck = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
+                    Text("\(unsortedCount) to sort")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1).fixedSize()
+                }
+                .foregroundStyle(Color(white: 0.1))
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .background(accent, in: Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Shooting into \(roll.name)")
-            .accessibilityHint("Switches back to Personal")
+            .accessibilityLabel("\(unsortedCount) to sort")
+            .transition(.opacity)
         }
     }
 
@@ -597,18 +627,20 @@ struct CameraView: View {
                     Haptics.tap()
                 } label: {
                     Image(systemName: Self.flipCameraSymbol)
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(FlimTheme.textPrimary)
-                        .frame(width: 48, height: 48)
+                        .frame(width: 52, height: 52)
                         .background(Circle().fill(FlimTheme.surface))
+                        .contentShape(Circle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Flip camera")
 
                 Spacer()
 
                 lastShotButton
             }
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 36)
         }
     }
 
@@ -619,7 +651,7 @@ struct CameraView: View {
             NotificationCenter.default.post(name: .openDarkroom, object: nil)
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(FlimTheme.surface)
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(FlimTheme.surface)
                 if liveRoll != nil {
                     Text("SEALED")
                         .font(DeskType.data(8))
@@ -637,9 +669,10 @@ struct CameraView: View {
                     ProgressView().controlSize(.mini).tint(FlimTheme.textPrimary)
                 }
             }
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .frame(width: 52, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(liveRoll != nil ? "Sealed until the roll opens. Open Darkroom" : "Last shot. Open Darkroom")
     }
 
