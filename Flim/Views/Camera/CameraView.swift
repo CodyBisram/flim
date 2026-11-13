@@ -84,8 +84,6 @@ struct CameraView: View {
     /// 1.7: the warm leak on the viewfinder, switchable in Appearance.
     @AppStorage(DeskLightLeak.enabledKey) private var cameraLeak = true
     /// 1.7: your newest personal shot, bottom right; tapping it opens the Darkroom.
-    @State private var lastShot: Photo?
-    @State private var lastShotURL: URL?
     @State private var showSortDeck = false
     @Environment(NetworkMonitor.self) private var network
 
@@ -359,12 +357,12 @@ struct CameraView: View {
         return selectedRoll
     }
 
-    /// 1.7's camera, redrawn on the owner's call (2026-11-11): 1.6's layout on the desk. The top
-    /// band carries where the shot goes (left) with the timer and flash beside it, and the upload
-    /// state on the right; the viewfinder runs full width, centred between the top of the screen
-    /// and the bar; flip, the shutter and your last shot sit in the band below. The 1.7 parts
-    /// stay: Paper or Slate with grain, the box-tone controls, the amber edge and countdown while
-    /// shooting into a roll, the zoom dial and the light leak.
+    /// 1.7's camera on 1.6's layout, control for control (owner, 2026-11-11 and 2026-11-13): the
+    /// top band carries where the shot goes and the timer on the left and the upload state or
+    /// "N to sort" on the right; the viewfinder runs full width, centred between the top of the
+    /// screen and the bar; flip, the shutter and flash sit in the band below. The 1.7 parts stay:
+    /// Paper or Slate with grain, the amber edge and countdown while shooting into a roll, the
+    /// zoom dial and the light leak.
     private var deskLayer: some View {
         ZStack {
             DeskGround()
@@ -419,12 +417,11 @@ struct CameraView: View {
                 }
             }
         }
-        .task(id: photos.pendingCaptureCount) { await refreshLastShot() }
     }
 
     /// The camera on the Duo's open display (Blend 2, 6f): the viewfinder at full height on the
-    /// left, its top bar above it, and flip, the shutter and the last shot stacked in a column on
-    /// the trailing side, near the thumb. The fold has nothing to tap.
+    /// left, its top bar above it, and flip, the shutter and flash stacked in a column on the
+    /// trailing side, near the thumb (the phone's bottom row, turned on its side).
     private var deskOpenLayer: some View {
         ZStack {
             DeskGround()
@@ -440,7 +437,7 @@ struct CameraView: View {
                             deskFlipButton
                             ShutterButton(isCapturing: camera.isCapturing,
                                           unavailableReason: camera.isInterrupted ? (camera.interruptionReason ?? "Camera unavailable") : nil) { shutter() }
-                            lastShotButton
+                            deskFlashSlot
                         }
                         .reportsControlRegion()
                         .frame(width: 96)
@@ -463,8 +460,10 @@ struct CameraView: View {
                     .allowsHitTesting(false)
             }
         }
-        .task(id: photos.pendingCaptureCount) { await refreshLastShot() }
     }
+
+    /// The size of the round controls beside the shutter, 1.6's prominent circle.
+    private static let deskSideControl: CGFloat = GlassIconSize.prominent.diameter
 
     private var deskFlipButton: some View {
         Button {
@@ -472,14 +471,38 @@ struct CameraView: View {
             Haptics.tap()
         } label: {
             Image(systemName: Self.flipCameraSymbol)
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: GlassIconSize.glyphSize, weight: .medium))
                 .foregroundStyle(FlimTheme.textPrimary)
-                .frame(width: 52, height: 52)
+                .frame(width: Self.deskSideControl, height: Self.deskSideControl)
                 .background(Circle().fill(FlimTheme.surface))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Flip camera")
+    }
+
+    /// Flash, opposite flip as in 1.6. The front camera has none, so the slot keeps its size
+    /// empty and the shutter stays centred between the two.
+    private var deskFlashSlot: some View {
+        ZStack {
+            if camera.isFlashSupported {
+                Button {
+                    cycleFlash()
+                } label: {
+                    Image(systemName: flashIcon)
+                        .contentTransition(.symbolEffect(.replace))
+                        .font(.system(size: GlassIconSize.glyphSize, weight: .medium))
+                        .foregroundStyle(flashMode == .off ? FlimTheme.textPrimary : FlimTheme.ink(accent))
+                        .frame(width: Self.deskSideControl, height: Self.deskSideControl)
+                        .background(Circle().fill(FlimTheme.surface))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Flash")
+                .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
+            }
+        }
+        .frame(width: Self.deskSideControl, height: Self.deskSideControl)
     }
 
     /// The first-run hint (Blend 2, 7f), standing in for 1.6's full-screen coach. Seeing it
@@ -563,10 +586,10 @@ struct CameraView: View {
             .frame(maxWidth: .infinity)
     }
 
-    /// The top band (1.6's top bar on the desk): where the shot goes, the timer and flash beside
-    /// it, and on the right the upload state or the shots waiting to be sorted.
+    /// The top band (1.6's top bar on the desk): where the shot goes and the timer beside it, and
+    /// on the right the upload state or the shots waiting to be sorted.
     private var deskTopBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             deskRollPill
                 .layoutPriority(-1)
             deskRoundControl(label: "Self timer",
@@ -584,21 +607,12 @@ struct CameraView: View {
                     }
                 }
             }
-            if camera.isFlashSupported {
-                deskRoundControl(label: "Flash",
-                                 value: flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"),
-                                 tinted: flashMode != .off) {
-                    cycleFlash()
-                } content: {
-                    Image(systemName: flashIcon)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-            }
-            Spacer(minLength: 4)
+            .padding(.leading, 16)
+            Spacer(minLength: 8)
             deskStatus
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
         .animation(.snappy(duration: 0.2), value: liveRoll?.id)
     }
 
@@ -609,7 +623,7 @@ struct CameraView: View {
                 Image(systemName: liveRoll == nil ? "person.fill" : "film.stack")
                     .font(.system(size: 12, weight: .semibold))
                 Text(liveRoll?.name ?? "Personal")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let roll = liveRoll {
@@ -697,7 +711,7 @@ struct CameraView: View {
         }
     }
 
-    /// Flip on the left, the shutter in the middle, your last shot on the right.
+    /// Flip on the left, the shutter in the middle, flash on the right: 1.6's strip.
     private var deskBottomRow: some View {
         ZStack {
             ShutterButton(isCapturing: camera.isCapturing,
@@ -707,53 +721,11 @@ struct CameraView: View {
 
                 Spacer()
 
-                lastShotButton
+                deskFlashSlot
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 44)
         }
-    }
-
-    /// Your newest shot, opening the Darkroom. Shots into a roll stay sealed until it opens, so
-    /// while one is picked this says so instead.
-    private var lastShotButton: some View {
-        Button {
-            NotificationCenter.default.post(name: .openDarkroom, object: nil)
-        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(FlimTheme.surface)
-                if liveRoll != nil {
-                    // Sealed until the roll opens: a lock, readable at arm's length.
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(FlimTheme.ink(accent))
-                } else if let lastShot, lastShot.isReady, let lastShotURL {
-                    CachedImage(url: lastShotURL, maxPixel: 150, cacheKey: lastShot.thumbPath ?? lastShot.storagePath) {
-                        $0.resizable().scaledToFill()
-                    } placeholder: { Color.clear }
-                } else if lastShot != nil {
-                    // Still developing.
-                    Image(systemName: "hourglass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(FlimTheme.textTertiary)
-                }
-                if captureStatus?.isInBetween == true {
-                    ProgressView().controlSize(.mini).tint(FlimTheme.textPrimary)
-                }
-            }
-            .frame(width: 52, height: 52)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(liveRoll != nil ? "Sealed until the roll opens. Open Darkroom" : "Last shot. Open Darkroom")
-    }
-
-    private func refreshLastShot() async {
-        guard let uid = auth.currentUser?.id,
-              let shot = await photos.fetchLatestPersonalShot(userId: uid) else { return }
-        lastShot = shot
-        if let path = shot.thumbPath ?? Optional(shot.storagePath) {
-            lastShotURL = try? await photos.signedURL(for: path)
-        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Selected roll persistence
