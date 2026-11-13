@@ -136,6 +136,7 @@ struct UserPageView: View {
                 .padding(.bottom, 30)
         }
         .refreshableToCompletion { await load() }
+        .modifier(NoTopEdgeFrost(active: AppInfo.is17))
         .onScrollPhaseChange { _, newPhase in
             // `.tracking` is the finger landing, `.interacting` is it moving; either one
             // means attention left the header.
@@ -1829,6 +1830,21 @@ private struct OwnPostSpotlightMenu: ViewModifier {
                 SpotlightMenuSection(post: post, presentFirstTime: presentFirstTime,
                                      confirmTakeOut: confirmTakeOut)
             }
+        } else {
+            content
+        }
+    }
+}
+
+/// iOS 26 frosts the top of a scroll view where it runs under the bar, which on a page with only
+/// glyphs up there reads as a header that isn't one. In 1.7 the page scrolls under its glyphs
+/// clear, the way the Feed's search and bell float.
+private struct NoTopEdgeFrost: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.scrollEdgeEffectHidden(active, for: .top)
         } else {
             content
         }
