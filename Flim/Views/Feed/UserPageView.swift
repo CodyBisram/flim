@@ -120,6 +120,70 @@ struct UserPageView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
+    @Environment(\.deskLayout) private var deskLayout
+
+    /// Your page on the Duo's open display splits in two (Blend 2, 6i).
+    private var docksMonths: Bool { AppInfo.is17 && deskLayout == .open && isSelf }
+
+    /// One of the page's scrolling columns: pull to refresh, and a finger on it ends the swap-in
+    /// at once, since an explanation that rides the scroll pins attention to a line the person
+    /// has already moved past.
+    private func pageScroll<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView {
+            VStack(spacing: 18) { content() }
+                .padding(.bottom, 30)
+        }
+        .refreshableToCompletion { await load() }
+        .onScrollPhaseChange { _, newPhase in
+            // `.tracking` is the finger landing, `.interacting` is it moving; either one
+            // means attention left the header.
+            if newPhase == .tracking || newPhase == .interacting { dismissSwapInstantly() }
+        }
+    }
+
+    /// The Spotlight shelf and the month boxes, under the header.
+    @ViewBuilder private var pageShelves: some View {
+        // Between the actions row and the grid, per the design handoff. Not shown
+        // at all for a blocked account (the dedicated blocked panel replaces the
+        // whole rest of the page) or for a profile with no months yet.
+        if !isBlocked {
+            // Above Chapters, for everyone: the public record of being chosen.
+            SpotlightShelfView(weeks: spotlightWeeks, openingId: openingSpotlightFrame) { frame, weekKey in
+                openSpotlightFrame(frame, weekKey: weekKey)
+            }
+            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs, isOwn: isSelf) { chapter in
+                openChapter = chapter
+            }
+        }
+    }
+
+    /// The months of photographs, or what stands in for them.
+    @ViewBuilder private var pagePosts: some View {
+        if isBlocked {
+            blockedState
+        } else if loaded && profile == nil {
+            // No profile came back, so the page has nothing real on it. Offer a
+            // retry instead of an empty grid under a blank header.
+            if AppInfo.is17 {
+                DeskFailedState(title: "Couldn't load this page.", message: DeskFailedState.standardMessage) { await load() }
+                    .padding(.top, 30)
+            } else {
+                ErrorState(message: "Couldn't load this profile.") { await load() }
+                    .padding(.top, 30)
+            }
+        } else if !loaded && gridPosts.isEmpty {
+            // First visit this session, nothing seeded from `profilePostsCache`:
+            // a shimmer grid instead of the blank void under the header while
+            // the real fetch is still in flight.
+            skeletonGrid
+        } else if gridPosts.isEmpty && loaded {
+            emptyState
+        } else {
+            ForEach(monthlySections, id: \.key) { section in
+                monthSection(label: section.key, posts: section.posts)
+            }
+        }
+    }
 
     /// Your page's two glyphs, set exactly like the Feed header's Find and Activity: 19pt
     /// regular in ink, 44pt targets, 20pt apart.
@@ -238,80 +302,52 @@ struct UserPageView: View {
         GeometryReader { geo in
             ZStack {
                 DeskGround()
-                ScrollView {
-                    VStack(spacing: 18) {
+                if docksMonths {
+                    // Board 6i: name, seal and the shelves on the left of the fold; the months on
+                    // the right, on the same margins as the other docked columns.
+                    let fold = max(0, (geo.size.width - DeskTabBar.railSpace) / 2)
+                    HStack(alignment: .top, spacing: 0) {
+                        pageScroll {
+                            pageHeader(topInset: geo.safeAreaInsets.top)
+                            pageShelves
+                        }
+                        .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
+                        .frame(width: max(0, fold - 14))
+                        pageScroll { pagePosts }
+                            .padding(.leading, 30)
+                            .padding(.trailing, 20)
+                    }
+                } else {
+                    pageScroll {
                         pageHeader(topInset: geo.safeAreaInsets.top)
-                        // Between the actions row and the grid, per the design handoff. Not shown
-                        // at all for a blocked account (the dedicated blocked panel replaces the
-                        // whole rest of the page) or for a profile with no months yet.
-                        if !isBlocked {
-                            // Above Chapters, for everyone: the public record of being chosen.
-                            SpotlightShelfView(weeks: spotlightWeeks, openingId: openingSpotlightFrame) { frame, weekKey in
-                                openSpotlightFrame(frame, weekKey: weekKey)
-                            }
-                            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs, isOwn: isSelf) { chapter in
-                                openChapter = chapter
-                            }
-                        }
-                        if isBlocked {
-                            blockedState
-                        } else if loaded && profile == nil {
-                            // No profile came back, so the page has nothing real on it. Offer a
-                            // retry instead of an empty grid under a blank header.
-                            if AppInfo.is17 {
-                                DeskFailedState(title: "Couldn't load this page.", message: DeskFailedState.standardMessage) { await load() }
-                                    .padding(.top, 30)
-                            } else {
-                                ErrorState(message: "Couldn't load this profile.") { await load() }
-                                    .padding(.top, 30)
-                            }
-                        } else if !loaded && gridPosts.isEmpty {
-                            // First visit this session, nothing seeded from `profilePostsCache`:
-                            // a shimmer grid instead of the blank void under the header while
-                            // the real fetch is still in flight.
-                            skeletonGrid
-                        } else if gridPosts.isEmpty && loaded {
-                            emptyState
-                        } else {
-                            ForEach(monthlySections, id: \.key) { section in
-                                monthSection(label: section.key, posts: section.posts)
-                            }
-                        }
+                        pageShelves
+                        pagePosts
                     }
-                    .padding(.bottom, 30)
+                    .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
                 }
-                .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
-                .refreshableToCompletion { await load() }
-                // Following is what opens someone's photographs: fetch them once the follow row
-                // has LANDED, not on the optimistic flip, or the request can beat the insert
-                // and legitimately return nothing (audit A1). Unfollowing closes them again, at
-                // once: the grid and the shelf empty and the cache for this page is dropped, so
-                // neither this visit nor the next paints a follower-only grid from memory
-                // (audit A2). The signed URLs already minted expire on their own within the hour.
-                .onChange(of: followConfirmed) { was, now in
-                    guard !isSelf else { return }
-                    if now && !was {
-                        Task { await load() }
-                    } else if was && !now {
-                        posts = []
-                        postThumbURLs = [:]
-                        sharedCount = 0
-                        feed.profilePostsCache[userId] = nil
-                        chapterService.chaptersByProfile[userId] = nil
-                        // Then ask again rather than assume nothing: a post this person is
-                        // tagged in stays theirs to see, and only the server knows which.
-                        Task { await load(); await chapterService.fetchChapters(for: userId) }
-                    }
-                }
-                // A finger on the page ends the swap-in at once: an explanation that rides the
-                // scroll pins attention to a line the person has already moved past.
-                .onScrollPhaseChange { _, newPhase in
-                    // `.tracking` is the finger landing, `.interacting` is it moving; either one
-                    // means attention left the header.
-                    if newPhase == .tracking || newPhase == .interacting { dismissSwapInstantly() }
-                }
-                .onDisappear { dismissSwapInstantly() }
             }
+            // Following is what opens someone's photographs: fetch them once the follow row
+            // has LANDED, not on the optimistic flip, or the request can beat the insert
+            // and legitimately return nothing (audit A1). Unfollowing closes them again, at
+            // once: the grid and the shelf empty and the cache for this page is dropped, so
+            // neither this visit nor the next paints a follower-only grid from memory
+            // (audit A2). The signed URLs already minted expire on their own within the hour.
+            .onChange(of: followConfirmed) { was, now in
+                guard !isSelf else { return }
+                if now && !was {
+                    Task { await load() }
+                } else if was && !now {
+                    posts = []
+                    postThumbURLs = [:]
+                    sharedCount = 0
+                    feed.profilePostsCache[userId] = nil
+                    chapterService.chaptersByProfile[userId] = nil
+                    // Then ask again rather than assume nothing: a post this person is
+                    // tagged in stays theirs to see, and only the server knows which.
+                    Task { await load(); await chapterService.fetchChapters(for: userId) }
+                }
+            }
+            .onDisappear { dismissSwapInstantly() }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)

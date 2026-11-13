@@ -19,6 +19,29 @@ struct ChapterPreviewDemoHost: View {
     static let profileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1") ?? UUID()
 
     var body: some View {
+        if let size = DeskDebugFrame.size {
+            // `-deskFrame WxH` here too: your page at the Duo's open size, with the rail's width
+            // set aside on the leading edge the way 1.7's tabs set it aside.
+            GeometryReader { screen in
+                let fitWidth = DeskDebugFrame.fitWidth ?? screen.size.width
+                let scale = min(fitWidth / size.width, screen.size.height / size.height)
+                page
+                    .environment(\.deskLayout, .open)
+                    .padding(.leading, DeskTabBar.railSpace)
+                    .background(DeskGround())
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .scaleEffect(scale)
+                    .frame(width: fitWidth, height: screen.size.height)
+                    .frame(width: screen.size.width, height: screen.size.height, alignment: .leading)
+            }
+            .background(Color.black.ignoresSafeArea())
+        } else {
+            page
+        }
+    }
+
+    private var page: some View {
         NavigationStack {
             UserPageView(userId: Self.profileId)
         }

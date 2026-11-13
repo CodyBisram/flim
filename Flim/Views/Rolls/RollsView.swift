@@ -22,6 +22,10 @@ struct RollsView: View {
     @Environment(NotificationService.self) private var notifications
     @Environment(PhotoService.self) private var photos
     @Environment(NetworkMonitor.self) private var network
+    @Environment(\.deskLayout) private var deskLayout
+    /// The roll in the right half on the Duo's open display (Blend 2, 6j); nil shows the default.
+    @State private var dockedRollId: UUID?
+    private var docksRoll: Bool { AppInfo.is17 && deskLayout == .open }
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var invitedByNames: [UUID: String] = [:]
@@ -90,36 +94,25 @@ struct RollsView: View {
         ZStack {
             DeskGround()
 
-            // The header rides `flimTopBar`, the same as Feed's: on iOS 26 the list scrolls
-            // under it with the scroll edge effect, below 26 it stacks above as before.
-            Group {
-                if rolls.isLoading && rolls.rolls.isEmpty {
-                    ProgressView().tint(FlimTheme.textPrimary)
-                } else if let error = loadError, rolls.rolls.isEmpty {
-                    if AppInfo.is17 {
-                        DeskFailedState(title: "Couldn't load your rolls.", message: DeskFailedState.standardMessage) { await load() }
-                    } else {
-                        ErrorState(message: error) { await load() }
+            if docksRoll, !rolls.rolls.isEmpty {
+                // Board 6j: the list keeps the left half, the chosen roll stands right of the
+                // fold, on the same margins as the Feed's docked comments (6g).
+                GeometryReader { proxy in
+                    let fold = max(0, (proxy.size.width - DeskTabBar.railSpace) / 2)
+                    HStack(spacing: 0) {
+                        listColumn
+                            .frame(width: max(0, fold - 14))
+                        // The roll screen keeps its own 20pt edge inside, so its content lands
+                        // where the board's does (24pt inside a column 30pt past the list).
+                        dockedRollPanel
+                            .padding(.leading, 34)
+                            .padding(.trailing, 24)
                     }
-                } else if rolls.rolls.isEmpty {
-                    // An invitation to a follow-up roll must show even with no rolls of your
-                    // own (the old roll was deleted, or you left it after the follow-up began).
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(rolls.followUpInvites) { invited in
-                                invitedCard(invited)
-                            }
-                            emptyState
-                        }
-                    }
-                } else {
-                    rollsScroll
                 }
+            } else {
+                listColumn
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .flimTopBar { header }
         }
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { containerWidth = $0 }
         // The bands (open / ready / developed) are derived in BODY, which TimelineView ticks
         // do not re-evaluate: without this, the moment the active roll develops the header
         // would sit on "0s left to shoot" with a dead verb until some other state changed.
@@ -189,6 +182,78 @@ struct RollsView: View {
         }
         .navigationDestination(for: Roll.self) { roll in
             RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+        }
+    }
+
+    /// The list under its header: the whole screen on a phone, the left half on the Duo's open
+    /// display.
+    private var listColumn: some View {
+        // The header rides `flimTopBar`, the same as Feed's: on iOS 26 the list scrolls
+        // under it with the scroll edge effect, below 26 it stacks above as before.
+        Group {
+            if rolls.isLoading && rolls.rolls.isEmpty {
+                ProgressView().tint(FlimTheme.textPrimary)
+            } else if let error = loadError, rolls.rolls.isEmpty {
+                if AppInfo.is17 {
+                    DeskFailedState(title: "Couldn't load your rolls.", message: DeskFailedState.standardMessage) { await load() }
+                } else {
+                    ErrorState(message: error) { await load() }
+                }
+            } else if rolls.rolls.isEmpty {
+                // An invitation to a follow-up roll must show even with no rolls of your
+                // own (the old roll was deleted, or you left it after the follow-up began).
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(rolls.followUpInvites) { invited in
+                            invitedCard(invited)
+                        }
+                        emptyState
+                    }
+                }
+            } else {
+                rollsScroll
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .flimTopBar { header }
+        // Measured on the column, so the docked layout's half sizes the racks.
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { containerWidth = $0 }
+    }
+
+    /// The roll on show in the docked half: the one tapped while it is still yours, otherwise
+    /// the roll the header leads with, then the newest to reveal or developed.
+    private var dockedRoll: Roll? {
+        if let id = dockedRollId, let roll = rolls.rolls.first(where: { $0.id == id }) { return roll }
+        return activeRoll ?? readyRolls.first ?? developedRolls.first
+    }
+
+    @ViewBuilder private var dockedRollPanel: some View {
+        if let roll = dockedRoll {
+            #if DEBUG
+            RollDetailView(roll: roll, docked: true, onClose: {
+                dockedRollId = nil
+                Task { await load() }
+            }, demoFixture: rollsFixture?.roll.id == roll.id ? rollsFixture : nil)
+            .id(roll.id)
+            #else
+            RollDetailView(roll: roll, docked: true, onClose: {
+                dockedRollId = nil
+                Task { await load() }
+            })
+            .id(roll.id)
+            #endif
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Opens a roll: pushed on a phone, into the right half on the Duo's open display.
+    @ViewBuilder
+    private func rollLink<Label: View>(_ roll: Roll, @ViewBuilder label: () -> Label) -> some View {
+        if docksRoll {
+            Button { dockedRollId = roll.id } label: { label() }
+        } else {
+            NavigationLink(value: roll, label: label)
         }
     }
 
@@ -408,7 +473,7 @@ struct RollsView: View {
     private func activeRollBlock(_ roll: Roll, now: Date) -> some View {
         let closing = RollImminence.closingLabel(roll: roll, now: now) != nil
         return VStack(alignment: .leading, spacing: 0) {
-            NavigationLink(value: roll) {
+            rollLink(roll) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(roll.name)
                         .modifier(DeskTitleOr(size: 28) { $0.flimFont(26, weight: .light, relativeTo: .title3).tracking(0.3) })
@@ -426,7 +491,7 @@ struct RollsView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, Self.margin)
 
-            NavigationLink(value: roll) {
+            rollLink(roll) {
                 rack(frames: frameCounts[roll.id] ?? 0,
                      fraction: RollImminence.progress(roll: roll, now: now),
                      sealed: false)
@@ -552,7 +617,7 @@ struct RollsView: View {
     // MARK: - Ready band
 
     private func readyBand(_ roll: Roll) -> some View {
-        NavigationLink(value: roll) {
+        rollLink(roll) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Text(roll.name)
@@ -770,7 +835,7 @@ struct RollsView: View {
     }
 
     private func archiveTile(_ roll: Roll) -> some View {
-        NavigationLink(value: roll) {
+        rollLink(roll) {
             VStack(alignment: .leading, spacing: 5) {
                 // The cover takes its size from the COLUMN (Color.clear + fit), never from
                 // the image: a scaledToFill photo in a bare container inflates past its grid
@@ -906,7 +971,21 @@ struct RollsView: View {
     // MARK: - Loading
 
     /// Fetches the user's rolls, surfacing a network error for the retry state.
+    #if DEBUG
+    /// `-rollsFixture`: one developing roll and its frames, no account and no network, so the
+    /// list and the docked roll (6j) can be looked at on a simulator.
+    @State private var rollsFixture: RollDetailDemoFixture? =
+        ProcessInfo.processInfo.arguments.contains("-rollsFixture") ? RollDetailDemoFixture.make(developing: true) : nil
+    #endif
+
     private func load() async {
+        #if DEBUG
+        if let rollsFixture {
+            rolls.rolls = [rollsFixture.roll]
+            frameCounts[rollsFixture.roll.id] = rollsFixture.photos.count
+            return
+        }
+        #endif
         guard let userId = auth.currentUser?.id else { return }
         do {
             try await rolls.fetchRolls(for: userId)

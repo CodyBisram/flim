@@ -194,6 +194,10 @@ struct RollDetailView: View {
     /// consumes an entry whose `rollId` matches its own `roll.id`, and nils it the instant it does,
     /// so a later push for some OTHER roll finds it still there for that roll's own instance.
     var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
+    /// The right half of Rolls on the Duo's open display (Blend 2, 6j): nothing pushed, so the
+    /// bar's buttons stand in a row at the top and leaving or deleting hands back to `onClose`.
+    var docked = false
+    var onClose: () -> Void = {}
     #if DEBUG
     /// `-rollDetailDemo` only: fixture frames shown in place of the network load, so the screen
     /// can be looked at without an account. See `RollDetailDemoHost`.
@@ -315,12 +319,110 @@ struct RollDetailView: View {
     /// deletion paired with a snapshot top-up landing together) still re-triggers.
     @State private var pagerPhotosChronologicalCache: [Photo] = []
 
+    /// Members, the invite and the menu: in the bar when the roll is pushed, in a row at the top
+    /// when it is docked beside the list.
+    @ViewBuilder private var rollControls: some View {
+        Button { showMembers = true } label: {
+            Image(systemName: "person.2")
+                .foregroundStyle(FlimTheme.ink(accent))
+        }
+        .accessibilityLabel("Members")
+        // Invites end when the roll develops (owner decision, 2026-08-26): a
+        // developed roll is a finished thing to rewatch, not a group still forming,
+        // so the share-invite affordance disappears with the develop. The members
+        // sheet's code banner follows the same rule.
+        if !roll.isDeveloped {
+            Button {
+                Haptics.tap()
+                showInviteShare = true
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .foregroundStyle(FlimTheme.ink(accent))
+            }
+            .accessibilityLabel("Share invite")
+        }
+
+        Menu {
+            // The reveal is the best thing this app does and it was strictly one-shot:
+            // seen once, gone forever, because the flag that stops it replaying on every
+            // visit never clears. So the moment a roll exists to be remembered by could
+            // never be watched again, which is backwards for something built to be
+            // rewatched with the people who were there.
+
+            // Disabled with no reason reads as a broken menu item. A menu can hold a
+            // plain Text, so it says which of the two reasons applies instead.
+            if roll.isDeveloped {
+                // Everyone from this roll gets invited, not added: saying no costs
+                // them nothing and shows nobody anything.
+                Button { showFollowUp = true } label: {
+                    Label("Start another with this group", systemImage: "plus.square.on.square")
+                }
+            }
+            if vm.developedPhotos.isEmpty {
+                Text("Nothing to save until the roll develops")
+            } else {
+                Button {
+                    saveAll()
+                } label: {
+                    let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).count
+                    Label(savingAll ? "Saving…" : "Save all \(mine) to Camera Roll",
+                          systemImage: "square.and.arrow.down.on.square")
+                }
+                    .disabled(savingAll || PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).isEmpty)
+            }
+
+            // Silence this roll's comment/reaction notifications without leaving it.
+            Button {
+                guard let uid = auth.currentUser?.id else { return }
+                let wanted = !isMuted
+                isMuted = wanted   // optimistic
+                Task {
+                    if await !photoService.setRollMuted(wanted, rollId: roll.id, userId: uid) {
+                        isMuted = !wanted   // the write never landed; don't claim it did
+                        Haptics.error()
+                    }
+                }
+            } label: {
+                Label(isMuted ? "Unmute notifications" : "Mute notifications",
+                      systemImage: isMuted ? "bell.slash" : "bell")
+            }
+
+            if isCreator {
+                Button(role: .destructive) {
+                    showDeleteRoll = true
+                } label: { Label("Delete roll", systemImage: "trash") }
+            } else {
+                Button(role: .destructive) {
+                    showLeaveRoll = true
+                } label: { Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right") }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .foregroundStyle(FlimTheme.ink(accent))
+        }
+        .accessibilityLabel("More")
+    }
+
+    /// Closes the roll after a leave or a delete: pops it, or clears the docked column.
+    private func close() {
+        if docked { onClose() } else { dismiss() }
+    }
 
     var body: some View {
         ZStack {
             DeskGround()
 
             VStack(spacing: 0) {
+                if docked {
+                    HStack(spacing: 20) {
+                        Spacer(minLength: 0)
+                        rollControls
+                    }
+                    .font(.system(size: 19, weight: .regular))
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
+                }
                 FlimNavTitle(roll.name)
 
                 if let count = rollService.memberCounts[roll.id] {
@@ -461,86 +563,8 @@ struct RollDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showMembers = true } label: {
-                    Image(systemName: "person.2")
-                        .foregroundStyle(FlimTheme.ink(accent))
-                }
-                .accessibilityLabel("Members")
-                // Invites end when the roll develops (owner decision, 2026-08-26): a
-                // developed roll is a finished thing to rewatch, not a group still forming,
-                // so the share-invite affordance disappears with the develop. The members
-                // sheet's code banner follows the same rule.
-                if !roll.isDeveloped {
-                    Button {
-                        Haptics.tap()
-                        showInviteShare = true
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(FlimTheme.ink(accent))
-                    }
-                    .accessibilityLabel("Share invite")
-                }
-
-                Menu {
-                    // The reveal is the best thing this app does and it was strictly one-shot:
-                    // seen once, gone forever, because the flag that stops it replaying on every
-                    // visit never clears. So the moment a roll exists to be remembered by could
-                    // never be watched again, which is backwards for something built to be
-                    // rewatched with the people who were there.
-
-                    // Disabled with no reason reads as a broken menu item. A menu can hold a
-                    // plain Text, so it says which of the two reasons applies instead.
-                    if roll.isDeveloped {
-                        // Everyone from this roll gets invited, not added: saying no costs
-                        // them nothing and shows nobody anything.
-                        Button { showFollowUp = true } label: {
-                            Label("Start another with this group", systemImage: "plus.square.on.square")
-                        }
-                    }
-                    if vm.developedPhotos.isEmpty {
-                        Text("Nothing to save until the roll develops")
-                    } else {
-                        Button {
-                            saveAll()
-                        } label: {
-                            let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).count
-                            Label(savingAll ? "Saving…" : "Save all \(mine) to Camera Roll",
-                                  systemImage: "square.and.arrow.down.on.square")
-                        }
-                            .disabled(savingAll || PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).isEmpty)
-                    }
-
-                    // Silence this roll's comment/reaction notifications without leaving it.
-                    Button {
-                        guard let uid = auth.currentUser?.id else { return }
-                        let wanted = !isMuted
-                        isMuted = wanted   // optimistic
-                        Task {
-                            if await !photoService.setRollMuted(wanted, rollId: roll.id, userId: uid) {
-                                isMuted = !wanted   // the write never landed; don't claim it did
-                                Haptics.error()
-                            }
-                        }
-                    } label: {
-                        Label(isMuted ? "Unmute notifications" : "Mute notifications",
-                              systemImage: isMuted ? "bell.slash" : "bell")
-                    }
-
-                    if isCreator {
-                        Button(role: .destructive) {
-                            showDeleteRoll = true
-                        } label: { Label("Delete roll", systemImage: "trash") }
-                    } else {
-                        Button(role: .destructive) {
-                            showLeaveRoll = true
-                        } label: { Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right") }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundStyle(FlimTheme.ink(accent))
-                }
-                .accessibilityLabel("More")
+            if !docked {
+                ToolbarItemGroup(placement: .topBarTrailing) { rollControls }
             }
         }
         .onAppear {
@@ -884,7 +908,7 @@ struct RollDetailView: View {
                         // "your roll developed" channel, so it is cancelled only once the server
                         // confirms the roll is gone, and a failed delete keeps the screen open.
                         notifications.cancelRollDevelopNotification(rollId: roll.id)
-                        dismiss()
+                        close()
                     } catch {
                         Haptics.error()
                         showToast("Couldn't delete the roll. Check your connection and try again.", kind: .error)
@@ -906,7 +930,7 @@ struct RollDetailView: View {
                         // Only cancel the develop notification and dismiss once the server
                         // confirms the leave; a failed leave must not act as though it happened.
                         notifications.cancelRollDevelopNotification(rollId: roll.id)
-                        dismiss()
+                        close()
                     } catch {
                         Haptics.error()
                         showToast("Couldn't leave the roll. Check your connection and try again.", kind: .error)

@@ -187,6 +187,31 @@ final class Desk17UITests: XCTestCase {
         shot("open_darkroom_docked")
     }
 
+    /// Rolls on the Duo's open display (Blend 2, 6j): the list on the left of the fold and the
+    /// roll on the right, its members, invite and menu in a row at the top.
+    func testOpenDuoRollsDocksTheRoll() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabRolls", "-rollsFixture",
+                               "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Members"].firstMatch.waitForExistence(timeout: 15), "no docked roll beside the list")
+        // The roll's name shows twice: in the list and as the docked roll's title.
+        XCTAssertGreaterThanOrEqual(app.staticTexts.matching(identifier: "Test, day 2").count, 2)
+        shot("open_rolls_docked")
+    }
+
+    /// Your page on the Duo's open display (Blend 2, 6i): the header and shelves on the left of
+    /// the fold, the months on the right (the chapters demo renders your own page).
+    func testOpenDuoYouSplitsThePage() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        let friends = app.buttons["Friends"].firstMatch
+        XCTAssertTrue(friends.waitForExistence(timeout: 15), "your page did not open")
+        sleep(2)
+        shot("open_you_split")
+    }
+
     /// The Feed on the Duo's open display (Blend 2, 6g): the comments stand right of the fold for
     /// the top card, and a card's comment line keeps them there rather than opening a sheet.
     func testOpenDuoFeedDocksTheComments() {
