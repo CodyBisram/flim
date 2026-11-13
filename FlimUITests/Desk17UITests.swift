@@ -240,6 +240,30 @@ final class Desk17UITests: XCTestCase {
         XCTAssertTrue(friends.waitForExistence(timeout: 15), "your page did not open")
         sleep(2)
         shot("open_you_split")
+
+        // Opening a box replaces the right column; the page and its shelf stay on the left.
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 5), "no month box on the shelf")
+        box.tap()
+        let close = app.buttons["Close"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "the month box did not open")
+        XCTAssertTrue(friends.isHittable, "the box covered the left column")
+        sleep(1)
+        shot("open_you_box")
+
+        // Playing the month is a screening: full screen, and its close comes back to the box.
+        let play = app.buttons["Play the month"].firstMatch
+        if play.exists {
+            play.tap()
+            sleep(2)
+            XCTAssertFalse(friends.isHittable, "the screening did not cover the page")
+            shot("open_you_screening")
+            app.buttons["Close"].firstMatch.tap()
+            sleep(1)
+        }
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertFalse(close.waitForExistence(timeout: 2), "Close did not hand the column back")
     }
 
     /// The Feed on the Duo's open display (Blend 2, 6g): the comments stand right of the fold for

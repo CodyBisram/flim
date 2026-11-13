@@ -81,6 +81,9 @@ struct UserPageView: View {
     @State private var chapterCoverURLs: [String: URL] = [:]
     /// The chapter whose recap is open, if any.
     @State private var openChapter: ChapterSummary?
+    /// The month box open in the right column on the Duo's open display (6i), in place of the
+    /// months; `openChapter` covers the screen everywhere else.
+    @State private var dockedChapter: ChapterSummary?
 
     // MARK: Badge swap-in
 
@@ -155,7 +158,7 @@ struct UserPageView: View {
                 openSpotlightFrame(frame, weekKey: weekKey)
             }
             ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs, isOwn: isSelf) { chapter in
-                openChapter = chapter
+                if docksMonths { dockedChapter = chapter } else { openChapter = chapter }
             }
         }
     }
@@ -354,9 +357,20 @@ struct UserPageView: View {
                         }
                         .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
                         .frame(width: max(0, fold - 14))
-                        pageScroll { pagePosts }
-                            .padding(.leading, 30)
-                            .padding(.trailing, 20)
+                        Group {
+                            if let chapter = dockedChapter {
+                                // "Opening a box replaces the right column."
+                                ChapterRecapView(profileId: userId, chapter: chapter, chapterCoverURLs: chapterCoverURLs,
+                                                 docked: true, onClose: { dockedChapter = nil })
+                                    .id(chapter.id)
+                                    .padding(.top, 8)
+                                    .padding(.bottom, 16)
+                            } else {
+                                pageScroll { pagePosts }
+                            }
+                        }
+                        .padding(.leading, 30)
+                        .padding(.trailing, 20)
                     }
                 } else {
                     pageScroll {
@@ -389,6 +403,12 @@ struct UserPageView: View {
                 }
             }
             .onDisappear { dismissSwapInstantly() }
+            // Folding the Duo with a box open in the column carries it to the full screen.
+            .onChange(of: docksMonths) { _, docks in
+                guard !docks, let chapter = dockedChapter else { return }
+                dockedChapter = nil
+                openChapter = chapter
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)

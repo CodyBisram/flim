@@ -21,6 +21,11 @@ struct ChapterRecapView: View {
 
     let profileId: UUID
     let chapterCoverURLs: [String: URL]
+    /// On the Duo's open display the box takes your page's right column instead of the screen
+    /// (Blend 2, 6i: "Opening a box replaces the right column"); closing hands the column back
+    /// through `onClose`. Playing the month still goes full screen, as a screening does.
+    private let docked: Bool
+    private let onClose: () -> Void
 
     /// The recap's two "rest" screens: `phase` is whichever one sits behind the pager. Closing
     /// the pager always lands on `.closing` when the month has anything to say
@@ -55,9 +60,12 @@ struct ChapterRecapView: View {
     /// tapped mid-reveal pushes with a back button instead of presenting with no way out).
     @State private var profileRoute: ProfileRoute?
 
-    init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL]) {
+    init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL],
+         docked: Bool = false, onClose: @escaping () -> Void = {}) {
         self.profileId = profileId
         self.chapterCoverURLs = chapterCoverURLs
+        self.docked = docked
+        self.onClose = onClose
         _viewModel = State(initialValue: ChapterRecapViewModel(profileId: profileId, chapter: chapter))
     }
 
@@ -67,17 +75,38 @@ struct ChapterRecapView: View {
     private func firstChapterSeenKey(userId: UUID) -> String { "firstChapterSeen.\(userId.uuidString)" }
     private var isOwnRecap: Bool { auth.currentUser?.id == profileId }
 
+    /// Ends the recap: the cover goes, or the docked box hands the column back.
+    private func close() {
+        if docked { onClose() } else { dismiss() }
+    }
+
     var body: some View {
         recapBody
             // 1.7: a month plays on Slate like a roll's screening (Blend 1, 3e).
             .modifier(DeskAlwaysSlate())
     }
 
-    private var recapBody: some View {
-        NavigationStack {
+    @ViewBuilder private var recapBody: some View {
+        if docked {
+            // Already inside your page's stack, so a handle pushes onto that one rather than a
+            // second stack nested in the column.
             content
-                .toolbar(.hidden, for: .navigationBar)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
                 .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+                .fullScreenCover(isPresented: $isPlayerPresented) {
+                    ZStack {
+                        Color.black.ignoresSafeArea()
+                        player
+                    }
+                    .statusBarHidden()
+                    .modifier(DeskAlwaysSlate())
+                }
+        } else {
+            NavigationStack {
+                content
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+            }
         }
     }
 
@@ -95,13 +124,13 @@ struct ChapterRecapView: View {
             // in crash_diagnostics). Rolls, one cover deep, never had it. The pager's X now
             // calls `onClose` instead of the environment `dismiss()`, which is the only thing
             // the cover was buying (see `player`'s doc).
-            if isPlayerPresented {
+            if isPlayerPresented, !docked {
                 player
                     .transition(.opacity)
                     .zIndex(1)
             }
         }
-        .statusBarHidden()
+        .statusBarHidden(!docked)
         // `viewModel.deck` must never change while the pager is actually mounted (see
         // `ChapterRecapViewModel.isPlayerMounted`'s own doc); this is the one place that tells it
         // whether that's currently true, for both edges of the presentation.
@@ -139,12 +168,23 @@ struct ChapterRecapView: View {
 
     // MARK: - Opening card
 
-    private var openingCard: some View {
+    @ViewBuilder private var openingCard: some View {
+        if docked {
+            // No swipe down in a column: it would drag the box over the rest of the page.
+            openingCardBody.transition(.opacity)
+        } else {
+            openingCardBody
+                .swipeToDismiss(offset: $cardOffset) { Haptics.tap(); close() }
+                .transition(.opacity)
+        }
+    }
+
+    private var openingCardBody: some View {
         ZStack {
             radialWash
             VStack(spacing: 0) {
                 HStack {
-                    Button { Haptics.tap(); dismiss() } label: {
+                    Button { Haptics.tap(); close() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.white.opacity(0.7))
@@ -197,8 +237,6 @@ struct ChapterRecapView: View {
                     .padding(.bottom, 24)
             }
         }
-        .swipeToDismiss(offset: $cardOffset) { Haptics.tap(); dismiss() }
-        .transition(.opacity)
     }
 
     private var radialWash: some View {
@@ -459,7 +497,7 @@ struct ChapterRecapView: View {
         // `phase` was already flipped in `.onChange(of: isPlayerPresented)` the instant the
         // cover began to leave, so the screen under it is the closing card by the time the cover
         // is gone. Left here only for the no-card case, which ends the recap.
-        if !viewModel.hasClosingCard { dismiss() }
+        if !viewModel.hasClosingCard { close() }
     }
 
     private var closingCard: some View {
@@ -480,7 +518,7 @@ struct ChapterRecapView: View {
                 selection = 0
                 isPlayerPresented = true
             },
-            onClose: { dismiss() }
+            onClose: { close() }
         )
     }
 }
