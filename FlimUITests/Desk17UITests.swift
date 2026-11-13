@@ -186,4 +186,22 @@ final class Desk17UITests: XCTestCase {
         XCTAssertFalse(app.buttons["Close"].exists, "the docked viewer has an X")
         shot("open_darkroom_docked")
     }
+
+    /// The Feed on the Duo's open display (Blend 2, 6g): the comments stand right of the fold for
+    /// the top card, and a card's comment line keeps them there rather than opening a sheet.
+    func testOpenDuoFeedDocksTheComments() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabFeed", "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        let header = app.staticTexts["Comments"].firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 15), "no docked comments beside the feed")
+        shot("open_feed_docked")
+        let line = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View all' OR label == 'Add a comment'")).firstMatch
+        if line.waitForExistence(timeout: 5), line.isHittable {
+            line.tap()
+            sleep(1)
+            XCTAssertTrue(header.exists, "the docked comments went away")
+            XCTAssertFalse(app.navigationBars["Comments"].exists, "a comments sheet opened over the open display")
+        }
+    }
 }

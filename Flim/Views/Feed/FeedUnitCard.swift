@@ -18,6 +18,8 @@ struct FeedUnitCard: View {
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
+    /// The Feed's right column on the Duo's open display; comments go there instead of a sheet.
+    @Environment(\.dockedComments) private var dockedComments
 
     let unit: FeedUnit
     /// The card's container width, handed down because the pager needs an explicit height
@@ -154,6 +156,14 @@ struct FeedUnitCard: View {
     }
 
     // MARK: - Derived
+
+    /// The docked comments always read the shot on show of the card they belong to: a swipe on
+    /// that card moves them along with it.
+    private func followDockedComments() {
+        guard let dockedComments, let target = dockedComments.target, target.unitId == unit.id,
+              target.post.id != current.post.id else { return }
+        dockedComments.show(post: current.post, unitId: unit.id, authorHandle: unit.author.handle)
+    }
 
     private var current: FeedItem { unit.items[min(selection, unit.items.count - 1)] }
     private var post: Post { current.post }
@@ -328,11 +338,23 @@ struct FeedUnitCard: View {
         .onChange(of: selection) {
             shownPostId = current.post.id
             captionExpanded = false
+            followDockedComments()
             // Radius 2 HERE and only here: a selection change is a real swipe, the intent
             // signal that pays for staying two photographs ahead of the finger.
             Task { await resolveURLs(around: selection, radius: 2) }
         }
-        .sheet(item: $commentsTarget, onDismiss: {
+        // The Feed may hand the docked column this unit before the card has opened on its
+        // first unseen shot; the column then moves to the shot actually on show.
+        .onChange(of: dockedComments?.target?.post.id, initial: true) { followDockedComments() }
+        // On the Duo's open display the tap goes to the Feed's right column (Blend 2, 6g), so
+        // there is no sheet over the feed.
+        .onChange(of: commentsTarget?.id) {
+            guard let dockedComments, let target = commentsTarget else { return }
+            dockedComments.show(post: post, unitId: unit.id, authorHandle: unit.author.handle,
+                                replyHandle: target.replyHandle, replyParentId: target.replyParentId)
+            commentsTarget = nil
+        }
+        .sheet(item: dockedComments == nil ? $commentsTarget : .constant(nil), onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; route = pending }
         }) { target in
             CommentsSheet(post: post, authorHandle: unit.author.handle,
@@ -458,6 +480,15 @@ struct FeedUnitCard: View {
         .tabViewStyle(.page(indexDisplayMode: .never))
         .frame(width: photoWidth, height: photoHeight)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        // The card whose comments the docked column is showing wears an ink ring (6g).
+        .overlay {
+            if let shown = dockedComments?.target?.post.id, shown == post.id {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(FlimTheme.textPrimary, lineWidth: 2)
+                    .padding(-2)
+                    .allowsHitTesting(false)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             unit.items.count == 1

@@ -25,8 +25,16 @@ struct FeedView: View {
     @Environment(NetworkMonitor.self) private var network
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.deskLayout) private var deskLayout
 
     private let seenStore = FeedSeenStore.shared
+
+    /// The right column on the Duo's open display (Blend 2, 6g): the comments of the card last
+    /// tapped, the top card's until then.
+    @State private var dockedComments = DockedComments()
+    /// A profile opened from the docked comments, pushed onto the Feed.
+    @State private var dockedProfile: ProfileRoute?
+    private var docksComments: Bool { AppInfo.is17 && deskLayout == .open }
 
     /// How far into the UNITS the prefetch window currently reaches. Reset with the feed
     /// itself: a pull-to-refresh replaces the list, so a cursor into the old one would skip
@@ -258,88 +266,27 @@ struct FeedView: View {
                     if used, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(.spotlight, userId: uid) }
                 }
 
-            // The header rides `flimTopBar`: on iOS 26 the feed scrolls under it with the
-            // system's scroll edge effect, below 26 it stacks above the content as before.
-            Group {
-                if feed.feed.isEmpty {
-                    if feed.isLoadingFeed || !didLoad {
-                        loadingState
-                    } else if let error = feed.feedError {
-                        // A failed load is not an empty feed; don't tell someone with no
-                        // signal that nobody they follow has posted.
-                        if AppInfo.is17 {
-                            // Blend 2, 8i: the screen's own first line, then the reason.
-                            DeskFailedState(title: "Couldn't load your feed.", message: DeskFailedState.standardMessage) { await reload() }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            ErrorState(message: error) { await reload() }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    } else if followsNobody {
-                        // A newcomer who follows nobody still meets Spotlight: it is the one
-                        // place other people's photographs reach them.
-                        if visibleSpotlightWeeks.isEmpty {
-                            firstRunState
-                        } else {
-                            // Padded, not stretched to the screen: the strip above must not push
-                            // "Find your friends" below the fold.
-                            ScrollView {
-                                VStack(spacing: 0) {
-                                    allSpotlightStrips
-                                    firstRunState
-                                        .padding(.top, 28)
-                                        .padding(.bottom, 40)
-                                }
-                            }
-                            .refreshableToCompletion { await reload() }
-                        }
-                    } else {
-                        // Followed people, none of whom have ever posted: the caught-up
-                        // block is the whole screen, since there is nothing older either.
-                        ScrollView {
-                            allSpotlightStrips
-                            caughtUpBlock
-                                .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
-                        }
-                        .refreshableToCompletion { await reload() }
+            if docksComments {
+                // Board 6g: the feed keeps the left half, the comments stand right of the fold
+                // with the same margins as the Darkroom's docked viewer (6h).
+                GeometryReader { proxy in
+                    let fold = max(0, (proxy.size.width - DeskTabBar.railSpace) / 2)
+                    HStack(spacing: 0) {
+                        feedColumn
+                            .frame(width: max(0, fold - 14))
+                            .environment(\.dockedComments, dockedComments)
+                        dockedCommentsPanel
+                            .padding(.leading, 30)
+                            .padding(.trailing, 20)
                     }
-                } else if units.isEmpty {
-                    // Posts were FETCHED (feed.feed is non-empty) but every unit has cleared:
-                    // the whole feed was seen and the 4am boundary passed. Without this branch
-                    // the screen fell through to `feedList`, whose ForEach over zero units
-                    // painted nothing, and the caught-up seam sat parked in `.pending`, so the
-                    // first fully-caught-up morning rendered as a bare black page with a
-                    // header. The block IS the screen here, same as the never-posted case.
-                    ScrollView {
-                        allSpotlightStrips
-                        caughtUpBlock
-                            .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
-                    }
-                    .refreshableToCompletion { await reload() }
-                } else {
-                    feedList
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .flimTopBar {
-                if AppInfo.is17 {
-                    VStack(spacing: 0) {
-                        header
-                        DeskOfflineBanner()
-                    }
-                    .animation(.easeInOut(duration: 0.3), value: network.isConnected)
-                } else {
-                    header
-                }
+            } else {
+                feedColumn
             }
         }
-        .background(GeometryReader { proxy in
-            Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
-                // 1.7: on a wide display (the Duo open) the cards keep a readable width, centred,
-                // rather than one photograph the width of the screen.
-                containerWidth = AppInfo.is17 ? min(width, Self.readableWidth) : width
-            }
-        })
+        .onChange(of: docksComments, initial: true) { _, _ in syncDockedComments() }
+        .onChange(of: units.map(\.id)) { _, _ in syncDockedComments() }
+        .navigationDestination(item: $dockedProfile) { UserPageView(userId: $0.id) }
         // `cachedUnits`'s safety net for `feed.feed` changing outside this
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
         // `recomputeUnits()` explicitly rather than relying on this alone.
@@ -480,6 +427,120 @@ struct FeedView: View {
         }
         .navigationDestination(isPresented: Binding(get: { showActivity && AppInfo.is17 }, set: { showActivity = $0 })) {
             activityView(embedded: true)
+        }
+    }
+
+    /// The feed itself under its header: the whole screen on a phone, the left column on the
+    /// Duo's open display.
+    private var feedColumn: some View {
+        // The header rides `flimTopBar`: on iOS 26 the feed scrolls under it with the
+        // system's scroll edge effect, below 26 it stacks above the content as before.
+        Group {
+            if feed.feed.isEmpty {
+                if feed.isLoadingFeed || !didLoad {
+                    loadingState
+                } else if let error = feed.feedError {
+                    // A failed load is not an empty feed; don't tell someone with no
+                    // signal that nobody they follow has posted.
+                    if AppInfo.is17 {
+                        // Blend 2, 8i: the screen's own first line, then the reason.
+                        DeskFailedState(title: "Couldn't load your feed.", message: DeskFailedState.standardMessage) { await reload() }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ErrorState(message: error) { await reload() }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else if followsNobody {
+                    // A newcomer who follows nobody still meets Spotlight: it is the one
+                    // place other people's photographs reach them.
+                    if visibleSpotlightWeeks.isEmpty {
+                        firstRunState
+                    } else {
+                        // Padded, not stretched to the screen: the strip above must not push
+                        // "Find your friends" below the fold.
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                allSpotlightStrips
+                                firstRunState
+                                    .padding(.top, 28)
+                                    .padding(.bottom, 40)
+                            }
+                        }
+                        .refreshableToCompletion { await reload() }
+                    }
+                } else {
+                    // Followed people, none of whom have ever posted: the caught-up
+                    // block is the whole screen, since there is nothing older either.
+                    ScrollView {
+                        allSpotlightStrips
+                        caughtUpBlock
+                            .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
+                    }
+                    .refreshableToCompletion { await reload() }
+                }
+            } else if units.isEmpty {
+                // Posts were FETCHED (feed.feed is non-empty) but every unit has cleared:
+                // the whole feed was seen and the 4am boundary passed. Without this branch
+                // the screen fell through to `feedList`, whose ForEach over zero units
+                // painted nothing, and the caught-up seam sat parked in `.pending`, so the
+                // first fully-caught-up morning rendered as a bare black page with a
+                // header. The block IS the screen here, same as the never-posted case.
+                ScrollView {
+                    allSpotlightStrips
+                    caughtUpBlock
+                        .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
+                }
+                .refreshableToCompletion { await reload() }
+            } else {
+                feedList
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .flimTopBar {
+            if AppInfo.is17 {
+                VStack(spacing: 0) {
+                    header
+                    DeskOfflineBanner()
+                }
+                .animation(.easeInOut(duration: 0.3), value: network.isConnected)
+            } else {
+                header
+            }
+        }
+        // Measured on the column, so the docked layout's narrower left half sizes the cards.
+        .background(GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
+                // 1.7: on a wide display (the Duo open) the cards keep a readable width,
+                // centred, rather than one photograph the width of the screen.
+                containerWidth = AppInfo.is17 ? min(width, Self.readableWidth) : width
+            }
+        })
+    }
+
+    /// The docked comments (6g), for whichever card `dockedComments` holds.
+    @ViewBuilder private var dockedCommentsPanel: some View {
+        if let target = dockedComments.target {
+            CommentsSheet(post: target.post, authorHandle: target.authorHandle,
+                          initialReplyHandle: target.replyHandle,
+                          initialReplyParentId: target.replyParentId,
+                          docked: true) { dockedProfile = ProfileRoute(id: $0) }
+                .id("\(target.post.id)-\(target.generation)")
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Keeps the docked column on a card that is still in the feed: the top card's newest shot
+    /// until one is tapped, and again when the shown one leaves (a delete, a block). Folding the
+    /// Duo shut lets it go, so the next open starts from the top again.
+    private func syncDockedComments() {
+        guard docksComments else { dockedComments.clear(); return }
+        if let target = dockedComments.target,
+           units.contains(where: { $0.id == target.unitId && $0.items.contains { $0.post.id == target.post.id } }) { return }
+        if let top = units.first, let item = top.items.first {
+            dockedComments.show(post: item.post, unitId: top.id, authorHandle: top.author.handle)
+        } else {
+            dockedComments.clear()
         }
     }
 

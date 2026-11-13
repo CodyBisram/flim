@@ -20,6 +20,9 @@ struct CommentsSheet: View {
     /// The thread `initialReplyHandle` replies into: the tapped comment's own id, or its parent's
     /// when it was itself a reply.
     var initialReplyParentId: UUID? = nil
+    /// The Duo's open display (Blend 2, 6g): the thread stands in the Feed's right column instead
+    /// of a sheet, under its own header, with nothing to close.
+    var docked = false
 
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -58,8 +61,12 @@ struct CommentsSheet: View {
     /// presentations never overlap.
     private func openProfile(_ id: UUID) {
         onOpenProfile(id)
-        dismiss()
+        // Docked, nothing was presented: a dismiss here would pop the Feed's own stack.
+        if !docked { dismiss() }
     }
+
+    /// Rows, caption and composer sit 24pt in when docked, the Feed column's own margin.
+    private var inset: CGFloat { docked ? 24 : 16 }
 
     // Chronological (oldest first) so new comments land at the bottom, right above the composer.
     // Filtered again here (on top of FeedService's own filtering) as defense-in-depth.
@@ -73,7 +80,63 @@ struct CommentsSheet: View {
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        NavigationStack {
+        if docked {
+            VStack(spacing: 0) {
+                dockedHeader
+                thread
+            }
+            .task { await armAndLoad() }
+        } else {
+            NavigationStack {
+                thread
+                    // The undo capsule is hosted at the tab root, which a sheet covers; Report and
+                    // Block below stage through it, so it needs a host in here to be seen at all.
+                    // Same host `PhotoPagerView` carries for the same reason. Clears the composer.
+                    .undoCapsuleHost(bottomPadding: 72)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .flimInlineTitle("Comments")
+                    .toolbarColorScheme(.dark, for: .navigationBar)
+            }
+            // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
+            .presentationDetents([.fraction(0.75), .large])
+            .presentationDragIndicator(.visible)
+            .flimSheetSurface()
+            .task { await armAndLoad() }
+        }
+    }
+
+    /// The docked column's title line (6g): "Comments" in Caslon, whose shot it is on the right.
+    private var dockedHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Comments")
+                .font(DeskType.serif(22, relativeTo: .title2))
+                .foregroundStyle(FlimTheme.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+            Text([authorHandle, post.createdAt.formatted(date: .omitted, time: .shortened)]
+                    .compactMap { $0 }.joined(separator: " · "))
+                .flimFont(13, relativeTo: .footnote)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, inset)
+        .padding(.top, 18)
+        .padding(.bottom, 4)
+    }
+
+    /// Armed BEFORE the reload's round trip, so the composer is focused and prefilled the moment
+    /// the thread is up rather than after comments land.
+    private func armAndLoad() async {
+        if let handle = initialReplyHandle, draft.isEmpty {
+            draft = prefillingReply(to: handle, in: draft)
+            replyTarget = handle
+            replyParentId = initialReplyParentId
+            focused = true
+        }
+        await reload()
+    }
+
+    private var thread: some View {
             ZStack {
                 VStack(spacing: 0) {
                     // The author's caption, pinned above the thread and paints instantly:
@@ -109,7 +172,7 @@ struct CommentsSheet: View {
                             LazyVStack(alignment: .leading, spacing: 18) {
                                 ForEach(threads) { threadView($0) }
                             }
-                            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
+                            .padding(.horizontal, inset).padding(.top, 14).padding(.bottom, 8)
                         }
                         // See FeedView: without this, Reply/"Add a comment" left the keyboard with
                         // no way out but Send. Sheet's own drag-to-dismiss still works underneath
@@ -120,29 +183,6 @@ struct CommentsSheet: View {
                     composer
                 }
             }
-            // The undo capsule is hosted at the tab root, which a sheet covers; Report and
-            // Block below stage through it, so it needs a host in here to be seen at all.
-            // Same host `PhotoPagerView` carries for the same reason. Clears the composer.
-            .undoCapsuleHost(bottomPadding: 72)
-            .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Comments")
-            .toolbarColorScheme(.dark, for: .navigationBar)
-                    }
-        // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
-        .presentationDetents([.fraction(0.75), .large])
-        .presentationDragIndicator(.visible)
-        .flimSheetSurface()
-        .task {
-            // Armed BEFORE the reload's round trip, so the composer is focused and
-            // prefilled the moment the sheet is up rather than after comments land.
-            if let handle = initialReplyHandle, draft.isEmpty {
-                draft = prefillingReply(to: handle, in: draft)
-                replyTarget = handle
-                replyParentId = initialReplyParentId
-                focused = true
-            }
-            await reload()
-        }
     }
 
     /// A comment, then its replies indented under it, folded past the first two. A comment that
@@ -260,10 +300,11 @@ struct CommentsSheet: View {
                         showsMentionSuggestions: false, replyTarget: $replyTarget,
                         failureText: sendFailed ? CommentComposer.sendFailedText : nil,
                         focus: $focused) { send() }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, inset).padding(.top, 10).padding(.bottom, docked ? 22 : 10)
             // Opaque, one step up from the sheet: what reads as the bar sitting on the keyboard.
             // Material here would be glass on glass on iOS 26, where the sheet is already glass.
-            .background(FlimTheme.sheetTile)
+            // Docked, it sits straight on the desk like the rest of the column.
+            .background(docked ? Color.clear : FlimTheme.sheetTile)
             .onChange(of: draft) { _, new in
                 if new.isEmpty { sendFailed = false }
             }
@@ -306,7 +347,7 @@ struct CommentsSheet: View {
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, inset)
         .padding(.top, 12)
     }
 
@@ -482,5 +523,45 @@ struct CommentsSheet: View {
         case ..<604_800: return "\(Int(s / 86_400))d"
         default:         return "\(Int(s / 604_800))w"
         }
+    }
+}
+
+
+/// The Feed's right column on the Duo's open display (Blend 2, 6g): the card whose comments are
+/// showing there. A card hands its comment taps here instead of opening the sheet.
+@Observable
+final class DockedComments {
+    struct Target: Equatable {
+        let post: Post
+        /// The card the post is on (`FeedUnit.id`). Only that card moves the column along with a
+        /// swipe, so two cards holding the same shot can never pass it back and forth.
+        let unitId: String
+        var authorHandle: String?
+        var replyHandle: String?
+        var replyParentId: UUID?
+        /// Bumped on every show, so tapping the same card's Reply twice re-arms the composer.
+        let generation: Int
+    }
+
+    private(set) var target: Target?
+
+    func show(post: Post, unitId: String, authorHandle: String?, replyHandle: String? = nil, replyParentId: UUID? = nil) {
+        target = Target(post: post, unitId: unitId, authorHandle: authorHandle, replyHandle: replyHandle,
+                        replyParentId: replyParentId, generation: (target?.generation ?? 0) + 1)
+    }
+
+    func clear() { target = nil }
+}
+
+private struct DockedCommentsKey: EnvironmentKey {
+    static let defaultValue: DockedComments? = nil
+}
+
+extension EnvironmentValues {
+    /// Set by the Feed only on the Duo's open display; nil everywhere else, where comments open
+    /// as a sheet.
+    var dockedComments: DockedComments? {
+        get { self[DockedCommentsKey.self] }
+        set { self[DockedCommentsKey.self] = newValue }
     }
 }
