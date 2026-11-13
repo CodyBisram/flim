@@ -63,7 +63,7 @@ struct ReviewerSignInSheet: View {
                 .padding(.bottom, 40)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)

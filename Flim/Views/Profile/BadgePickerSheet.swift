@@ -93,7 +93,7 @@ struct BadgePickerSheet: View {
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .flimInlineTitle(AppInfo.is17 ? "Seals" : "Badges")
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
@@ -216,7 +216,7 @@ private struct BadgePickerContent: View {
                             // the whole ceremony to nothing for anyone who never picked badges
                             // by hand. Rows stay inert outside Custom (`toggle` guards on mode).
                             if mode == .custom || !unseenIds.isEmpty {
-                                badgeList
+                                if AppInfo.is17 { sealGrid } else { badgeList }
                             }
                             if let saveError {
                                 Text(saveError)
@@ -226,7 +226,7 @@ private struct BadgePickerContent: View {
                                     .padding(.horizontal, 20)
                             }
                         }
-                        lockedSection
+                        if AppInfo.is17 { blindSealGrid } else { lockedSection }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -237,7 +237,7 @@ private struct BadgePickerContent: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle(AppInfo.is17 ? "Seals" : "Badges")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
@@ -258,7 +258,8 @@ private struct BadgePickerContent: View {
             }
             .overlay(alignment: .top) {
                 if showCapNotice {
-                    FlimToast("Up to 2 badges. Remove one to add another.", kind: .error)
+                    FlimToast(AppInfo.is17 ? "Up to 2 seals. Remove one to add another."
+                                           : "Up to 2 badges. Remove one to add another.", kind: .error)
                         .padding(.top, 6)
                 }
             }
@@ -289,6 +290,132 @@ private struct BadgePickerContent: View {
 
     @ViewBuilder
     private var explanation: some View {
+        if AppInfo.is17 {
+            Text(deskExplanation)
+                .font(DeskType.serif(16, italic: true, relativeTo: .body))
+                // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
+                .tracking(0.2)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .multilineTextAlignment(.center)
+        } else {
+            v1Explanation
+        }
+    }
+
+    /// 1.7's lines (Blend 1, 4f): the same two modes and the same cap, said about seals.
+    private var deskExplanation: String {
+        switch (mode, order.isEmpty) {
+        case (.automatic, _): "Your page shows your 2 rarest seals, and changes on its own as you earn more."
+        case (.custom, true): "No seals are chosen. Your page shows none until you pick some below."
+        case (.custom, false): "Tap to add or remove, up to 2. The first you tap leads."
+        }
+    }
+
+    // MARK: - 1.7 seals (Blend 1, 4f)
+
+    private static let sealColumns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
+
+    /// Earned seals, three across in ladder order. A chosen one is ringed, numbered when two are.
+    private var sealGrid: some View {
+        LazyVGrid(columns: Self.sealColumns, spacing: 20) {
+            ForEach(rankedBadges) { badge in
+                sealCell(badge)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func sealCell(_ badge: ProfileBadge) -> some View {
+        let position = mode == .custom ? order.firstIndex(of: badge.id).map { $0 + 1 } : nil
+        let dropped = position != nil && droppedIds.contains(badge.id)
+        let isNew = unseenIds.contains(badge.id)
+        let developed = !isNew || developedIds.contains(badge.id)
+        return Button {
+            toggle(badge.id)
+        } label: {
+            VStack(spacing: 8) {
+                DeskSeal(badge: badge, scale: 1.4)
+                    .opacity(developed ? 1 : 0.4)
+                    .blur(radius: developed ? 0 : 6)
+                    .animation(.easeOut(duration: 0.7), value: developed)
+                    .frame(width: 100, height: 100)
+                    .overlay {
+                        if position != nil {
+                            Circle().strokeBorder(FlimTheme.textPrimary, lineWidth: 1.5)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if let position, order.count > 1 {
+                            Text("\(position)")
+                                .flimFont(11, weight: .semibold, relativeTo: .caption2)
+                                .foregroundStyle(FlimTheme.bg)
+                                .frame(width: 20, height: 20)
+                                .background(FlimTheme.textPrimary, in: Circle())
+                        }
+                    }
+                Text(DeskSeal.ringLine(badge.kind, earnedAt: badge.earnedAt))
+                    .font(DeskType.data(10))
+                    .tracking(1)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .opacity(developed ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
+                if isNew {
+                    Text("NEW")
+                        .flimFont(9, weight: .bold, relativeTo: .caption2)
+                        .tracking(1)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(FlimTheme.newRed, in: Capsule())
+                        .opacity(developed ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .id(badge.id)
+        .accessibilityLabel(accessibilityLabel(for: badge, position: position, dropped: dropped, isNew: isNew))
+        .accessibilityHint(mode == .custom ? (position != nil ? "Double tap to remove it" : "Double tap to add it") : "")
+    }
+
+    /// Seals still out there for you, pressed blind (no ink, no date). Only you ever see these.
+    @ViewBuilder
+    private var blindSealGrid: some View {
+        if !lockedKinds.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("NOT YET EARNED")
+                    .font(DeskType.data(11))
+                    .tracking(2)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.leading, 4)
+                LazyVGrid(columns: Self.sealColumns, spacing: 20) {
+                    ForEach(lockedKinds, id: \.self) { kind in
+                        VStack(spacing: 8) {
+                            DeskSeal(blind: kind, scale: 1.4)
+                                .frame(width: 100, height: 100)
+                            Text(kind.label.uppercased())
+                                .font(DeskType.data(10))
+                                .tracking(1)
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(kind.label), not yet earned")
+                        .accessibilityHint(kind.howToEarn)
+                    }
+                }
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    @ViewBuilder
+    private var v1Explanation: some View {
         switch (mode, order.isEmpty) {
         case (.automatic, _):
             Text("Your profile leads with your 2 rarest badges automatically. This updates on its own as you earn more, and nobody's chosen it for you yet.")

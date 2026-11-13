@@ -105,7 +105,7 @@ struct PhotoPickerSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle(title)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .safeAreaInset(edge: .bottom) {
                 // Either delivery route offers the library. Gating this on `onPickLibraryImage`
                 // alone would hide the button entirely from the cropping callers, which pass only

@@ -26,14 +26,19 @@ struct RollRevealView: View {
     @State private var viewModel: RollRevealViewModel
 
     init(rollId: UUID, rollName: String, photos: [Photo], memberNames: [UUID: String],
-         onCompleted: (() -> Void)? = nil, onStartAnother: (() -> Void)? = nil) {
+         onCompleted: (() -> Void)? = nil, onStartAnother: (() -> Void)? = nil,
+         demoURLs: [String: URL]? = nil) {
         self.rollId = rollId
         self.rollName = rollName
         self.photos = photos
         self.memberNames = memberNames
         self.onCompleted = onCompleted
         self.onStartAnother = onStartAnother
-        _viewModel = State(initialValue: RollRevealViewModel(rollId: rollId, photos: photos))
+        let model = RollRevealViewModel(rollId: rollId, photos: photos)
+        #if DEBUG
+        model.demoURLs = demoURLs
+        #endif
+        _viewModel = State(initialValue: model)
     }
 
     @Environment(PhotoService.self) private var photoService
@@ -232,7 +237,52 @@ struct RollRevealView: View {
         .padding(.bottom, 44)
     }
 
+    @ViewBuilder
     private var revealHeader: some View {
+        if AppInfo.is17 { deskRevealHeader } else { v1RevealHeader }
+    }
+
+    /// 1.7 (Blend 1, 3e): the roll's name in Caslon, where you are in mono, Done once you are on
+    /// the last frame, and the close on the right.
+    private var deskRevealHeader: some View {
+        let count = viewModel.playedDeck.count
+        let onLast = count > 0 && viewModel.index >= count - 1
+        return HStack(spacing: 14) {
+            Text(rollName)
+                .font(DeskType.serif(24, relativeTo: .title2))
+                .foregroundStyle(FlimTheme.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            if count > 0 {
+                Text("\(min(viewModel.index + 1, count)) / \(count)")
+                    .font(DeskType.data(12))
+                    .monospacedDigit()
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .accessibilityLabel("Frame \(min(viewModel.index + 1, count)) of \(count)")
+            }
+            if onLast {
+                // Done is a COMPLETION, the only thing besides paging off the end that burns the
+                // one-shot flag; the X below leaves the reveal replayable.
+                Button { Haptics.tap(); viewModel.finish() } label: {
+                    Text("Done")
+                        .flimFont(15, weight: .semibold, relativeTo: .body)
+                        .foregroundStyle(FlimTheme.ink(accent))
+                }
+                .expandTapTarget(top: 13, leading: 8, bottom: 13, trailing: 4)
+            }
+            Button { Haptics.tap(); dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.textPrimary)
+            }
+            .accessibilityLabel("Close")
+            .expandTapTarget(by: 14)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+    }
+
+    private var v1RevealHeader: some View {
         HStack(spacing: 12) {
             Button { Haptics.tap(); dismiss() } label: {
                 Image(systemName: "xmark")
@@ -327,6 +377,17 @@ struct RollRevealView: View {
         .clipShape(RoundedRectangle(cornerRadius: RevealPacing.frameCornerRadius))
         // Inside the clip and under the pinch, so the mark sits on the print and scales with it.
         .overlay(alignment: .topLeading) { burstMark(for: photo) }
+        // 1.7: the date stamp in the frame's corner, as the board draws every frame (3e).
+        .overlay(alignment: .bottomTrailing) {
+            if AppInfo.is17 {
+                Text(DeskType.stamp(photo.takenAt))
+                    .font(DeskType.data(13))
+                    .foregroundStyle(accent)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+                    .padding(12)
+                    .accessibilityHidden(true)
+            }
+        }
         .scaleEffect(photo.id == currentPhoto?.id ? revealZoom : 1, anchor: zoomAnchor)
         .padding(.horizontal, RevealPacing.frameHorizontalInset)
         .padding(.vertical, RevealPacing.frameVerticalInset)
@@ -439,7 +500,46 @@ struct RollRevealView: View {
         .accessibilityAddTraits(.isButton)
     }
 
+    @ViewBuilder
     private var credit: some View {
+        if AppInfo.is17 { deskCredit } else { v1Credit }
+    }
+
+    /// 1.7 (3e): one line under the frame, who shot it and when; the count sits in the header.
+    @ViewBuilder
+    private var deskCredit: some View {
+        if let photo = currentPhoto {
+            let name = memberNames[photo.userId]
+            let timeLabel = FrameCredit.timeLabel(for: photo.takenAt, index: viewModel.index,
+                                                  in: viewModel.playedDeck.map(\.takenAt))
+            HStack(spacing: 10) {
+                Text(String((name ?? "?").prefix(1)).uppercased())
+                    .flimFont(12, weight: .semibold, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(width: 28, height: 28)
+                    .background(FlimTheme.surface, in: Circle())
+                    .accessibilityHidden(true)
+                if let name {
+                    Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
+                        Text("@\(name)")
+                            .flimFont(15, weight: .semibold, relativeTo: .body)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens @\(name)'s profile")
+                }
+                Text(timeLabel)
+                    .flimFont(14, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, RevealPacing.frameHorizontalInset)
+        }
+    }
+
+    private var v1Credit: some View {
         VStack(spacing: 2) {
             if let photo = currentPhoto, let name = memberNames[photo.userId] {
                 Button {
@@ -548,7 +648,175 @@ struct RollRevealView: View {
         return "\(p.position) of \(p.total) have opened this roll"
     }
 
+    @ViewBuilder
     private var summary: some View {
+        if AppInfo.is17 { deskSummary } else { v1Summary }
+    }
+
+    /// The played frames as (author, time), for the closing card's lines.
+    private var closingShots: [(author: UUID, takenAt: Date)] {
+        viewModel.deck.map { (author: $0.userId, takenAt: $0.takenAt) }
+    }
+
+    /// 1.7's closing card (Blend 1, 3f): a contact sheet of the roll in place of the box lid,
+    /// who was in and over how long, then what to do with it. Save all and Start another stay
+    /// from 1.6; the public link waits for the server side of public screenings.
+    private var deskSummary: some View {
+        let sheet = Array(viewModel.playedDeck.prefix(6))
+        let credits = RevealClosingLine.credits(shots: closingShots, names: memberNames, me: auth.currentUser?.id)
+        let eligible = !PhotoExport.eligible(viewModel.deck, viewer: auth.currentUser?.id, inRoll: true).isEmpty
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+                    ForEach(sheet) { photo in
+                        contactFrame(photo)
+                    }
+                }
+                .accessibilityHidden(true)
+
+                Text(RevealClosingLine.headline(shots: closingShots))
+                    .font(DeskType.serif(30, relativeTo: .title))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 28)
+                if let credits {
+                    Text(credits)
+                        .font(DeskType.serif(17, italic: true, relativeTo: .body))
+                        // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
+                        .tracking(0.2)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
+                }
+                if let presence = viewModel.presence {
+                    Text(presenceText(presence))
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .padding(.top, 10)
+                }
+
+                HStack(spacing: 10) {
+                    if eligible {
+                        Button { viewModel.saveAll(viewer: auth.currentUser?.id) } label: {
+                            HStack(spacing: 7) {
+                                if viewModel.savingAll { ProgressView().controlSize(.small).tint(FlimTheme.ink(accent)) }
+                                Text(viewModel.savingAll ? "Getting them ready" : "Save all")
+                            }
+                            .flimFont(15, weight: .semibold, relativeTo: .body)
+                            .foregroundStyle(FlimTheme.ink(accent))
+                            .padding(.horizontal, 20)
+                            .frame(minHeight: 46)
+                            .overlay(Capsule().strokeBorder(FlimTheme.ink(accent), lineWidth: 1.5))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(viewModel.savingAll)
+                    }
+                    if let onStartAnother {
+                        Button {
+                            Haptics.tap()
+                            dismiss()
+                            onStartAnother()
+                        } label: {
+                            DeskPill("Start another", style: .box)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Start another with this group")
+                    }
+                }
+                .padding(.top, 24)
+
+                if let error = viewModel.saveAllError {
+                    HStack(spacing: 10) {
+                        Text(error)
+                            .flimFont(13, relativeTo: .footnote)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                        Button("Retry") { viewModel.saveAll(viewer: auth.currentUser?.id) }
+                            .flimFont(13, weight: .semibold, relativeTo: .footnote)
+                            .foregroundStyle(FlimTheme.ink(accent))
+                    }
+                    .padding(.top, 10)
+                } else if let notice = viewModel.partialNotice {
+                    Text(notice)
+                        .flimFont(13, relativeTo: .footnote)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .padding(.top, 10)
+                }
+
+                if InviteCopy.revealOfferVisible(for: inviteQuota), let code = auth.currentUser?.inviteCode {
+                    ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "person.badge.plus").font(.system(size: 13))
+                            Text(InviteCopy.revealPrompt)
+                                .flimFont(15, weight: .medium, relativeTo: .body)
+                        }
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .frame(minHeight: 44)
+                    }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        Haptics.tap()
+                        Activation.log(.inviteSent)
+                        Usage.log(.inviteSharedReveal)
+                    })
+                    .padding(.top, 14)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 64)
+            .padding(.bottom, 24)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button { Haptics.tap(); dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.textPrimary)
+            }
+            .accessibilityLabel("Close")
+            .expandTapTarget(by: 14)
+            .padding(.top, 14)
+            .padding(.trailing, 20)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button { Haptics.tap(); dismiss() } label: {
+                Text("Back to the roll")
+                    .flimFont(15, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 12)
+        }
+        .transition(.opacity)
+        .sheet(isPresented: Binding(get: { viewModel.showShareAll },
+                                    set: {
+                                        viewModel.showShareAll = $0
+                                        if !$0 { viewModel.partialNotice = nil }
+                                    })) {
+            ActivityView(items: viewModel.shareImages)
+        }
+    }
+
+    /// One frame of the closing card's contact sheet.
+    private func contactFrame(_ photo: Photo) -> some View {
+        Color.clear
+            .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
+            .overlay {
+                if let thumbPath = photo.thumbPath, let url = viewModel.urls[thumbPath] {
+                    CachedImage(url: url, maxPixel: 300, cacheKey: thumbPath) { $0.resizable().scaledToFill() }
+                        placeholder: { FlimTheme.well }
+                } else if let url = viewModel.urls[photo.viewPath] {
+                    CachedImage(url: url, maxPixel: 300, cacheKey: photo.viewPath) { $0.resizable().scaledToFill() }
+                        placeholder: { FlimTheme.well }
+                } else {
+                    FlimTheme.well
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(FlimTheme.textPrimary.opacity(0.35), lineWidth: 1))
+    }
+
+    private var v1Summary: some View {
         VStack(spacing: 14) {
             Image(systemName: "film.stack")
                 .font(.system(size: 44, weight: .ultraLight))
@@ -735,9 +1003,13 @@ struct RollRevealView: View {
                 .tracking(3.5)
                 .foregroundStyle(accent)
 
-            Text(rollName)
-                .flimFont(34, weight: .ultraLight, relativeTo: .largeTitle)
-                .tracking(2)
+            Group {
+                if AppInfo.is17 {
+                    Text(rollName).font(DeskType.serif(38, relativeTo: .largeTitle))
+                } else {
+                    Text(rollName).flimFont(34, weight: .ultraLight, relativeTo: .largeTitle).tracking(2)
+                }
+            }
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)

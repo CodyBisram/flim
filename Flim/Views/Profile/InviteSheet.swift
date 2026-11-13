@@ -98,7 +98,7 @@ struct InviteSheet: View {
             .scrollBounceBehavior(.basedOnSize)
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Invites")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }.foregroundStyle(.white)

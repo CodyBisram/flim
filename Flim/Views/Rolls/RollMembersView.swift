@@ -228,7 +228,7 @@ struct RollMembersView: View {
             .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
         .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Members (\(members.count)/\(Roll.memberCap))")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)

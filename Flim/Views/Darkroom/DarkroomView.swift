@@ -418,6 +418,8 @@ struct DarkroomView: View {
             if let total = vm.totalCount, total > 0 {
                 Text("\(total) shot\(total == 1 ? "" : "s") in your Darkroom.")
                     .font(DeskType.serif(14, italic: true, relativeTo: .subheadline))
+                    // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
+                    .tracking(0.2)
                     .foregroundStyle(FlimTheme.textSecondary)
             }
         }
@@ -697,7 +699,7 @@ Text("Darkroom")
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             if isSelecting, AppInfo.is17 {
                 deskSelectBar

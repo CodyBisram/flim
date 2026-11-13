@@ -81,9 +81,20 @@ struct ChapterRecapView: View {
     }
 
     var body: some View {
-        recapBody
-            // 1.7: a month plays on Slate like a roll's screening (Blend 1, 3e).
-            .modifier(DeskAlwaysSlate())
+        if AppInfo.is17 {
+            // 1.7: the box sits on the desk (Blend 4, 12a); playing it and its closing card go to
+            // Slate like a roll's screening (3e), each on its own, below.
+            recapBody.modifier(DeskEnvironment())
+        } else {
+            recapBody
+        }
+    }
+
+    /// Slate for what plays: the screening and the closing card, whatever the desk.
+    private struct Screening: ViewModifier {
+        func body(content: Content) -> some View {
+            content.environment(\.colorScheme, .dark)
+        }
     }
 
     @ViewBuilder private var recapBody: some View {
@@ -112,10 +123,14 @@ struct ChapterRecapView: View {
 
     private var content: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            if AppInfo.is17 && phase == .opening {
+                DeskGround()
+            } else {
+                Color.black.ignoresSafeArea()
+            }
             switch phase {
             case .opening: openingCard
-            case .closing: closingCard
+            case .closing: closingCard.modifier(Screening())
             }
             // Inline, not a `.fullScreenCover` (changed 2026-09-10). The recap is already a cover
             // over the profile; the player was a second cover over that, and the viewer's export
@@ -125,12 +140,17 @@ struct ChapterRecapView: View {
             // calls `onClose` instead of the environment `dismiss()`, which is the only thing
             // the cover was buying (see `player`'s doc).
             if isPlayerPresented, !docked {
-                player
-                    .transition(.opacity)
-                    .zIndex(1)
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    player
+                }
+                .modifier(Screening())
+                .transition(.opacity)
+                .zIndex(1)
             }
         }
-        .statusBarHidden(!docked)
+        // The 1.7 box is a page on the desk and keeps the status bar; what plays hides it.
+        .statusBarHidden(!docked && (!AppInfo.is17 || isPlayerPresented || phase == .closing))
         // `viewModel.deck` must never change while the pager is actually mounted (see
         // `ChapterRecapViewModel.isPlayerMounted`'s own doc); this is the one place that tells it
         // whether that's currently true, for both edges of the presentation.
@@ -179,7 +199,236 @@ struct ChapterRecapView: View {
         }
     }
 
+    @ViewBuilder
     private var openingCardBody: some View {
+        if AppInfo.is17 { deskBox } else { v1OpeningCardBody }
+    }
+
+    // MARK: - 1.7 month box (Blend 4, 12a)
+
+    /// The month, posted shots by day, newest day first, for the box's grid.
+    private var boxDays: [(day: Date, photos: [ChapterPhoto])] {
+        let live = viewModel.monthPhotos.filter { !$0.isDeadFrame }
+        let grouped = Dictionary(grouping: live) { FeedUnit.dayKey(for: $0.takenAt) }
+        return grouped.keys.sorted(by: >).map { (day: $0, photos: grouped[$0] ?? []) }
+    }
+
+    private static func dayStamp(_ day: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE d"
+        return formatter.string(from: day).uppercased()
+    }
+
+    /// "OCT '26", the month's stamp on the box's cover.
+    private var monthStamp: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM"
+        let year = Calendar(identifier: .gregorian).component(.year, from: viewModel.chapter.monthStart) % 100
+        return "\(formatter.string(from: viewModel.chapter.monthStart).uppercased()) '\(String(format: "%02d", year))"
+    }
+
+    private func play(from index: Int = 0) {
+        Haptics.tap()
+        selection = index
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isPlayerPresented = true }
+    }
+
+    private var deskBox: some View {
+        let month = viewModel.chapter.monthName()
+        // Back (or Close in the Duo's column) stays put above the scroll, where a tap always
+        // reaches it.
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { Haptics.tap(); close() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: docked ? "xmark" : "chevron.left")
+                            .font(.system(size: 17, weight: .medium))
+                        if !docked {
+                            Text(isOwnRecap ? "You" : "Back")
+                                .flimFont(17, relativeTo: .body)
+                        }
+                    }
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(docked ? "Close" : (isOwnRecap ? "Back to your page" : "Back"))
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(month)
+                            .font(DeskType.serif(34, relativeTo: .largeTitle))
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Spacer(minLength: 8)
+                        Text(viewModel.chapter.statsLine)
+                            .flimFont(14, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.top, 4)
+
+                    boxCover
+                        .padding(.top, 14)
+
+                    HStack(spacing: 10) {
+                        Button { play() } label: {
+                            Label("Play \(month)", systemImage: "play.fill")
+                                .flimFont(15, weight: .semibold, relativeTo: .body)
+                                .labelStyle(.titleAndIcon)
+                                .foregroundStyle(FlimTheme.bg)
+                                .frame(maxWidth: .infinity, minHeight: 46)
+                                .background(FlimTheme.textPrimary, in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        // A chapter is one person's month, so the sheet is theirs to share.
+                        if isOwnRecap {
+                            Button {
+                                guard !viewModel.isBuildingContactSheet, !viewModel.isLoadingDeck else { return }
+                                Task { await viewModel.buildContactSheet() }
+                            } label: {
+                                HStack(spacing: 7) {
+                                    if viewModel.isBuildingContactSheet || viewModel.isLoadingDeck {
+                                        ProgressView().controlSize(.small).tint(FlimTheme.textPrimary)
+                                    } else {
+                                        Image(systemName: "square.and.arrow.up")
+                                    }
+                                    Text("Share")
+                                }
+                                .flimFont(15, weight: .semibold, relativeTo: .body)
+                                .foregroundStyle(FlimTheme.textPrimary)
+                                .padding(.horizontal, 22)
+                                .frame(minHeight: 46)
+                                .background(FlimTheme.chip, in: Capsule())
+                                .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(viewModel.isBuildingContactSheet || viewModel.isLoadingDeck)
+                            .accessibilityLabel("Share as a contact sheet")
+                        }
+                    }
+                    .padding(.top, 14)
+
+                    if let note = viewModel.contactSheetNote {
+                        Text(note)
+                            .flimFont(13, relativeTo: .footnote)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .padding(.top, 8)
+                    }
+                    if let error = viewModel.contactSheetError {
+                        HStack(spacing: 10) {
+                            Text(error)
+                                .flimFont(13, relativeTo: .footnote)
+                                .foregroundStyle(FlimTheme.textSecondary)
+                            Button("Retry") { Task { await viewModel.buildContactSheet() } }
+                                .flimFont(13, weight: .semibold, relativeTo: .footnote)
+                                .foregroundStyle(FlimTheme.ink(accent))
+                        }
+                        .padding(.top, 8)
+                    }
+
+                    if showFirstRunLine {
+                        Text("Built from what you posted this month. Anyone who can see your page sees this too.")
+                            .font(DeskType.serif(15, italic: true, relativeTo: .body))
+                            .tracking(0.2)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 12)
+                    }
+
+                    ForEach(boxDays, id: \.day) { group in
+                        Text(Self.dayStamp(group.day))
+                            .font(DeskType.data(11))
+                            .tracking(1.5)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .padding(.top, 22)
+                            .padding(.bottom, 8)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+                            ForEach(group.photos) { photo in
+                                boxThumb(photo)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
+            .scrollIndicators(.hidden)
+        }
+        // Keyed on the month's list: the load lands after the box first appears.
+        .task(id: viewModel.monthPhotos.count) { await viewModel.signMonthThumbs(feed: feed) }
+        .sheet(isPresented: Binding(get: { viewModel.showContactSheetShare },
+                                    set: { viewModel.showContactSheetShare = $0 })) {
+            if let file = viewModel.contactSheetFile {
+                ActivityView(items: [file])
+            }
+        }
+    }
+
+    /// The box's cover: the month's first cover shot, its stamp, and a play mark; a tap plays.
+    private var boxCover: some View {
+        Button { play() } label: {
+            Color.clear
+                .aspectRatio(3.0 / 2.0, contentMode: .fit)
+                .overlay {
+                    if let path = viewModel.chapter.coverPaths.first {
+                        CachedImage(url: chapterCoverURLs[path] ?? viewModel.urls[path], maxPixel: 900, cacheKey: path) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: { FlimTheme.well }
+                    } else {
+                        FlimTheme.well
+                    }
+                }
+                .overlay {
+                    LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .center, endPoint: .bottom)
+                }
+                .overlay {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(DeskColor.ink)
+                        .frame(width: 60, height: 60)
+                        .background(DeskColor.rgb(0xFBF6F0).opacity(0.94), in: Circle())
+                }
+                .overlay(alignment: .bottomLeading) {
+                    Text(monthStamp)
+                        .font(DeskType.data(13))
+                        .tracking(1.5)
+                        .foregroundStyle(.white)
+                        .padding(14)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Play \(viewModel.chapter.monthName())")
+    }
+
+    private func boxThumb(_ photo: ChapterPhoto) -> some View {
+        Button {
+            // A shot the screening plays opens there; one curation left out opens at the start.
+            play(from: viewModel.deckIndex(ofPhoto: photo.id) ?? 0)
+        } label: {
+            Color.clear
+                .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
+                .overlay {
+                    CachedImage(url: viewModel.urls[photo.displayPath], maxPixel: 300, cacheKey: photo.displayPath) {
+                        $0.resizable().scaledToFill()
+                    } placeholder: { FlimTheme.well }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Shot from \(photo.takenAt.formatted(date: .abbreviated, time: .shortened))")
+    }
+
+    private var v1OpeningCardBody: some View {
         ZStack {
             radialWash
             VStack(spacing: 0) {
@@ -497,7 +746,7 @@ struct ChapterRecapView: View {
         // `phase` was already flipped in `.onChange(of: isPlayerPresented)` the instant the
         // cover began to leave, so the screen under it is the closing card by the time the cover
         // is gone. Left here only for the no-card case, which ends the recap.
-        if !viewModel.hasClosingCard { close() }
+        if !viewModel.hasClosingCard && !AppInfo.is17 { close() }
     }
 
     private var closingCard: some View {
@@ -518,7 +767,8 @@ struct ChapterRecapView: View {
                 selection = 0
                 isPlayerPresented = true
             },
-            onClose: { close() }
+            // 1.7: the closing card hands back to the box it was played from.
+            onClose: { if AppInfo.is17 { phase = .opening } else { close() } }
         )
     }
 }

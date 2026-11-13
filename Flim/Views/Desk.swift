@@ -118,6 +118,15 @@ enum DeskType {
         return Font.custom(mono, fixedSize: size)
     }
 
+    /// The date stamp on a frame, "11 04 '26": month, day, year, the burned-in date back's order
+    /// (`BrandedExport.dateText`). Gregorian whatever the device calendar, so it matches the back.
+    static func stamp(_ date: Date, timeZone: TimeZone = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%02d %02d '%02d", c.month ?? 0, c.day ?? 0, (c.year ?? 0) % 100)
+    }
+
     /// A countdown as the board draws it: "02:14:09", hours padded, never negative.
     static func clock(_ seconds: TimeInterval) -> String {
         let s = max(0, Int(seconds.rounded(.down)))

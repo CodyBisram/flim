@@ -29,7 +29,7 @@ struct JoinRollView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Join a Roll")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }

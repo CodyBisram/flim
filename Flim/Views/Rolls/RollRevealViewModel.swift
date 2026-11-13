@@ -29,6 +29,11 @@ final class RollRevealViewModel {
     /// Used only as a fallback if the fresh re-fetch in `loadDeck` fails, and as the cover
     /// card's source until the fresh deck lands, so the card can render before any network work.
     private let fallbackPhotos: [Photo]
+    #if DEBUG
+    /// Demo routes only: signed URLs by path, so the reveal plays its own photos with no network
+    /// (see `RollDetailDemoFixture`).
+    var demoURLs: [String: URL]?
+    #endif
 
     init(rollId: UUID, photos: [Photo]) {
         self.rollId = rollId
@@ -207,6 +212,18 @@ final class RollRevealViewModel {
     /// frame on, and reactions and comments went to the wrong photo (audit RC-2).
     private func loadDeck(photoService: PhotoService, auth: AuthService, rollService: RollService) async {
         self.rollService = rollService
+        #if DEBUG
+        if let demoURLs {
+            deck = fallbackPhotos.sorted { $0.takenAt < $1.takenAt }
+            let playback = BurstGrouping.playback(deck.filter { !$0.isDeadFrame })
+            playedDeck = playback.played
+            burstExtraCount = playback.extraCount
+            urls = demoURLs
+            deckReady = true
+            beginIfReady()
+            return
+        }
+        #endif
         let epoch = AccountEpoch.current
         let fresh: [Photo]
         do {

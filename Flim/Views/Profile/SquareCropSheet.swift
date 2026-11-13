@@ -64,7 +64,7 @@ struct SquareCropSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle(title)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.white)

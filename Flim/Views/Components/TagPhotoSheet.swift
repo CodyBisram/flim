@@ -71,7 +71,7 @@ struct TagPhotoSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Tag People")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { onDone(); dismiss() }

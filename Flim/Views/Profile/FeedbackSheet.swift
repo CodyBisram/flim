@@ -57,7 +57,7 @@ struct FeedbackSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Send feedback")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.white)

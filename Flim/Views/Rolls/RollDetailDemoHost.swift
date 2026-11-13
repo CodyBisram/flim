@@ -7,6 +7,8 @@ struct RollDetailDemoFixture {
     let roll: Roll
     let photos: [Photo]
     let urls: [UUID: URL]
+    /// Who is in the roll, by username, so the sealed box (Blend 1, 3d) has people to list.
+    var memberNames: [UUID: String] = [:]
 
     /// A developed roll of nine frames by default; with `developing`, the same roll before its
     /// reveal, every frame still dark.
@@ -19,10 +21,14 @@ struct RollDetailDemoFixture {
                         createdAt: created, revealAt: reveal)
         var photos: [Photo] = []
         var urls: [UUID: URL] = [:]
+        let names = ["cody", "nadia.bali", "gem", "rafi", "noor"]
+        let people = names.indices.map { $0 == 0 ? owner : (UUID(uuidString: String(format: "00000000-0000-0000-0000-0000000093%02d", $0)) ?? UUID()) }
+        // Nadia shot the most and Noor nothing yet, as the board draws it.
+        let shooters = [1, 1, 1, 2, 2, 0, 3, 1, 2]
         for index in 0..<9 {
             let id = UUID()
             let path = "rollDetailDemo/p\(index).jpg"
-            photos.append(Photo(id: id, userId: owner, rollId: roll.id, storagePath: path,
+            photos.append(Photo(id: id, userId: people[shooters[index]], rollId: roll.id, storagePath: path,
                                 thumbPath: path, feedPath: path,
                                 takenAt: created.addingTimeInterval(TimeInterval(600 * (index + 1))),
                                 developsAt: reveal, isDeveloped: !developing, caption: nil, isSorted: true))
@@ -32,7 +38,8 @@ struct RollDetailDemoFixture {
                 urls[id] = file
             }
         }
-        return RollDetailDemoFixture(roll: roll, photos: photos, urls: urls)
+        return RollDetailDemoFixture(roll: roll, photos: photos, urls: urls,
+                                     memberNames: Dictionary(uniqueKeysWithValues: zip(people, names)))
     }
 
     private static func gradient(hue: CGFloat) -> UIImage {

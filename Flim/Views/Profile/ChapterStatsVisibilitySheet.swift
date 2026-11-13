@@ -24,7 +24,7 @@ struct ChapterStatsVisibilitySheet: View {
                 ZStack { ProgressView().tint(.white) }
                     .navigationBarTitleDisplayMode(.inline)
                     .flimInlineTitle("Chapter stats")
-                    .toolbarColorScheme(.dark, for: .navigationBar)
+                    .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Cancel") { dismiss() }.foregroundStyle(.white)
@@ -89,7 +89,7 @@ private struct ChapterStatsVisibilityContent: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Chapter stats")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.white)

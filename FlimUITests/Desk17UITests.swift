@@ -184,7 +184,7 @@ final class Desk17UITests: XCTestCase {
     }
 
     /// The camera on the Duo's open display (Blend 2, 6f), via the debug frame: flip, shutter and
-    /// the last shot stand in a column beside the frame.
+    /// flash stand in a column beside the frame.
     func testOpenDuoCameraHasItsControlColumn() {
         app.terminate()
         app.launchArguments = ["-chromePreviewDemo", "-deskFrame", "890x626", "-deskFrameFit", "380"]
@@ -263,6 +263,8 @@ final class Desk17UITests: XCTestCase {
         }
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.tap()
+        sleep(1)
+        shot("open_you_after_close")
         XCTAssertFalse(close.waitForExistence(timeout: 2), "Close did not hand the column back")
     }
 
@@ -282,5 +284,98 @@ final class Desk17UITests: XCTestCase {
             XCTAssertTrue(header.exists, "the docked comments went away")
             XCTAssertFalse(app.navigationBars["Comments"].exists, "a comments sheet opened over the open display")
         }
+    }
+
+    /// A roll that has not opened (Blend 1, 3d) is a sealed box: who is in and what each has
+    /// put in it, never the frames, with Shoot into it at the foot.
+    func testSealedRollIsABox() {
+        for desk in ["slate", "paper"] {
+            app.terminate()
+            app.launchArguments = ["-chromePreviewDemo", "-tabRolls", "-rollsFixture", "-desk", desk]
+            app.launch()
+            let open = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label ENDSWITH 'Opens the roll.'")).firstMatch
+            XCTAssertTrue(open.waitForExistence(timeout: 15), "the fixture roll is not on Rolls")
+            open.tap()
+            XCTAssertTrue(app.buttons["Shoot into it"].waitForExistence(timeout: 5), "the sealed roll has no Shoot into it")
+            shot("sealed_roll_\(desk)")
+            // Each member row reads as one line to VoiceOver: name, then count.
+            let nadia = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS '@nadia.bali' AND label CONTAINS '4 shots'")).firstMatch
+            XCTAssertTrue(nadia.exists, "the sealed roll does not list each member with their shots")
+            XCTAssertFalse(app.staticTexts["DEVELOPING"].exists, "the sealed roll shows its frames")
+        }
+    }
+
+    /// The screening (Blend 1, 3e) and its closing card (3f), on the developed demo roll: the
+    /// name and count in the header, one credit line, then a contact sheet and the summary.
+    func testScreeningAndClosingCard() {
+        app.terminate()
+        app.launchArguments = ["-rollDetailDemo", "-desk", "paper"]
+        app.launch()
+        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play reveal'")).firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 15), "the developed demo roll has no Play reveal")
+        play.tap()
+        sleep(1)
+        app.tap()   // past the opening card
+        let count = app.staticTexts["Frame 1 of 9"].firstMatch
+        XCTAssertTrue(count.waitForExistence(timeout: 10), "the screening header has no count")
+        sleep(1)
+        shot("screening")
+        for _ in 0..<8 { app.swipeLeft(); usleep(400_000) }
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "no Done on the last frame")
+        done.tap()
+        XCTAssertTrue(app.buttons["Back to the roll"].waitForExistence(timeout: 5), "no closing card")
+        sleep(1)
+        shot("closing_card")
+        app.buttons["Back to the roll"].tap()
+        XCTAssertTrue(play.waitForExistence(timeout: 5), "Back to the roll did not return to the roll")
+    }
+
+    /// The Seals drawer (Blend 1, 4f): earned seals three across in their shapes, the rest
+    /// pressed blind below; in Custom a tapped seal is ringed.
+    func testSealsDrawerIsAGridOfSeals() {
+        app.terminate()
+        app.launchArguments = ["-badgePickerDemo", "-desk", "paper"]
+        app.launch()
+        let custom = app.buttons["Custom"].firstMatch
+        XCTAssertTrue(custom.waitForExistence(timeout: 15), "the Seals drawer did not open")
+        sleep(6)   // the demo's seals are all new and develop in, one after another
+        shot("seals")
+        custom.tap()
+        let first = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Founder'")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5), "no Founder seal to choose")
+        first.tap()
+        sleep(1)
+        shot("seals_chosen")
+        app.swipeUp()
+        sleep(1)
+        shot("seals_blind")
+    }
+
+    /// A month box on the phone (Blend 4, 12a): the month on the desk with its cover, Play and
+    /// Share, and the shots by day; playing goes to Slate and closing it comes back to the box.
+    func testMonthBoxOnThePhone() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "paper"]
+        app.launch()
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 15), "no month box on the shelf")
+        box.tap()
+        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play ' AND NOT (label ENDSWITH 'Plays the month.')")).firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 5), "the month box has no Play")
+        sleep(2)
+        shot("month_box")
+        play.tap()
+        sleep(2)
+        shot("month_box_playing")
+        let close = app.buttons["Close"].firstMatch
+        if close.waitForExistence(timeout: 5) { close.tap() }
+        sleep(1)
+        // Back on the box (or its closing card, which hands back to the box).
+        let doneCard = app.buttons["Close"].firstMatch
+        if !play.waitForExistence(timeout: 3), doneCard.exists { doneCard.tap() }
+        XCTAssertTrue(play.waitForExistence(timeout: 5), "closing the screening did not come back to the box")
     }
 }

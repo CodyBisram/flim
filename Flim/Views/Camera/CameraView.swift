@@ -1438,7 +1438,7 @@ private struct RollPickerSheet: View {
             }
             .navigationTitle("Send to…")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.white)

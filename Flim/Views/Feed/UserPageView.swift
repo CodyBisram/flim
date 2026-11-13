@@ -610,7 +610,12 @@ struct UserPageView: View {
                 }
                 Spacer(minLength: 8)
                 if let seal = displayedBadges.first, !isBlocked {
-                    ProfileBadgePill(badge: seal, onTap: { badgeTapped($0) })
+                    // The leading seal, pressed into the page (Blend 1, 4a); a tap explains it.
+                    Button { badgeTapped(seal) } label: {
+                        DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, scale: 1.15)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Says what this seal is for")
                 }
             }
             if !isSelf && !isBlocked && followsMe && !isFollowing {
@@ -1684,7 +1689,7 @@ struct FollowListView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle(mode == .followers ? "Followers" : "Following")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }.foregroundStyle(.white)

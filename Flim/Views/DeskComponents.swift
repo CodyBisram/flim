@@ -171,3 +171,167 @@ struct DeskTitleOr<V1: View>: ViewModifier {
         }
     }
 }
+
+/// A seal (Blend 1, 4a and 4f): one badge pressed into the page in its rung's shape and ink, its
+/// ring line above the name and the month it was earned below. Founding 100 shows its number
+/// and the year. Seal text never scales: it is fixed chrome inside the shape.
+///
+/// Carried over from the shelved Print build's seal (V2's five rungs and shapes, unchanged:
+/// round, laurel round, shield, lozenge, square), which is excluded from App Store builds.
+struct DeskSeal: View {
+    let kind: ProfileBadgeKind
+    var earnedAt: Date?
+    var signupNumber: Int?
+    /// Not yet earned: the shape pressed blind, no ink and no date. Only ever drawn in your own
+    /// drawer.
+    var blind = false
+    /// Drawn at this multiple of the page size. A real size, not a `scaleEffect`, so the ring
+    /// stays a fine line at every size.
+    var scale: CGFloat = 1
+
+    @Environment(\.colorScheme) private var scheme
+
+    init(badge: ProfileBadge, signupNumber: Int? = nil, scale: CGFloat = 1) {
+        self.kind = badge.kind
+        self.earnedAt = badge.earnedAt
+        self.signupNumber = signupNumber
+        self.scale = scale
+    }
+
+    init(blind kind: ProfileBadgeKind, scale: CGFloat = 1) {
+        self.kind = kind
+        self.blind = true
+        self.scale = scale
+    }
+
+    var body: some View {
+        let style = Self.style(kind.tier, slate: scheme == .dark)
+        let ink = blind ? FlimTheme.textTertiary.opacity(0.7) : style.ink
+        let size = CGSize(width: style.size.width * scale, height: style.size.height * scale)
+        let area = style.content(size)
+        VStack(spacing: 1.5 * scale) {
+            Text(Self.ringLine(kind, earnedAt: earnedAt))
+                .font(DeskType.data(6.5 * scale))
+                .tracking(0.6 * scale)
+            Text(middle)
+                .font(DeskType.serif(style.middle * scale, relativeTo: .caption2))
+                .dynamicTypeSize(.large)
+            Text(blind ? " " : bottom)
+                .font(DeskType.data(6.5 * scale))
+                .tracking(0.6 * scale)
+        }
+        // One line each, shrunk to the part of the shape all three lines can clear: a round or
+        // shield seal is narrower at its top and bottom than at its middle.
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
+        .multilineTextAlignment(.center)
+        .frame(width: area.width, height: area.height)
+        .offset(y: area.offsetY)
+        .foregroundStyle(ink)
+        .frame(width: size.width, height: size.height)
+        .background {
+            if blind {
+                style.shape.fill(FlimTheme.well)
+            }
+        }
+        .overlay { style.shape.stroke(ink, lineWidth: 1.5 * min(scale, 1.25)) }
+        // Blind embossing: a light edge under the pressed shape.
+        .shadow(color: blind ? .white.opacity(scheme == .dark ? 0.06 : 0.6) : .clear, radius: 0, x: 0.5, y: 0.8)
+        .rotationEffect(.degrees(-8))
+        .opacity(0.92)
+        // The tilt pushes the corners out; this keeps them off whatever sits beside the seal.
+        .padding(4 * scale)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(blind ? "\(kind.label), not yet earned" : "Seal: \(kind.label)")
+    }
+
+    private var middle: String {
+        if kind == .founding100 { return signupNumber.map { "No \($0)" } ?? "100" }
+        return kind.label
+    }
+
+    private var bottom: String {
+        guard let earnedAt else { return " " }
+        if kind == .founding100 { return earnedAt.formatted(.dateTime.year()) }
+        let month = earnedAt.formatted(.dateTime.month(.abbreviated)).uppercased()
+        let year = earnedAt.formatted(.dateTime.year(.twoDigits))
+        return "\(month) \(year)"
+    }
+
+    private struct Style {
+        let size: CGSize
+        let shape: AnyShape
+        let ink: Color
+        let middle: CGFloat
+        /// The share of the shape the text may use, and how far down it sits (a shield narrows
+        /// toward its point, so its text rides high).
+        var inset: (x: CGFloat, y: CGFloat, offsetY: CGFloat) = (0.72, 0.70, 0)
+
+        func content(_ size: CGSize) -> (width: CGFloat, height: CGFloat, offsetY: CGFloat) {
+            (size.width * inset.x, size.height * inset.y, size.height * inset.offsetY)
+        }
+    }
+
+    /// The five shapes and inks: founding round in gold (the only gold in the app), gold a laurel
+    /// round in rose, silver a shield in violet, bronze a lozenge in teal, accent a square in
+    /// sepia. On Slate the inks lift to the brighter set so they stay legible.
+    private static func style(_ tier: ProfileBadgeTier, slate: Bool) -> Style {
+        switch tier {
+        case .founding: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Circle()),
+                              ink: DeskColor.rgb(slate ? 0xD4B65A : 0xA88C38), middle: 15,
+                              inset: (0.72, 0.68, 0))
+        case .gold: Style(size: CGSize(width: 58, height: 58), shape: AnyShape(Circle()),
+                          ink: DeskColor.rgb(slate ? 0xF5738C : 0xD46A7E), middle: 11,
+                          inset: (0.72, 0.68, 0))
+        case .silver: Style(size: CGSize(width: 51, height: 57),
+                            shape: AnyShape(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 26,
+                                                                   bottomTrailingRadius: 26, topTrailingRadius: 5)),
+                            ink: DeskColor.rgb(slate ? 0xA88CFA : 0x8C74D6), middle: 12,
+                            inset: (0.80, 0.66, -0.04))
+        case .bronze: Style(size: CGSize(width: 66, height: 46), shape: AnyShape(Capsule()),
+                            ink: DeskColor.rgb(slate ? 0x59D1BF : 0x3FA898), middle: 11,
+                            inset: (0.76, 0.74, 0))
+        case .accent: Style(size: CGSize(width: 54, height: 54), shape: AnyShape(Rectangle()),
+                            ink: DeskColor.rgb(slate ? 0xB9AEA3 : 0x5E534A), middle: 10,
+                            inset: (0.80, 0.78, 0))
+        }
+    }
+
+    /// The approved ring lines, one per badge. Spotlight carries its ISO week once earned.
+    static func ringLine(_ kind: ProfileBadgeKind, earnedAt: Date?) -> String {
+        switch kind {
+        case .founder: "BUILT FLIM"
+        case .foundingCrew: "THE CREW"
+        case .founding100: "FOUNDING"
+        case .frontRow: "5 FIRSTS"
+        case .packedHouse: "10 ON A ROLL"
+        case .coverToCover: "10 ROLLS"
+        case .openDoor: "10 JOINED"
+        case .oneYear: "A YEAR"
+        case .fullSet: "20 HELD"
+        case .spotlight: earnedAt.map { "WK \(Calendar(identifier: .iso8601).component(.weekOfYear, from: $0))" } ?? "A WEEK"
+        case .patron: "5 JOINED"
+        case .darkroom: "ALL REVEALS"
+        case .firstIn: "FIRST OPEN"
+        case .keptOne: "10 KEPT"
+        case .regular: "7 DAYS"
+        case .recruiter: "3 STAYED"
+        case .feedback, .bugCatcher: "THE TEAM"
+        case .fullRoll: "CAME BACK"
+        case .rollMaker: "STARTED ONE"
+        case .broughtSomeone: "BROUGHT ONE"
+        case .wellMet: "A REACTION"
+        case .fullHouse: "5 ON A ROLL"
+        case .spotter: "YOU TAGGED"
+        case .inFrame: "TAGGED"
+        case .goodCompany: "10 FOLLOW"
+        case .firstLight: "FIRST FRAME"
+        case .shared: "TO THE FEED"
+        case .joinedIn: "JOINED ONE"
+        case .chippedIn: "SHOT IN ONE"
+        case .chimedIn: "REACTED"
+        case .saidIt: "A CAPTION"
+        case .tenFrames: "10 FRAMES"
+        }
+    }
+}

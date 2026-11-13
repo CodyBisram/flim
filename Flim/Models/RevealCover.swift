@@ -84,3 +84,49 @@ struct RevealCover: Equatable {
         deckReady && (beatElapsed || viewerTapped)
     }
 }
+
+/// The closing card's two lines in 1.7 (Blend 1, 3f): "Six of you. 7 shots over five days." and
+/// "@nadia shot the most; @gem shot the last." Pure, so the wording is pinned by tests.
+enum RevealClosingLine {
+    private static let words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+
+    private static func word(_ n: Int) -> String { words.indices.contains(n) ? words[n] : "\(n)" }
+
+    /// `shots` oldest first, as (author, taken at). Days run from the first shot's app day to the
+    /// last's, both counted (the app's 04:00 day, so a 2am frame belongs to the night before).
+    static func headline(shots: [(author: UUID, takenAt: Date)], calendar: Calendar = .current) -> String {
+        let people = Set(shots.map(\.author)).count
+        let count = shots.count
+        let first = shots.map(\.takenAt).min().map { FeedUnit.dayKey(for: $0, calendar: calendar) }
+        let last = shots.map(\.takenAt).max().map { FeedUnit.dayKey(for: $0, calendar: calendar) }
+        var days = 1
+        if let first, let last {
+            days = (calendar.dateComponents([.day], from: first, to: last).day ?? 0) + 1
+        }
+        let who = word(people).prefix(1).uppercased() + word(people).dropFirst()
+        let what = "\(count) shot\(count == 1 ? "" : "s")"
+        let when = days <= 1 ? "in one day" : "over \(word(days)) days"
+        return "\(who) of you. \(what) \(when)."
+    }
+
+    /// Who shot the most (only when one person did) and who shot the last; nil for a roll one
+    /// person shot alone, where both would name them.
+    static func credits(shots: [(author: UUID, takenAt: Date)], names: [UUID: String], me: UUID?) -> String? {
+        guard Set(shots.map(\.author)).count > 1,
+              let lastAuthor = shots.max(by: { $0.takenAt < $1.takenAt })?.author else { return nil }
+        func handle(_ id: UUID, start: Bool) -> String {
+            if id == me { return start ? "You" : "you" }
+            if let name = names[id] { return "@\(name)" }
+            return start ? "Someone" : "someone"
+        }
+        var counts: [UUID: Int] = [:]
+        for shot in shots { counts[shot.author, default: 0] += 1 }
+        let top = counts.values.max() ?? 0
+        let leaders = counts.filter { $0.value == top }.map(\.key)
+        guard leaders.count == 1, let most = leaders.first else {
+            return "\(handle(lastAuthor, start: true)) shot the last."
+        }
+        if most == lastAuthor { return "\(handle(most, start: true)) shot the most, and the last." }
+        return "\(handle(most, start: true)) shot the most; \(handle(lastAuthor, start: false)) shot the last."
+    }
+}

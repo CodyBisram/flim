@@ -286,6 +286,18 @@ final class ChapterRecapViewModel {
     /// month whose photos never finished loading at all. Used by `ChapterRecapView` to seed
     /// `PhotoPagerView.startIndex` when a closing-card thumb is tapped; the pager owns its own
     /// selection from there, so this view model tracks no index of its own.
+    /// 1.7's month box shows every posted shot by day (Blend 4, 12a), not only the played deck,
+    /// so it signs the month's thumbnails the load left unsigned. Once per box.
+    func signMonthThumbs(feed: FeedService) async {
+        guard !signedMonthThumbs, !monthPhotos.isEmpty else { return }
+        signedMonthThumbs = true
+        let missing = Array(Set(monthPhotos.filter { !$0.isDeadFrame }.map(\.displayPath)).subtracting(urls.keys))
+        guard !missing.isEmpty else { return }
+        let resolved = await feed.signedURLs(for: missing)
+        for (path, url) in resolved { urls[path] = url }
+    }
+    private var signedMonthThumbs = false
+
     func deckIndex(ofPhoto photoId: UUID) -> Int? {
         deck.firstIndex { $0.id == photoId }
     }

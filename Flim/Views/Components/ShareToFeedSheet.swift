@@ -457,7 +457,7 @@ struct AddPeopleSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("In this photo")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }.foregroundStyle(accent).fontWeight(.semibold)

@@ -70,7 +70,7 @@ struct PhotoCommentsSheet: View {
             .undoCapsuleHost(bottomPadding: 72)
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Comments")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
                         .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary) }
             }

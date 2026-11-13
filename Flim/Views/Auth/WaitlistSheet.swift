@@ -72,7 +72,7 @@ struct WaitlistSheet: View {
             }
             .animation(.snappy(duration: 0.2), value: joinedEmail)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 if joinedEmail == nil {
                     ToolbarItem(placement: .topBarLeading) {

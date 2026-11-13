@@ -56,3 +56,54 @@ final class DeskFriendStateTests: XCTestCase {
         XCTAssertEqual(R.deskLabel(.add), "Add friend")
     }
 }
+
+final class SealedRollRowsTests: XCTestCase {
+    /// The sealed roll's rows (Blend 1, 3d): you first, shooters most first, the idle together.
+    func testSealedRollRows() {
+        let me = UUID(), nadia = UUID(), gem = UUID(), noor = UUID(), dev = UUID(), gone = UUID()
+        let members = [me: "cody", nadia: "nadia", gem: "gem", noor: "noor", dev: "dev.k"]
+        let rows = SealedRollRows.make(members: members,
+                                       shotsBy: [nadia, gem, nadia, me, nadia, gem, gone], me: me)
+        XCTAssertEqual(rows, [
+            SealedRollRows(names: "You", count: 1),
+            SealedRollRows(names: "@nadia", count: 3),
+            SealedRollRows(names: "@gem", count: 2),
+            SealedRollRows(names: "someone", count: 1),
+            SealedRollRows(names: "@dev.k, @noor", count: 0),
+        ])
+        // You with nothing in yet still lead; nobody idle means no idle row.
+        XCTAssertEqual(SealedRollRows.make(members: [me: "cody", gem: "gem"], shotsBy: [gem], me: me),
+                       [SealedRollRows(names: "You", count: 0), SealedRollRows(names: "@gem", count: 1)])
+    }
+}
+
+final class RevealClosingLineTests: XCTestCase {
+    func testHeadlineCountsPeopleShotsAndDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let day1 = calendar.date(from: DateComponents(year: 2026, month: 11, day: 4, hour: 18))!
+        let a = UUID(), b = UUID()
+        let shots = [(author: a, takenAt: day1),
+                     (author: b, takenAt: day1.addingTimeInterval(3600)),
+                     (author: a, takenAt: day1.addingTimeInterval(4 * 86_400))]
+        XCTAssertEqual(RevealClosingLine.headline(shots: shots, calendar: calendar), "Two of you. 3 shots over five days.")
+        // A 2am frame belongs to the night before, so this is still one day.
+        let late = calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 2))!
+        XCTAssertEqual(RevealClosingLine.headline(shots: [(author: a, takenAt: day1), (author: a, takenAt: late)], calendar: calendar),
+                       "One of you. 2 shots in one day.")
+    }
+
+    func testCreditsNameTheMostAndTheLast() {
+        let me = UUID(), nadia = UUID(), gem = UUID()
+        let names = [nadia: "nadia", gem: "gem"]
+        func shots(_ order: [UUID]) -> [(author: UUID, takenAt: Date)] {
+            order.enumerated().map { (author: $0.element, takenAt: Date(timeIntervalSince1970: Double($0.offset) * 60)) }
+        }
+        XCTAssertEqual(RevealClosingLine.credits(shots: shots([nadia, nadia, gem, me, nadia, gem]), names: names, me: me),
+                       "@nadia shot the most; @gem shot the last.")
+        XCTAssertEqual(RevealClosingLine.credits(shots: shots([gem, me, me]), names: names, me: me),
+                       "You shot the most, and the last.")
+        XCTAssertEqual(RevealClosingLine.credits(shots: shots([gem, nadia]), names: names, me: me), "@nadia shot the last.")
+        XCTAssertNil(RevealClosingLine.credits(shots: shots([gem, gem]), names: names, me: me))
+    }
+}

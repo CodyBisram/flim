@@ -412,21 +412,169 @@ struct RollDetailView: View {
         if docked { onClose() } else { dismiss() }
     }
 
+    /// The demo fixture's files by path, for the reveal; nil off the demo routes.
+    private var revealDemoURLs: [String: URL]? {
+        #if DEBUG
+        guard let demoFixture else { return nil }
+        var byPath: [String: URL] = [:]
+        for photo in demoFixture.photos {
+            guard let url = demoFixture.urls[photo.id] else { continue }
+            byPath[photo.viewPath] = url
+            if let thumb = photo.thumbPath { byPath[thumb] = url }
+        }
+        return byPath
+        #else
+        return nil
+        #endif
+    }
+
+    /// The bar's buttons in a row, for the docked column, which has no bar.
+    private var dockedControlsRow: some View {
+        HStack(spacing: 20) {
+            Spacer(minLength: 0)
+            rollControls
+        }
+        .font(.system(size: 19, weight: .regular))
+        .frame(minHeight: 44)
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
+    }
+
+    // MARK: - 1.7 sealed roll (Blend 1, 3d)
+
+    /// 1.7 draws a roll that has not opened as a sealed box: who is in and what each has put in
+    /// it, with nothing of the shots themselves.
+    private var isSealed17: Bool { AppInfo.is17 && !roll.isDeveloped }
+
+    private var sealedRoll: some View {
+        VStack(spacing: 0) {
+            if docked { dockedControlsRow }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    sealedLid
+                    sealedMembers
+                        .padding(.top, 22)
+                    Text("In the box until \(RollDevelopAskSheet.timeLabel(for: roll.revealAt)). Nobody sees it before then, you included.")
+                        .font(DeskType.serif(16, italic: true, relativeTo: .body))
+                        // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
+                        .tracking(0.2)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 18)
+                    HStack(spacing: 12) {
+                        if !isCreator {
+                            Button { showLeaveRoll = true } label: {
+                                Text("Leave roll")
+                                    .flimFont(15, weight: .medium, relativeTo: .body)
+                                    .foregroundStyle(FlimTheme.textSecondary)
+                                    .frame(minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer(minLength: 0)
+                        Button {
+                            Haptics.tap()
+                            // The one door to the camera's roll pick, as the Rolls list uses.
+                            if let uid = auth.currentUser?.id { CameraRollSelection.select(roll, for: uid) }
+                            NotificationCenter.default.post(name: .openCamera, object: nil)
+                        } label: {
+                            DeskPill("Shoot into it", style: .solid)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 22)
+                }
+                .padding(.horizontal, RollsView.margin)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
+            }
+            .refreshableToCompletion { await reloadRoll() }
+        }
+    }
+
+    /// The box's lid: the countdown and the code along the top, the name, and when it opens.
+    private var sealedLid: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    Text(DeskType.clock(roll.revealAt.timeIntervalSince(timeline.date)))
+                        .font(DeskType.data(12))
+                        .monospacedDigit()
+                        .foregroundStyle(FlimTheme.ink(accent))
+                }
+                .accessibilityLabel("Opens \(RollDevelopAskSheet.whenLabel(for: roll.revealAt))")
+                Spacer(minLength: 8)
+                Text("CODE \(roll.inviteCode)")
+                    .font(DeskType.data(12))
+                    .tracking(1)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .accessibilityLabel("Invite code \(roll.inviteCode)")
+            }
+            Spacer(minLength: 34)
+            Text(roll.name)
+                .font(DeskType.serif(32, relativeTo: .title))
+                .foregroundStyle(FlimTheme.textPrimary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+            Text("sealed until \(RollDevelopAskSheet.timeLabel(for: roll.revealAt))")
+                .font(DeskType.serif(16, italic: true, relativeTo: .body))
+                // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
+                .tracking(0.2)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 6)
+            Spacer(minLength: 52)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 206)
+        .background(FlimTheme.well, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    /// One row per member with what they have put in, you first; everyone who has shot nothing
+    /// shares the last row. Counts wait for the whole roll to page in, so a first page never
+    /// reads as the total.
+    private var sealedMembers: some View {
+        let rows = SealedRollRows.make(members: memberNames, shotsBy: vm.developingPhotos.map(\.userId),
+                                       me: auth.currentUser?.id)
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                if index > 0 {
+                    Rectangle().fill(FlimTheme.stroke).frame(height: 0.5)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(row.names)
+                        .flimFont(16, relativeTo: .body)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .lineLimit(2)
+                    Spacer(minLength: 8)
+                    if rollFullyPaged {
+                        Text(row.count == 0 ? "nothing yet" : "\(row.count) shot\(row.count == 1 ? "" : "s")")
+                            .flimFont(15, relativeTo: .body)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .fixedSize()
+                    }
+                }
+                .padding(.vertical, 12)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { showMembers = true }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Shows who is in the roll")
+    }
+
     var body: some View {
         ZStack {
             DeskGround()
 
+            if isSealed17 {
+                sealedRoll
+            } else {
             VStack(spacing: 0) {
-                if docked {
-                    HStack(spacing: 20) {
-                        Spacer(minLength: 0)
-                        rollControls
-                    }
-                    .font(.system(size: 19, weight: .regular))
-                    .frame(minHeight: 44)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 4)
-                }
+                if docked { dockedControlsRow }
                 FlimNavTitle(roll.name)
 
                 if let count = rollService.memberCounts[roll.id] {
@@ -558,6 +706,7 @@ struct RollDetailView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            }
         }
         .overlay(alignment: .top) {
             if let toastMessage {
@@ -565,7 +714,7 @@ struct RollDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
         .toolbar {
             if !docked {
                 ToolbarItemGroup(placement: .topBarTrailing) { rollControls }
@@ -613,6 +762,7 @@ struct RollDetailView: View {
             if let demoFixture {
                 vm.signedURLCache = demoFixture.urls
                 vm.photos = demoFixture.photos
+                memberNames = demoFixture.memberNames
                 rollFullyPaged = true
                 return
             }
@@ -754,6 +904,9 @@ struct RollDetailView: View {
             }
         }
         .task {
+            #if DEBUG
+            if demoFixture != nil { return }   // the fixture brings its own members
+            #endif
             if let members = try? await rollService.fetchMembers(for: roll.id) {
                 memberNames = Dictionary(members.map { ($0.id, $0.username ?? "unknown") },
                                          uniquingKeysWith: { first, _ in first })
@@ -815,7 +968,8 @@ struct RollDetailView: View {
                                })
                                WidgetSync.refresh()
                            },
-                           onStartAnother: { followUpAfterReveal = true })
+                           onStartAnother: { followUpAfterReveal = true },
+                           demoURLs: revealDemoURLs)
         }
         .onChange(of: showReveal) { wasShowing, isShowing in
             // Finishing a reveal is one of the two moments a badge most plausibly just became
@@ -1447,5 +1601,35 @@ struct RollDetailView: View {
         if h > 0 { return "\(h)h \(m)m" }
         if m > 0 { return "\(m)m \(s)s" }
         return "\(s)s"
+    }
+}
+
+/// The member rows on a sealed roll (Blend 1, 3d): you first, then everyone who has shot
+/// something, most first, then one row naming everyone who has shot nothing yet.
+struct SealedRollRows: Equatable {
+    let names: String
+    let count: Int
+
+    static func make(members: [UUID: String], shotsBy: [UUID], me: UUID?) -> [SealedRollRows] {
+        var counts: [UUID: Int] = [:]
+        for id in shotsBy { counts[id, default: 0] += 1 }
+        // Someone whose shots are in but who is no longer listed (left, or the list not loaded
+        // yet) still counts; they read as "someone" rather than vanishing from the tally.
+        let everyone = Set(members.keys).union(counts.keys)
+        func handle(_ id: UUID) -> String { members[id].map { "@\($0)" } ?? "someone" }
+
+        var rows: [SealedRollRows] = []
+        if let me, everyone.contains(me) {
+            rows.append(SealedRollRows(names: "You", count: counts[me] ?? 0))
+        }
+        let others = everyone.filter { $0 != me }
+        let shooting = others.filter { (counts[$0] ?? 0) > 0 }
+            .sorted { (counts[$0] ?? 0, handle($1)) > (counts[$1] ?? 0, handle($0)) }
+        rows += shooting.map { SealedRollRows(names: handle($0), count: counts[$0] ?? 0) }
+        let idle = others.filter { (counts[$0] ?? 0) == 0 }.map(handle).sorted()
+        if !idle.isEmpty {
+            rows.append(SealedRollRows(names: idle.joined(separator: ", "), count: 0))
+        }
+        return rows
     }
 }

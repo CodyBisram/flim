@@ -37,7 +37,7 @@ struct CreateRollView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Start a roll")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }

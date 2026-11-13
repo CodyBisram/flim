@@ -71,7 +71,7 @@ struct DarkroomEmptyMonthDemoHost: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
     }
 }
 #endif

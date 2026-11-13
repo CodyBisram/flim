@@ -237,7 +237,7 @@ struct PostDetailView: View {
             )
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

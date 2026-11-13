@@ -95,7 +95,7 @@ struct CommentsSheet: View {
                     .undoCapsuleHost(bottomPadding: 72)
                     .navigationBarTitleDisplayMode(.inline)
                     .flimInlineTitle("Comments")
-                    .toolbarColorScheme(.dark, for: .navigationBar)
+                    .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             }
             // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
             .presentationDetents([.fraction(0.75), .large])

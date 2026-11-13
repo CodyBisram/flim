@@ -181,7 +181,12 @@ struct RollsView: View {
             }
         }
         .navigationDestination(for: Roll.self) { roll in
+            #if DEBUG
+            RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent,
+                           demoFixture: rollsFixture?.roll.id == roll.id ? rollsFixture : nil)
+            #else
             RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
+            #endif
         }
     }
 

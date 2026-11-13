@@ -637,7 +637,7 @@ private struct ActivityChrome: ViewModifier {
         } else {
             content
                 .flimInlineTitle("Activity")
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)

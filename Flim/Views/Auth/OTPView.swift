@@ -116,7 +116,7 @@ struct OTPView: View {
             .padding(.bottom, 40)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
     }
 
     private func verify() async {
