@@ -120,6 +120,53 @@ struct UserPageView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
+
+    /// Your page's two glyphs, set exactly like the Feed header's Find and Activity: 19pt
+    /// regular in ink, 44pt targets, 20pt apart.
+    private var deskSelfButtons: some View {
+        HStack(spacing: 20) {
+            Button { showInvite = true } label: { deskGlyph("person.badge.plus") }
+                .accessibilityLabel("Invite a friend")
+            Button { showSettings = true } label: { deskGlyph("gearshape") }
+                .accessibilityLabel("Settings")
+        }
+        // The bar's own button style pads each item and scales its symbol up a size.
+        .buttonStyle(.plain)
+    }
+
+    private func deskGlyph(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 19, weight: .regular))
+            .imageScale(.medium)
+            .foregroundStyle(FlimTheme.textPrimary)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+
+    /// Settings on your page before 1.7; Report and Block on anyone else's.
+    @ViewBuilder private var otherToolbarButtons: some View {
+        if isSelf {
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape").foregroundStyle(FlimTheme.ink(accent))
+            }
+            .accessibilityLabel("Settings")
+        } else {
+            Menu {
+                Button { reportAccount() } label: { Label("Report", systemImage: "flag") }
+                if feed.isBlocked(userId) {
+                    Button {
+                        guard let uid = auth.currentUser?.id else { return }
+                        Task { await feed.unblock(userId, from: uid) }
+                    } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+                } else {
+                    Button(role: .destructive) { blockAccount() } label: { Label("Block", systemImage: "hand.raised") }
+                }
+            } label: {
+                Image(systemName: "ellipsis").foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : accent)
+            }
+            .accessibilityLabel("More")
+        }
+    }
     private var isFollowing: Bool { feed.isFollowing(userId) }
     /// Whether the follow HOLDS server-side, which is what decides whether the posts request
     /// below returns anything. `isFollowing` flips on the tap; this flips when the row lands.
@@ -272,40 +319,19 @@ struct UserPageView: View {
         .onAppear { pageExit.pageAppeared() }
         .onDisappear { pageExit.pageDisappeared() }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if isSelf, AppInfo.is17 {
-                    // Blend 1, 4a: add a friend and Settings, top right, in ink.
-                    HStack(spacing: 4) {
-                        Button { showInvite = true } label: {
-                            Image(systemName: "person.badge.plus").foregroundStyle(FlimTheme.textPrimary)
-                        }
-                        .accessibilityLabel("Invite a friend")
-                        Button { showSettings = true } label: {
-                            Image(systemName: "gearshape").foregroundStyle(FlimTheme.textPrimary)
-                        }
-                        .accessibilityLabel("Settings")
-                    }
-                } else if isSelf {
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gearshape").foregroundStyle(FlimTheme.ink(accent))
-                    }
-                    .accessibilityLabel("Settings")
+            if isSelf, AppInfo.is17 {
+                // Blend 1, 4a: add a friend and Settings, top right, as plain glyphs set like the
+                // Feed's Find and Activity, so iOS 26's glass capsule comes off.
+                // The bar keeps a wider trailing margin and sits higher than the Feed's header
+                // row (14pt in, 4pt below the safe area); the offset lands them on the same spot.
+                if #available(iOS 26, *) {
+                    ToolbarItem(placement: .topBarTrailing) { deskSelfButtons.offset(x: 6, y: 4) }
+                        .sharedBackgroundVisibility(.hidden)
                 } else {
-                    Menu {
-                        Button { reportAccount() } label: { Label("Report", systemImage: "flag") }
-                        if feed.isBlocked(userId) {
-                            Button {
-                                guard let uid = auth.currentUser?.id else { return }
-                                Task { await feed.unblock(userId, from: uid) }
-                            } label: { Label("Unblock", systemImage: "hand.raised.slash") }
-                        } else {
-                            Button(role: .destructive) { blockAccount() } label: { Label("Block", systemImage: "hand.raised") }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis").foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : accent)
-                    }
-                    .accessibilityLabel("More")
+                    ToolbarItem(placement: .topBarTrailing) { deskSelfButtons.offset(x: 2, y: 10) }
                 }
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { otherToolbarButtons }
             }
         }
         .task {

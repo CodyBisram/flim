@@ -143,6 +143,7 @@ final class Desk17UITests: XCTestCase {
         app.launch()
         let friends = app.buttons["Friends"].firstMatch
         XCTAssertTrue(friends.waitForExistence(timeout: 15))
+        shot("you")
         friends.tap()
         let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Requests'")).firstMatch
         XCTAssertTrue(requests.waitForExistence(timeout: 10), "Friends has no Requests tab")
