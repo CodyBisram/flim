@@ -198,6 +198,10 @@ struct RollDetailView: View {
     /// bar's buttons stand in a row at the top and leaving or deleting hands back to `onClose`.
     var docked = false
     var onClose: () -> Void = {}
+    /// False when the docked half shows a roll nobody tapped (the one Rolls leads with). Opening
+    /// a roll is what earns its reveal and the develop-reminder ask; a tab switch alone must not
+    /// fire either (the 2026-09-09 unframed-dialog incident below).
+    var chosen = true
     #if DEBUG
     /// `-rollDetailDemo` only: fixture frames shown in place of the network load, so the screen
     /// can be looked at without an account. See `RollDetailDemoHost`.
@@ -685,7 +689,7 @@ struct RollDetailView: View {
             // finally finished; `RollRevealViewModel.dismissedThisLaunch` bounds that to once per
             // app launch (see its own doc and `onChange(of: showReveal)` below), while the
             // "Play reveal" button above stays reachable regardless.
-            if RollRevealViewModel.shouldAutoPresent(
+            if chosen, RollRevealViewModel.shouldAutoPresent(
                 developed: roll.isDeveloped,
                 hasPhotos: !vm.developedPhotos.isEmpty,
                 seen: UserDefaults.standard.bool(forKey: revealSeenKey),
@@ -712,7 +716,7 @@ struct RollDetailView: View {
             // Ensure EVERY member gets a develop reminder, even those who didn't shoot, as a
             // fallback for a phone push can't reach (see `scheduleRollDevelopNotification`). The
             // reveal is fixed at roll creation, so this works with zero photos too.
-            if notificationsEnabled, !roll.isDeveloped, let myId = auth.currentUser?.id {
+            if chosen, notificationsEnabled, !roll.isDeveloped, let myId = auth.currentUser?.id {
                 let myCount = vm.photos.filter { $0.userId == myId }.count
                 // A new account meets the permission here, framed, on the first developing roll
                 // it opens: `RollDevelopAskSheet` names the time and fires the system dialog only

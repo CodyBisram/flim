@@ -78,9 +78,13 @@ struct UndoCapsuleHost: View {
 
 extension View {
     /// Hosts the shared undo capsule at the bottom of this screen; see `UndoCapsuleHost`.
-    func undoCapsuleHost(bottomPadding: CGFloat = 90) -> some View {
+    /// `active: false` leaves it to a host already on screen, for a view drawn inline rather
+    /// than as a cover (the Duo's docked panes sit under `MainTabView`'s own host).
+    func undoCapsuleHost(bottomPadding: CGFloat = 90, active: Bool = true) -> some View {
         overlay(alignment: .bottom) {
-            UndoCapsuleHost().padding(.bottom, bottomPadding).padding(.horizontal, 16)
+            if active {
+                UndoCapsuleHost().padding(.bottom, bottomPadding).padding(.horizontal, 16)
+            }
         }
     }
 }

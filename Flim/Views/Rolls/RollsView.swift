@@ -229,18 +229,22 @@ struct RollsView: View {
 
     @ViewBuilder private var dockedRollPanel: some View {
         if let roll = dockedRoll {
+            // Tapped, or only the roll the header leads with: the defaulted one shows but does not
+            // auto-play its reveal or ask about notifications. Keyed on both, so tapping the
+            // defaulted roll mounts it again as opened.
+            let chosen = dockedRollId == roll.id
             #if DEBUG
             RollDetailView(roll: roll, docked: true, onClose: {
                 dockedRollId = nil
                 Task { await load() }
-            }, demoFixture: rollsFixture?.roll.id == roll.id ? rollsFixture : nil)
-            .id(roll.id)
+            }, chosen: chosen, demoFixture: rollsFixture?.roll.id == roll.id ? rollsFixture : nil)
+            .id("\(roll.id)-\(chosen)")
             #else
             RollDetailView(roll: roll, docked: true, onClose: {
                 dockedRollId = nil
                 Task { await load() }
-            })
-            .id(roll.id)
+            }, chosen: chosen)
+            .id("\(roll.id)-\(chosen)")
             #endif
         } else {
             Color.clear

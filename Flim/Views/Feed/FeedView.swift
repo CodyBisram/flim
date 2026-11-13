@@ -285,7 +285,9 @@ struct FeedView: View {
             }
         }
         .onChange(of: docksComments, initial: true) { _, _ in syncDockedComments() }
-        .onChange(of: units.map(\.id)) { _, _ in syncDockedComments() }
+        // Every post, not just every unit: deleting one shot of a day keeps the day's unit (and
+        // its id) but must still take the column off the deleted post.
+        .onChange(of: units.flatMap { $0.items.map(\.post.id) }) { _, _ in syncDockedComments() }
         .navigationDestination(item: $dockedProfile) { UserPageView(userId: $0.id) }
         // `cachedUnits`'s safety net for `feed.feed` changing outside this
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
@@ -537,7 +539,12 @@ struct FeedView: View {
         guard docksComments else { dockedComments.clear(); return }
         if let target = dockedComments.target,
            units.contains(where: { $0.id == target.unitId && $0.items.contains { $0.post.id == target.post.id } }) { return }
-        if let top = units.first, let item = top.items.first {
+        // The post went but its day stayed: hand the column to that card, which moves it on to
+        // whichever shot it now shows (`FeedUnitCard.followDockedComments`).
+        if let target = dockedComments.target,
+           let unit = units.first(where: { $0.id == target.unitId }), let item = unit.items.first {
+            dockedComments.show(post: item.post, unitId: unit.id, authorHandle: unit.author.handle)
+        } else if let top = units.first, let item = top.items.first {
             dockedComments.show(post: item.post, unitId: top.id, authorHandle: top.author.handle)
         } else {
             dockedComments.clear()

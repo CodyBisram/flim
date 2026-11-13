@@ -59,6 +59,9 @@ struct DarkroomView: View {
     @Environment(\.deskLayout) private var deskLayout
     @State private var viewingID: UUID?
     @State private var dockGeneration = 0
+    /// The shot the docked viewer settled on when nothing was tapped, held so a develop poll that
+    /// readies a newer frame does not rebuild the viewer under someone swiping it.
+    @State private var dockedDefaultID: UUID?
     @State private var isSelecting = false
     /// 1.7: the shots Post opens with, and whether Save is running.
     @State private var deskPostPhotos: [Photo] = []
@@ -528,21 +531,35 @@ Text("Darkroom")
 
     private var docksViewer: Bool { AppInfo.is17 && deskLayout == .open }
 
-    /// The shot the docked viewer opens on: the one tapped, while it is still in the grid, or
-    /// the newest developed one, so the right half is never an empty panel while there are shots.
+    /// The shot the docked viewer opens on: the one tapped (or asked for by a widget or a push,
+    /// even when it is not in the loaded page), else the default it already settled on, else the
+    /// newest developed one, so the right half is never an empty panel while there are shots.
     private var dockedStart: Photo? {
         let ordered = renderOrderPhotos
-        if let picked = selectedPhoto, let live = ordered.first(where: { $0.id == picked.id }) { return live }
+        if let picked = selectedPhoto {
+            return ordered.first(where: { $0.id == picked.id }) ?? picked
+        }
+        if let id = dockedDefaultID, let held = ordered.first(where: { $0.id == id }) { return held }
         return ordered.first(where: \.isReady)
+    }
+
+    /// Settles the docked default once, and again only when that shot leaves the grid.
+    private func holdDockedDefault() {
+        let ordered = renderOrderPhotos
+        if let id = dockedDefaultID, ordered.contains(where: { $0.id == id }) { return }
+        dockedDefaultID = ordered.first(where: \.isReady)?.id
     }
 
     /// The viewer, docked (Blend 2, 6h): its own Slate panel on either desk, so photos read true.
     private var deskDockedViewer: some View {
         let ordered = renderOrderPhotos
         return Group {
-            if let start = dockedStart, let index = ordered.firstIndex(where: { $0.id == start.id }) {
-                PhotoPagerView(photos: ordered,
-                               startIndex: index,
+            if let start = dockedStart {
+                // A frame outside the loaded page (a widget's look-back, a push) is paged alone,
+                // as `pager(for:)` does on the phone, rather than falling back to the newest.
+                let index = ordered.firstIndex(where: { $0.id == start.id })
+                PhotoPagerView(photos: index == nil ? [start] : ordered,
+                               startIndex: index ?? 0,
                                signedURLs: vm.signedURLCache,
                                showsNightRack: true,
                                rollName: { rollName(for: $0) },
@@ -552,10 +569,14 @@ Text("Darkroom")
                                onShow: { viewingID = $0.id },
                                onDeletePhase: { handlePagerDelete($0, $1) })
                     .id("\(start.id)-\(dockGeneration)")
+                    // `onShow` reports swipes only; a viewer built fresh starts on `start`, so the
+                    // grid's ring goes back to it too.
+                    .onAppear { viewingID = start.id }
             } else {
                 Color.black
             }
         }
+        .onChange(of: renderOrderPhotos.map(\.id), initial: true) { holdDockedDefault() }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 

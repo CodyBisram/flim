@@ -522,8 +522,9 @@ struct PhotoPagerView: View {
         .ignoresSafeArea(docked ? [] : .container)
         .statusBarHidden(!docked)
         // This pager is a fullScreenCover painting over MainTabView's capsule host, and
-        // reports are staged without leaving the pager, so it hosts its own copy.
-        .undoCapsuleHost(bottomPadding: 44)
+        // reports are staged without leaving the pager, so it hosts its own copy. Docked it is
+        // inline under that host, and a second copy would show two capsules at once.
+        .undoCapsuleHost(bottomPadding: 44, active: !docked)
         // Sheet to sheet: the profile cannot be presented until the comment sheet has finished
         // dismissing, so the id waits in `pendingProfile` and onDismiss opens it.
         .sheet(isPresented: $showComments, onDismiss: {
