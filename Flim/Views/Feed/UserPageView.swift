@@ -118,6 +118,8 @@ struct UserPageView: View {
     /// and never whatever was pushed on top of it during the undo window; see `blockAccount()`.
     @State private var pageExit = StagedPageExit()
     @Environment(\.dismiss) private var dismiss
+    /// True when this page was pushed (it has a screen to go back to), false as the You tab's root.
+    @Environment(\.isPresented) private var isPushed
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
     @Environment(\.deskLayout) private var deskLayout
@@ -207,6 +209,54 @@ struct UserPageView: View {
             .contentShape(Rectangle())
     }
 
+    /// One of 1.7's bar items, with no glass behind it. The bar keeps wider side margins and sits
+    /// higher than the Feed's header row (14pt in, 4pt below the safe area); the offset lands the
+    /// glyphs on the same spot, mirrored on the leading side.
+    @ToolbarContentBuilder
+    private func deskBarItem<Content: View>(_ placement: ToolbarItemPlacement, trailing: Bool,
+                                            @ViewBuilder _ content: () -> Content) -> some ToolbarContent {
+        let side: CGFloat = trailing ? 1 : -1
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: placement) { content().offset(x: 6 * side, y: 4) }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: placement) { content().offset(x: 2 * side, y: 10) }
+        }
+    }
+
+    /// Back, as a plain glyph like the trailing ones: the system's back button sits in a glass
+    /// circle on iOS 26, which the Feed's header never has.
+    private var deskBackButton: some View {
+        Button { dismiss() } label: { deskGlyph("chevron.left") }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+    }
+
+    /// Report and Block on someone else's page in 1.7, as a plain glyph like Settings on yours.
+    private var deskMoreMenu: some View {
+        Menu { moreMenuItems } label: { deskGlyph("ellipsis") }
+            .buttonStyle(.plain)
+            // iOS 26's bar insets a menu 6pt further than a button (measured against the bell).
+            .offset(x: Self.menuInset)
+            .accessibilityLabel("More")
+    }
+
+    private static var menuInset: CGFloat {
+        if #available(iOS 26, *) { return 6 } else { return 0 }
+    }
+
+    @ViewBuilder private var moreMenuItems: some View {
+        Button { reportAccount() } label: { Label("Report", systemImage: "flag") }
+        if feed.isBlocked(userId) {
+            Button {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { await feed.unblock(userId, from: uid) }
+            } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+        } else {
+            Button(role: .destructive) { blockAccount() } label: { Label("Block", systemImage: "hand.raised") }
+        }
+    }
+
     /// Settings on your page before 1.7; Report and Block on anyone else's.
     @ViewBuilder private var otherToolbarButtons: some View {
         if isSelf {
@@ -215,18 +265,8 @@ struct UserPageView: View {
             }
             .accessibilityLabel("Settings")
         } else {
-            Menu {
-                Button { reportAccount() } label: { Label("Report", systemImage: "flag") }
-                if feed.isBlocked(userId) {
-                    Button {
-                        guard let uid = auth.currentUser?.id else { return }
-                        Task { await feed.unblock(userId, from: uid) }
-                    } label: { Label("Unblock", systemImage: "hand.raised.slash") }
-                } else {
-                    Button(role: .destructive) { blockAccount() } label: { Label("Block", systemImage: "hand.raised") }
-                }
-            } label: {
-                Image(systemName: "ellipsis").foregroundStyle(AppInfo.is17 ? FlimTheme.textPrimary : accent)
+            Menu { moreMenuItems } label: {
+                Image(systemName: "ellipsis").foregroundStyle(accent)
             }
             .accessibilityLabel("More")
         }
@@ -354,17 +394,22 @@ struct UserPageView: View {
         .toolbarBackground(.hidden, for: .navigationBar)   // let the cover show under the back/gear
         .onAppear { pageExit.pageAppeared() }
         .onDisappear { pageExit.pageDisappeared() }
+        // 1.7 draws its own Back (`deskBackButton`) so it can come out of the glass; the edge
+        // swipe the system's button brings goes with it, and `SwipeBackKeeper` puts it back.
+        .navigationBarBackButtonHidden(AppInfo.is17 && isPushed)
+        .background { if AppInfo.is17 && isPushed { SwipeBackKeeper().frame(width: 0, height: 0) } }
         .toolbar {
-            if isSelf, AppInfo.is17 {
-                // Blend 1, 4a: add a friend and Settings, top right, as plain glyphs set like the
-                // Feed's Find and Activity, so iOS 26's glass capsule comes off.
-                // The bar keeps a wider trailing margin and sits higher than the Feed's header
-                // row (14pt in, 4pt below the safe area); the offset lands them on the same spot.
-                if #available(iOS 26, *) {
-                    ToolbarItem(placement: .topBarTrailing) { deskSelfButtons.offset(x: 6, y: 4) }
-                        .sharedBackgroundVisibility(.hidden)
+            if AppInfo.is17 {
+                // Blend 1, 4a: every glyph in the bar plain and set like the Feed's Find and
+                // Activity, so iOS 26's glass comes off: Back on a pushed page, then add a friend
+                // and Settings on yours, or Report and Block on someone else's.
+                if isPushed {
+                    deskBarItem(.topBarLeading, trailing: false) { deskBackButton }
+                }
+                if isSelf {
+                    deskBarItem(.topBarTrailing, trailing: true) { deskSelfButtons }
                 } else {
-                    ToolbarItem(placement: .topBarTrailing) { deskSelfButtons.offset(x: 2, y: 10) }
+                    deskBarItem(.topBarTrailing, trailing: true) { deskMoreMenu }
                 }
             } else {
                 ToolbarItem(placement: .topBarTrailing) { otherToolbarButtons }

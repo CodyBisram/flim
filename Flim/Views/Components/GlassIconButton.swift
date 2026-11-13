@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The one shape for a floating icon control: a fixed circle holding one glyph, on Liquid Glass
 /// on iOS 26 and on the same `.ultraThinMaterial` as `glassCapsule()` below it.
@@ -127,6 +128,39 @@ extension View {
     /// `GlassGroup` as a modifier, for a row that is already built.
     func glassGroup(spacing: CGFloat) -> some View {
         GlassGroup(spacing: spacing) { self }
+    }
+}
+
+// MARK: - Swipe back
+
+/// Keeps the edge swipe back on a pushed screen that draws its own Back. Hiding the system's
+/// back button switches the swipe off with it; this hands the stack's pop gestures a delegate
+/// that allows them whenever there is a screen to go back to, which is the system's own rule.
+struct SwipeBackKeeper: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let nav = navigationController else { return }
+            var gestures: [UIGestureRecognizer?] = [nav.interactivePopGestureRecognizer]
+            if #available(iOS 26, *) { gestures.append(nav.interactiveContentPopGestureRecognizer) }
+            for case let gesture? in gestures {
+                gesture.delegate = PopGestureDelegate.shared
+                gesture.isEnabled = true
+            }
+        }
+    }
+
+    private final class PopGestureDelegate: NSObject, UIGestureRecognizerDelegate {
+        static let shared = PopGestureDelegate()
+
+        func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+            // The gesture lives on the stack's own view, whose next responder is the stack.
+            guard let nav = gesture.view?.next as? UINavigationController else { return false }
+            return nav.viewControllers.count > 1 && nav.transitionCoordinator == nil
+        }
     }
 }
 

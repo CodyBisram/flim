@@ -120,6 +120,10 @@ final class Desk17UITests: XCTestCase {
         app.launch()
         let gear = app.buttons["Settings"].firstMatch
         XCTAssertTrue(gear.waitForExistence(timeout: 15))
+        // Scrolled, the page runs under the two glyphs with nothing drawn behind them.
+        app.swipeUp(velocity: .slow)
+        sleep(1)
+        shot("you_scrolled")
         gear.tap()
         let slate = app.buttons["Slate"].firstMatch
         if !slate.waitForExistence(timeout: 5) { app.swipeUp() }
@@ -151,6 +155,32 @@ final class Desk17UITests: XCTestCase {
         requests.tap()
         sleep(1)
         shot("friends_requests")
+    }
+
+    /// Someone's page pushed from the Feed: Back and More are plain glyphs like the Feed's, and the
+    /// edge swipe still goes back although the page draws its own Back.
+    func testPushedPageHasPlainBackAndSwipesBack() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabFeed"]
+        app.launch()
+        let author = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'mira'")).firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 15), "no author on the first card")
+        author.tap()
+        let back = app.buttons["Back"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "the pushed page has no Back")
+        XCTAssertTrue(app.buttons["More"].firstMatch.exists, "the pushed page has no More")
+        sleep(1)
+        shot("pushed_page")
+
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+        XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5), "the edge swipe did not go back to the Feed")
+
+        // And Back itself.
+        author.tap()
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5), "Back did not return to the Feed")
     }
 
     /// The camera on the Duo's open display (Blend 2, 6f), via the debug frame: flip, shutter and
