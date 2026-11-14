@@ -160,7 +160,8 @@ struct UserPageView: View {
             SpotlightShelfView(weeks: spotlightWeeks, openingId: openingSpotlightFrame) { frame, weekKey in
                 openSpotlightFrame(frame, weekKey: weekKey)
             }
-            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs, isOwn: isSelf) { chapter in
+            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs, isOwn: isSelf,
+                             chosenCovers: chapterService.boxCoversByProfile[userId] ?? [:]) { chapter in
                 if docksMonths { dockedChapter = chapter } else { openChapter = chapter }
             }
         }
@@ -456,8 +457,11 @@ struct UserPageView: View {
         // never hold up the rest of the profile, and this fails soft to "no shelf" on its own.
         .task {
             await chapterService.fetchChapters(for: userId)
+            await chapterService.loadBoxCovers(for: userId)
             await mintChapterCoverURLs()
         }
+        // A cover chosen in a box (12b) needs its address before the shelf can draw it.
+        .onChange(of: chapterService.boxCoversByProfile[userId]) { Task { await mintChapterCoverURLs() } }
         // Its own task too, and failing soft to "no shelf" the same way.
         .task {
             await feed.loadSpotlightShelf(userId: userId, isSelf: isSelf)
@@ -1333,7 +1337,8 @@ struct UserPageView: View {
 
     /// One batched call for every cover across the whole shelf, mirroring `mintThumbURLs`.
     private func mintChapterCoverURLs() async {
-        let paths = Set(chapters.flatMap(\.coverPaths)).subtracting(chapterCoverURLs.keys)
+        let chosen = (chapterService.boxCoversByProfile[userId] ?? [:]).values
+        let paths = Set(chapters.flatMap(\.coverPaths) + chosen).subtracting(chapterCoverURLs.keys)
         guard !paths.isEmpty else { return }
         let resolved = await feed.signedURLs(for: Array(paths))
         for (path, url) in resolved { chapterCoverURLs[path] = url }

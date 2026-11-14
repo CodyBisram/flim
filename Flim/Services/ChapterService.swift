@@ -47,6 +47,8 @@ final class ChapterService {
         photosByChapter = [:]
         statsByChapter = [:]
         isLoadingChapters = []
+        putAwayPostIds = []
+        boxCoversByProfile = [:]
         #if DEBUG
         usesDemoFixture = false
         #endif
@@ -70,6 +72,97 @@ final class ChapterService {
             .value) ?? []
         guard AccountEpoch.isCurrent(epoch) else { return }
         chaptersByProfile[profileId] = ChapterSummary.completedMonths(rows)
+    }
+
+    // MARK: - Month boxes (1.7, Blend 4, 12b)
+    //
+    // 1.7 only. Putting a shot away is `posts.put_away`, enforced on the server by
+    // `post_visible_to` (every month, feed and page read goes through it), so a put-away shot
+    // stays on your page and leaves everyone else's. A box's chosen cover is a `month_boxes` row;
+    // `month_box_covers` hands back the ones the caller may see. Both are additive server changes
+    // (supabase/migrations-v2/2026-10-30*), on FLIM Dev now and on production before 1.7 ships.
+
+    /// Your own posts put away, as last read or written here.
+    var putAwayPostIds: Set<UUID> = []
+    /// Each profile's chosen box covers the caller may see, by month ("yyyy-MM-dd") to the
+    /// cover's display path.
+    var boxCoversByProfile: [UUID: [String: String]] = [:]
+
+    /// The key a box's month is stored under, the same date string the month RPCs take.
+    static func monthKey(_ monthStart: Date) -> String { dateOnly.string(from: monthStart) }
+
+    /// Reads which of these posts of yours are put away. Leaves the set as it was on a failure.
+    func loadPutAway(postIds: [UUID]) async {
+        guard AppInfo.is17, !postIds.isEmpty else { return }
+        let epoch = AccountEpoch.current
+        struct Row: Decodable { let id: UUID }
+        guard let rows: [Row] = try? await supabase.from("posts").select("id")
+            .in("id", values: postIds.map(\.uuidString)).eq("put_away", value: true)
+            .execute().value,
+              AccountEpoch.isCurrent(epoch) else { return }
+        putAwayPostIds.subtract(postIds)
+        putAwayPostIds.formUnion(rows.map(\.id))
+    }
+
+    /// Puts one of your posts away, or brings it back. Updates the set only once it landed.
+    func setPutAway(_ putAway: Bool, postId: UUID) async -> Bool {
+        guard AppInfo.is17 else { return false }
+        struct Update: Encodable { let put_away: Bool }
+        do {
+            try await supabase.from("posts").update(Update(put_away: putAway), returning: .minimal)
+                .eq("id", value: postId.uuidString).execute()
+            if putAway { putAwayPostIds.insert(postId) } else { putAwayPostIds.remove(postId) }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Makes a shot your box's cover. `coverPath` is what the shelf and box draw for it.
+    func setMonthCover(photoId: UUID, coverPath: String, userId: UUID, monthStart: Date) async -> Bool {
+        guard AppInfo.is17 else { return false }
+        struct Row: Encodable { let user_id: UUID; let month_start: String; let cover_photo_id: UUID }
+        do {
+            try await supabase.from("month_boxes")
+                .upsert(Row(user_id: userId, month_start: Self.monthKey(monthStart), cover_photo_id: photoId),
+                        returning: .minimal)
+                .execute()
+            boxCoversByProfile[userId, default: [:]][Self.monthKey(monthStart)] = coverPath
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Your box's chosen cover for a month, by photo; nil when there is none or the read failed.
+    func monthCoverPhotoId(userId: UUID, monthStart: Date) async -> UUID? {
+        guard AppInfo.is17 else { return nil }
+        struct Row: Decodable { let cover_photo_id: UUID? }
+        let rows: [Row]? = try? await supabase.from("month_boxes").select("cover_photo_id")
+            .eq("user_id", value: userId.uuidString).eq("month_start", value: Self.monthKey(monthStart))
+            .limit(1).execute().value
+        return rows?.first?.cover_photo_id ?? nil
+    }
+
+    /// Reads the chosen covers on someone's shelf (yours included). Keeps what it had on failure.
+    func loadBoxCovers(for profileId: UUID) async {
+        guard AppInfo.is17 else { return }
+        #if DEBUG
+        guard !usesDemoFixture else { return }
+        #endif
+        let epoch = AccountEpoch.current
+        struct Row: Decodable { let month_start: String; let cover_path: String? }
+        guard let rows: [Row] = try? await supabase.rpc("month_box_covers", params: ["p_user": profileId])
+            .execute().value,
+              AccountEpoch.isCurrent(epoch) else { return }
+        boxCoversByProfile[profileId] = Dictionary(
+            rows.compactMap { row in row.cover_path.map { (row.month_start, $0) } },
+            uniquingKeysWith: { first, _ in first })
+    }
+
+    /// A box's cover path: the one chosen for it, else the month's own first cover.
+    func coverPath(for chapter: ChapterSummary, profileId: UUID) -> String? {
+        boxCoversByProfile[profileId]?[Self.monthKey(chapter.monthStart)] ?? chapter.coverPaths.first
     }
 
     /// A month's photos, cached after the first fetch: opening the same month's recap twice in a
@@ -205,7 +298,10 @@ extension ChapterService {
                 return ChapterPhoto(id: UUID(), takenAt: takenAt, thumbPath: photo.thumbPath,
                                      feedPath: photo.feedPath, storagePath: photo.storagePath,
                                      rollId: back == 0 ? photo.rollId : nil,
-                                     rollName: back == 0 && photo.rollId != nil ? "Demo roll" : nil)
+                                     rollName: back == 0 && photo.rollId != nil ? "Demo roll" : nil,
+                                     // Every real month photo is a post; the box's put-away (12b)
+                                     // works on posts, so the demo's need one too.
+                                     postId: UUID())
             }.sorted { $0.takenAt < $1.takenAt }
 
             let rollCount = chapterPhotos.contains { $0.rollId != nil } ? 1 : 0

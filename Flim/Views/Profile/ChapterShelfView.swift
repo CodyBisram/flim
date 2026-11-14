@@ -15,6 +15,8 @@ struct ChapterShelfView: View {
     let coverURLs: [String: URL]
     /// Whose shelf: "ON YOUR SHELF" on your own page, "ON THE SHELF" on someone else's (1.7).
     var isOwn: Bool = true
+    /// 1.7: a box's chosen cover path by month key, over the month's own first cover (12b).
+    var chosenCovers: [String: String] = [:]
     let onSelect: (ChapterSummary) -> Void
 
     var body: some View {
@@ -87,7 +89,7 @@ struct ChapterShelfView: View {
     private func deskCover(_ chapter: ChapterSummary) -> some View {
         ZStack(alignment: .bottomLeading) {
             Group {
-                if let path = chapter.coverPaths.first {
+                if let path = chosenCovers[ChapterService.monthKey(chapter.monthStart)] ?? chapter.coverPaths.first {
                     CachedImage(url: coverURLs[path], maxPixel: 300, cacheKey: path) { image in
                         image.resizable().scaledToFill()
                     } placeholder: { FlimTheme.well }

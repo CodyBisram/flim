@@ -338,6 +338,32 @@ final class Desk17UITests: XCTestCase {
         XCTAssertTrue(app.buttons["Back to your page"].isHittable, "the box's Back is off screen")
     }
 
+    /// Editing a month box (Blend 4, 12b): Edit opens the grid with the cover marked; a hold
+    /// marks a shot put away.
+    func testMonthBoxEditScreen() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "paper"]
+        app.launch()
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 15), "no month box on the shelf")
+        box.tap()
+        let edit = app.buttons["Edit"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 5), "your box has no Edit")
+        edit.tap()
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5), "the edit sheet did not open")
+        let cover = app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH ', cover'")).firstMatch
+        XCTAssertTrue(cover.exists, "no shot is marked as the cover")
+        let shots = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Shot from' AND NOT (label CONTAINS 'cover')"))
+        let other = shots.element(boundBy: 1)
+        if other.exists {
+            other.press(forDuration: 0.6)
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH ', put away'")).firstMatch.exists,
+                          "a hold did not put the shot away")
+        }
+        shot("month_box_edit")
+        app.buttons["Cancel"].firstMatch.tap()
+    }
+
     /// The screens built this week on the Duo's closed display (466 x 678, rail on the trailing
     /// edge): the Rolls list, the sealed roll and the month box.
     func testClosedDuoNewScreens() {
@@ -589,5 +615,34 @@ final class Desk17LiveUITests: XCTestCase {
         sleep(2)
         shot("camera")
         XCTAssertTrue(app.buttons["Flip camera"].exists, "the camera has no flip button")
+    }
+
+    /// Putting a shot away in a month box and bringing it back, against FLIM Dev: the box says
+    /// how many friends see, and the account ends as it started.
+    func testMonthBoxPutAwayRoundTrip() {
+        bar("You").tap()
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 15), "the tester has no month box")
+        box.tap()
+        let edit = app.buttons["Edit"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 10), "no Edit on your own box")
+        sleep(2)   // put-away state and the cover load
+        func hold(_ suffix: String) {
+            edit.tap()
+            XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+            let shot = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH 'Shot from' AND NOT (label CONTAINS 'cover')" + suffix)).firstMatch
+            XCTAssertTrue(shot.waitForExistence(timeout: 5), "no shot to hold")
+            shot.press(forDuration: 0.6)
+            app.buttons["Done"].tap()
+            sleep(3)
+        }
+        hold(" AND NOT (label CONTAINS 'put away')")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Friends see'")).firstMatch.waitForExistence(timeout: 5),
+                      "the box does not say how many friends see")
+        shot("month_box_put_away")
+        hold(" AND label CONTAINS 'put away'")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Friends see'")).firstMatch.exists,
+                       "bringing the shot back left it put away")
     }
 }

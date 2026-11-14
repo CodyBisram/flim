@@ -62,6 +62,11 @@ struct ChapterRecapView: View {
     /// gets one here, the same shape `RollRevealView` already uses for the same reason (a handle
     /// tapped mid-reveal pushes with a back button instead of presenting with no way out).
     @State private var profileRoute: ProfileRoute?
+    /// 1.7's box edit (Blend 4, 12b): the sheet, the box's chosen cover by photo, and whether the
+    /// box is showing itself as friends see it (put-away shots left out).
+    @State private var showBoxEdit = false
+    @State private var boxCoverPhotoId: UUID?
+    @State private var asFriendsSee = false
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL],
          docked: Bool = false, onClose: @escaping () -> Void = {}) {
@@ -211,9 +216,77 @@ struct ChapterRecapView: View {
 
     /// The month, posted shots by day, newest day first, for the box's grid.
     private var boxDays: [(day: Date, photos: [ChapterPhoto])] {
-        let live = viewModel.monthPhotos.filter { !$0.isDeadFrame }
+        let live = viewModel.monthPhotos.filter { !$0.isDeadFrame && !(asFriendsSee && isPutAway($0)) }
         let grouped = Dictionary(grouping: live) { FeedUnit.dayKey(for: $0.takenAt) }
         return grouped.keys.sorted(by: >).map { (day: $0, photos: grouped[$0] ?? []) }
+    }
+
+    private func isPutAway(_ photo: ChapterPhoto) -> Bool {
+        photo.postId.map { chapters.putAwayPostIds.contains($0) } ?? false
+    }
+
+    private var putAwayCount: Int {
+        viewModel.monthPhotos.filter { !$0.isDeadFrame && isPutAway($0) }.count
+    }
+
+    /// "Friends see 12 of 14. Put-away shots stay yours."
+    /// The shot the month's own cover shows, so Edit can mark it before anything is chosen.
+    private var defaultCoverPhotoId: UUID? {
+        guard let path = viewModel.chapter.coverPaths.first else { return viewModel.monthPhotos.first?.id }
+        return viewModel.monthPhotos.first { $0.displayPath == path || $0.thumbPath == path }?.id
+            ?? viewModel.monthPhotos.first?.id
+    }
+
+    private var friendsSeeLine: String {
+        let total = viewModel.monthPhotos.filter { !$0.isDeadFrame }.count
+        return "Friends see \(total - putAwayCount) of \(total). Put-away shots stay yours."
+    }
+
+    /// The box's cover path: the shot chosen in Edit, else the box's stored cover, else the
+    /// month's own first.
+    private var boxCoverPath: String? {
+        if let id = boxCoverPhotoId, let photo = viewModel.monthPhotos.first(where: { $0.id == id }) {
+            return photo.displayPath
+        }
+        return chapters.coverPath(for: viewModel.chapter, profileId: profileId)
+    }
+
+    /// Saves what Edit changed: each shot put away or brought back, then the cover. Shown at once;
+    /// anything that didn't land is put back and said.
+    private func applyBoxEdit(cover: UUID?, putAway: Set<UUID>) {
+        guard let uid = auth.currentUser?.id else { return }
+        let before = Set(viewModel.monthPhotos.compactMap(\.postId).filter { chapters.putAwayPostIds.contains($0) })
+        let toAway = putAway.subtracting(before)
+        let toBack = before.subtracting(putAway)
+        let previousCover = boxCoverPhotoId
+        // Written only when it changed from what the box showed, chosen or default.
+        let changedCover = cover.flatMap { $0 == (boxCoverPhotoId ?? defaultCoverPhotoId) ? nil : $0 }
+        if let changedCover { boxCoverPhotoId = changedCover }
+        let coverPhoto = changedCover.flatMap { id in viewModel.monthPhotos.first { $0.id == id } }
+        let service = chapters
+        let monthStart = viewModel.chapter.monthStart
+        // Shown at once; the writes follow.
+        service.putAwayPostIds.formUnion(toAway)
+        service.putAwayPostIds.subtract(toBack)
+        Task {
+            var failed = 0
+            for id in toAway where !(await service.setPutAway(true, postId: id)) {
+                service.putAwayPostIds.remove(id); failed += 1
+            }
+            for id in toBack where !(await service.setPutAway(false, postId: id)) {
+                service.putAwayPostIds.insert(id); failed += 1
+            }
+            if let coverPhoto,
+               !(await service.setMonthCover(photoId: coverPhoto.id, coverPath: coverPhoto.displayPath,
+                                             userId: uid, monthStart: monthStart)) {
+                boxCoverPhotoId = previousCover
+                failed += 1
+            }
+            if failed > 0 {
+                Haptics.error()
+                UndoCenter.shared.showNotice("Some of that didn't save. Check your connection and try again.")
+            }
+        }
     }
 
     private static func dayStamp(_ day: Date) -> String {
@@ -260,6 +333,17 @@ struct ChapterRecapView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(docked ? "Close" : (isOwnRecap ? "Back to your page" : "Back"))
                 Spacer()
+                if isOwnRecap, !viewModel.monthPhotos.isEmpty {
+                    Button { Haptics.tap(); asFriendsSee = false; showBoxEdit = true } label: {
+                        Text("Edit")
+                            .flimFont(17, weight: .medium, relativeTo: .body)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Choose the cover and put shots away")
+                }
             }
             .padding(.horizontal, 24)
             ScrollView {
@@ -342,6 +426,28 @@ struct ChapterRecapView: View {
                         .padding(.top, 8)
                     }
 
+                    if isOwnRecap, putAwayCount > 0 {
+                        Text(friendsSeeLine)
+                            .font(DeskType.serif(15, italic: true, relativeTo: .body))
+                            .tracking(0.2)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 12)
+                    }
+                    if asFriendsSee {
+                        HStack {
+                            Text("AS FRIENDS SEE IT")
+                                .font(DeskType.data(11))
+                                .tracking(1.4)
+                                .foregroundStyle(FlimTheme.textSecondary)
+                            Spacer()
+                            Button("Done") { withAnimation(.snappy) { asFriendsSee = false } }
+                                .flimFont(15, weight: .semibold, relativeTo: .body)
+                                .foregroundStyle(FlimTheme.ink(accent))
+                                .frame(minHeight: 44)
+                        }
+                        .padding(.top, 8)
+                    }
                     if showFirstRunLine {
                         Text("Built from what you posted this month. Anyone who can see your page sees this too.")
                             .font(DeskType.serif(15, italic: true, relativeTo: .body))
@@ -371,7 +477,28 @@ struct ChapterRecapView: View {
             .scrollIndicators(.hidden)
         }
         // Keyed on the month's list: the load lands after the box first appears.
-        .task(id: viewModel.monthPhotos.count) { await viewModel.signMonthThumbs(feed: feed) }
+        .task(id: viewModel.monthPhotos.count) {
+            await viewModel.signMonthThumbs(feed: feed)
+            // Your own box: which shots are put away, and the cover you chose (12b).
+            if isOwnRecap, !viewModel.monthPhotos.isEmpty, let uid = auth.currentUser?.id {
+                await chapters.loadPutAway(postIds: viewModel.monthPhotos.compactMap(\.postId))
+                if boxCoverPhotoId == nil {
+                    boxCoverPhotoId = await chapters.monthCoverPhotoId(userId: uid, monthStart: viewModel.chapter.monthStart)
+                }
+            }
+        }
+        .sheet(isPresented: $showBoxEdit) {
+            MonthBoxEditView(
+                monthName: viewModel.chapter.monthName(),
+                photos: viewModel.monthPhotos.filter { !$0.isDeadFrame },
+                urls: viewModel.urls,
+                cover: boxCoverPhotoId ?? defaultCoverPhotoId,
+                putAway: Set(viewModel.monthPhotos.compactMap(\.postId).filter { chapters.putAwayPostIds.contains($0) }),
+                onDone: { cover, putAway, preview in
+                    applyBoxEdit(cover: cover, putAway: putAway)
+                    withAnimation(.snappy) { asFriendsSee = preview }
+                })
+        }
         .sheet(isPresented: Binding(get: { viewModel.showContactSheetShare },
                                     set: { viewModel.showContactSheetShare = $0 })) {
             if let file = viewModel.contactSheetFile {
@@ -397,7 +524,7 @@ struct ChapterRecapView: View {
             Color.clear
                 .aspectRatio(3.0 / 2.0, contentMode: .fit)
                 .overlay {
-                    if let path = viewModel.chapter.coverPaths.first {
+                    if let path = boxCoverPath {
                         CachedImage(url: chapterCoverURLs[path] ?? viewModel.urls[path], maxPixel: 900, cacheKey: path) {
                             $0.resizable().scaledToFill()
                         } placeholder: { FlimTheme.well }
@@ -440,10 +567,21 @@ struct ChapterRecapView: View {
                         $0.resizable().scaledToFill()
                     } placeholder: { FlimTheme.well }
                 }
+                .overlay {
+                    // Yours only: a shot you put away, still here for you, gone for friends.
+                    if isOwnRecap, isPutAway(photo) {
+                        ZStack {
+                            FlimTheme.bg.opacity(0.55)
+                            Image(systemName: "eye.slash")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(FlimTheme.textPrimary)
+                        }
+                    }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Shot from \(photo.takenAt.formatted(date: .abbreviated, time: .shortened))")
+        .accessibilityLabel("Shot from \(photo.takenAt.formatted(date: .abbreviated, time: .shortened))\(isOwnRecap && isPutAway(photo) ? ", put away" : "")")
     }
 
     private var v1OpeningCardBody: some View {
@@ -788,5 +926,171 @@ struct ChapterRecapView: View {
             // 1.7: the closing card hands back to the box it was played from.
             onClose: { if AppInfo.is17 { phase = .opening } else { close() } }
         )
+    }
+}
+
+/// Choosing a box's cover and putting shots away (Blend 4, 12b). A tap makes a shot the cover;
+/// a hold puts it away, and another hold brings it back. Putting the cover away moves the cover
+/// to the next shot that is still out. Nothing is deleted. Nothing is saved until Done.
+struct MonthBoxEditView: View {
+    let monthName: String
+    let photos: [ChapterPhoto]
+    let urls: [String: URL]
+    /// Done hands back the cover, the post ids put away, and whether to show the box as friends
+    /// see it.
+    let onDone: (UUID?, Set<UUID>, Bool) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.flimAccent) private var accent
+    @State private var cover: UUID?
+    @State private var putAway: Set<UUID>
+    /// Set by a hold, so the tap that ends it doesn't also make the shot the cover.
+    @State private var heldId: UUID?
+
+    init(monthName: String, photos: [ChapterPhoto], urls: [String: URL], cover: UUID?, putAway: Set<UUID>,
+         onDone: @escaping (UUID?, Set<UUID>, Bool) -> Void) {
+        self.monthName = monthName
+        self.photos = photos
+        self.urls = urls
+        self.onDone = onDone
+        _cover = State(initialValue: cover)
+        _putAway = State(initialValue: putAway)
+    }
+
+    private func isAway(_ photo: ChapterPhoto) -> Bool { photo.postId.map(putAway.contains) ?? false }
+
+    private var friendsSee: Int { photos.filter { !isAway($0) }.count }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .flimFont(17, relativeTo: .body)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(minHeight: 44)
+                Spacer()
+                Text(monthName)
+                    .font(DeskType.serif(22, relativeTo: .title3))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .lineLimit(1)
+                Spacer()
+                Button("Done") { onDone(cover, putAway, false); dismiss() }
+                    .flimFont(17, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(minHeight: 44)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Tap a shot to make it the cover. Hold one to put it away.")
+                        .font(DeskType.serif(16, italic: true, relativeTo: .body))
+                        .tracking(0.2)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+                        ForEach(photos) { photo in
+                            tile(photo)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+
+            VStack(spacing: 10) {
+                Text("Friends see \(friendsSee) of \(photos.count). Put-away shots stay yours.")
+                    .flimFont(14, relativeTo: .footnote)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button { onDone(cover, putAway, true); dismiss() } label: {
+                    Text("See it as friends do")
+                        .flimFont(15, weight: .semibold, relativeTo: .body)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                        .overlay(Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1.5))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+        .background(DeskGround())
+        .flimSheetSurface()
+        .presentationDetents([.large])
+    }
+
+    private func tile(_ photo: ChapterPhoto) -> some View {
+        let away = isAway(photo)
+        let isCover = photo.id == cover
+        return Color.clear
+            .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
+            .overlay {
+                CachedImage(url: urls[photo.displayPath], maxPixel: 300, cacheKey: photo.displayPath) {
+                    $0.resizable().scaledToFill()
+                } placeholder: { FlimTheme.well }
+                .opacity(away ? 0.3 : 1)
+            }
+            .overlay {
+                if away {
+                    VStack(spacing: 6) {
+                        Image(systemName: "eye.slash").font(.system(size: 16, weight: .semibold))
+                        Text("PUT AWAY").font(DeskType.data(9)).tracking(1.2)
+                    }
+                    .foregroundStyle(FlimTheme.textPrimary)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if isCover {
+                    Text("COVER")
+                        .font(DeskType.data(9))
+                        .tracking(1)
+                        .foregroundStyle(Color(white: 0.1))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(accent, in: RoundedRectangle(cornerRadius: 3))
+                        .padding(5)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(isCover ? accent : .clear, lineWidth: 2.5)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if heldId == photo.id { heldId = nil; return }
+                // A put-away shot can't be the cover; bring it back first.
+                guard !away else { Haptics.warning(); return }
+                Haptics.tap()
+                cover = photo.id
+            }
+            // Simultaneous, or the tap above claims the touch and the hold never fires (the same
+            // trap as the camera's zoom chips).
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                heldId = photo.id
+                toggleAway(photo)
+            })
+            .accessibilityElement()
+            .accessibilityLabel("Shot from \(photo.takenAt.formatted(date: .abbreviated, time: .shortened))\(isCover ? ", cover" : "")\(away ? ", put away" : "")")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(named: "Make it the cover") { if !away { cover = photo.id } }
+            .accessibilityAction(named: away ? "Bring it back" : "Put it away") { toggleAway(photo) }
+    }
+
+    private func toggleAway(_ photo: ChapterPhoto) {
+        guard let postId = photo.postId else { return }
+        Haptics.tap()
+        if putAway.contains(postId) {
+            putAway.remove(postId)
+        } else {
+            putAway.insert(postId)
+            // The cover went away: the next shot still out takes it.
+            if photo.id == cover {
+                cover = photos.first { p in p.id != photo.id && !(p.postId.map(putAway.contains) ?? false) }?.id
+            }
+        }
     }
 }
