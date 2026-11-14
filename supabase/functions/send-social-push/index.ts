@@ -58,10 +58,12 @@ const APNS_TIMEOUT_MS = 10_000;
 // (Lapse, then FLIM) and may again; a rename is this line plus a deploy.
 const APP_NAME = "FLIM";
 
-// FLIM Beta (the v2 redesign) runs this same function on its own project, where friends are
-// mutual: a follow is asking to be friends, and following back is saying yes. Its copy says so;
-// the App Store app's stays exactly as it was. Known by the bundle the pushes go to.
-const IS_V2 = APNS_BUNDLE_ID === "com.flim.app.beta";
+// Friends are mutual in 1.7: a follow is asking to be friends, and following back is saying
+// yes, and the copy says so. FLIM Beta's project has always been mutual (known by the bundle the
+// pushes go to); production turns it on with FRIENDS_MUTUAL=1 at the same moment its database
+// does (supabase/release-1.7/02_mutual_friends.sql). Until then production's copy stays exactly
+// as it was.
+const IS_V2 = APNS_BUNDLE_ID === "com.flim.app.beta" || Deno.env.get("FRIENDS_MUTUAL") === "1";
 
 // "The week of September 21" from a Spotlight week_key ("2026-09-21"). Read from the key's own
 // digits, never through Date: a bare date parses as midnight UTC, and any formatting in a zone
@@ -1555,7 +1557,7 @@ Deno.serve(async (req: Request) => {
     if (join) {
       sent += await notify(f.following_id, f.follower_id, `${name} joined ${APP_NAME} with your invite`,
         join.followsBack ? undefined
-          : (IS_V2 ? "Add them back so you see each other's prints." : "Follow back so you see each other's shots."),
+          : (IS_V2 ? "Add them back so you see each other's shots." : "Follow back so you see each other's shots."),
         { t: "profile", id: f.follower_id }, followKey, SOUND_SOCIAL,
         join.followsBack ? undefined : FOLLOW_BACK_CATEGORY);
       if (settled(followKey)) await supabase.from("follows").update({ push_sent: true })
