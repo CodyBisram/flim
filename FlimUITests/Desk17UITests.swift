@@ -286,6 +286,74 @@ final class Desk17UITests: XCTestCase {
         }
     }
 
+    /// Select on the Duo's open display: the grid keeps the left of the fold with its Select bar,
+    /// the docked viewer stays on the right.
+    func testOpenDuoDarkroomSelects() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabDarkroom", "-darkroomFixture",
+                               "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        let select = app.buttons["Select"].firstMatch
+        XCTAssertTrue(select.waitForExistence(timeout: 15), "no Select in the Darkroom header")
+        select.tap()
+        let post = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Post'")).firstMatch
+        XCTAssertTrue(post.waitForExistence(timeout: 5), "no Select bar on the open display")
+        let frame = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Photo' OR label BEGINSWITH 'Shot'")).firstMatch
+        if frame.waitForExistence(timeout: 3) { frame.tap() }
+        sleep(1)
+        shot("open_darkroom_select")
+        XCTAssertTrue(app.staticTexts["1 of 4"].exists || app.staticTexts.matching(NSPredicate(format: "label ENDSWITH 'of 4'")).firstMatch.exists,
+                      "the docked viewer went away while selecting")
+    }
+
+    /// The screens built this week at the largest accessibility text size: nothing a person
+    /// needs drops off the screen.
+    func testNewScreensAtTheLargestText() {
+        let large = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabRolls", "-rollsFixture", "-desk", "paper"] + large
+        app.launch()
+        XCTAssertTrue(app.staticTexts["DEVELOPING"].waitForExistence(timeout: 15))
+        shot("ax_rolls")
+        let open = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH 'Opens the roll.' AND label BEGINSWITH 'Test, day 2'")).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        open.tap()
+        let shoot = app.buttons["Shoot into it"]
+        XCTAssertTrue(shoot.waitForExistence(timeout: 5))
+        shot("ax_sealed_top")
+        for _ in 0..<4 where !shoot.isHittable { app.swipeUp() }
+        XCTAssertTrue(shoot.isHittable, "Shoot into it can't be reached at the largest text")
+        shot("ax_sealed_bottom")
+
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "paper"] + large
+        app.launch()
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        for _ in 0..<4 where !box.exists { app.swipeUp() }
+        XCTAssertTrue(box.waitForExistence(timeout: 10), "no month box on the shelf")
+        box.tap()
+        sleep(2)
+        shot("ax_month_box")
+        XCTAssertTrue(app.buttons["Back to your page"].isHittable, "the box's Back is off screen")
+    }
+
+    /// The Rolls list (Blend 1, 3c): open rolls as sealed cards under DEVELOPING, developed ones
+    /// under OPENED, the unwatched one first and marked New.
+    func testRollsListHasDevelopingAndOpened() {
+        for desk in ["paper", "slate"] {
+            app.terminate()
+            app.launchArguments = ["-chromePreviewDemo", "-tabRolls", "-rollsFixture", "-desk", desk]
+            app.launch()
+            XCTAssertTrue(app.staticTexts["DEVELOPING"].waitForExistence(timeout: 15), "no DEVELOPING section")
+            XCTAssertTrue(app.staticTexts["OPENED"].exists, "no OPENED section")
+            let waiting = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH 'Lake weekend, new'")).firstMatch
+            XCTAssertTrue(waiting.exists, "the unwatched roll is not marked new")
+            shot("rolls_list_\(desk)")
+        }
+    }
+
     /// A roll that has not opened (Blend 1, 3d) is a sealed box: who is in and what each has
     /// put in it, never the frames, with Shoot into it at the foot.
     func testSealedRollIsABox() {

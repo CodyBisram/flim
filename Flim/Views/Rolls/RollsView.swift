@@ -372,6 +372,9 @@ struct RollsView: View {
                         invitedCard(invited)
                     }
 
+                    if AppInfo.is17 {
+                        deskSections
+                    } else {
                     // The whole open-roll region shares ONE clock. The cadence is decided
                     // from the active roll: 1s only near the closing window's seconds form,
                     // 60s the rest of a roll's life, so the fast tick is reachable only in
@@ -404,6 +407,7 @@ struct RollsView: View {
                     if !developedRolls.isEmpty {
                         developedSection
                     }
+                    }
                 }
                 .padding(.bottom, 24)
             }
@@ -412,6 +416,181 @@ struct RollsView: View {
                 withAnimation(.snappy) { proxy.scrollTo("rollsTop", anchor: .top) }
             }
         }
+    }
+
+    // MARK: - 1.7 list (Blend 1, 3c)
+
+    /// DEVELOPING: each open roll as a sealed card. OPENED: rolls that have developed, the ones
+    /// you have not watched yet first, marked New.
+    @ViewBuilder
+    private var deskSections: some View {
+        if openRolls.isEmpty {
+            nothingOpenBlock
+        } else {
+            deskSectionLabel("DEVELOPING")
+            // One clock for every card: 1s once the soonest is counting seconds, else 60s.
+            TimelineView(.periodic(from: .now, by: openRolls.first.map { clockCadence(for: $0) } ?? 60)) { timeline in
+                VStack(spacing: 10) {
+                    ForEach(openRolls) { roll in
+                        sealedCard(roll, now: timeline.date)
+                    }
+                }
+                .padding(.horizontal, Self.margin)
+            }
+        }
+        if !readyRolls.isEmpty || !developedRolls.isEmpty {
+            deskSectionLabel("OPENED")
+                .padding(.top, 14)
+            VStack(spacing: 0) {
+                ForEach(Array((readyRolls + developedRolls).enumerated()), id: \.element.id) { index, roll in
+                    if index > 0 {
+                        Rectangle().fill(FlimTheme.stroke).frame(height: 1)
+                    }
+                    openedRow(roll, isNew: readyRolls.contains { $0.id == roll.id })
+                }
+            }
+            .padding(.horizontal, Self.margin)
+        }
+    }
+
+    private func deskSectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(DeskType.data(11))
+            .tracking(1.7)
+            .foregroundStyle(FlimTheme.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Self.margin)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+    }
+
+    /// An open roll: a sealed tile with its countdown, then the name, who and how many, and
+    /// when it opens.
+    private func sealedCard(_ roll: Roll, now: Date) -> some View {
+        let people = rolls.memberCounts[roll.id].map { "\($0) \($0 == 1 ? "person" : "people")" }
+        let shots = frameCounts[roll.id].map { "\($0) shot\($0 == 1 ? "" : "s") so far" }
+        return rollLink(roll) {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(DeskType.clock(roll.revealAt.timeIntervalSince(now)))
+                        .font(DeskType.data(11))
+                        .monospacedDigit()
+                        .foregroundStyle(FlimTheme.ink(accent))
+                    Spacer(minLength: 0)
+                    Text("SEALED")
+                        .font(DeskType.data(9))
+                        .tracking(1.2)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                .padding(8)
+                .frame(width: 76, height: 84, alignment: .leading)
+                .background(FlimTheme.textPrimary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(roll.name)
+                        .font(DeskType.serif(21, relativeTo: .title3))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .lineLimit(2)
+                    Text([people, shots].compactMap { $0 }.joined(separator: " · "))
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .lineLimit(2)
+                    Text("opens \(RollDevelopAskSheet.whenLabel(for: roll.revealAt))")
+                        .font(DeskType.serif(14, italic: true, relativeTo: .subheadline))
+                        .tracking(0.2)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FlimTheme.well, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu { rollMenu(roll) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(roll.name), sealed until \(RollDevelopAskSheet.timeLabel(for: roll.revealAt)). Opens the roll.")
+    }
+
+    /// A developed roll: its cover, the name, who, how many and when it opened. New until you
+    /// have watched it.
+    private func openedRow(_ roll: Roll, isNew: Bool) -> some View {
+        let people = rolls.memberCounts[roll.id].map { "\($0) \($0 == 1 ? "person" : "people")" }
+        let shots = frameCounts[roll.id].map { "\($0) shot\($0 == 1 ? "" : "s")" }
+        let opened = "opened \(roll.revealAt.formatted(.dateTime.day().month(.abbreviated)))"
+        return rollLink(roll) {
+            HStack(spacing: 16) {
+                Color.clear
+                    .frame(width: 58, height: 74)
+                    .overlay {
+                        if isNew {
+                            // Not watched yet: the cover stays in the box until it plays.
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(FlimTheme.well)
+                        } else if let path = rolls.coverPaths[roll.id] {
+                            CachedImage(url: coverURLs[path], maxPixel: 200, cacheKey: path) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: { FlimTheme.well }
+                        } else {
+                            FlimTheme.well
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(FlimTheme.stroke, lineWidth: 1))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(roll.name)
+                            .font(DeskType.serif(20, relativeTo: .title3))
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .lineLimit(2)
+                        if isNew {
+                            Text("New")
+                                .flimFont(11, weight: .semibold, relativeTo: .caption2)
+                                .foregroundStyle(FlimTheme.newRed)
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .overlay(Capsule().strokeBorder(FlimTheme.newRed, lineWidth: 1))
+                        }
+                        if mutedRolls.contains(roll.id) {
+                            Image(systemName: "bell.slash.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .accessibilityLabel("Muted")
+                        }
+                    }
+                    Text([people, shots, isNew ? "ready to open" : opened].compactMap { $0 }.joined(separator: " · "))
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Developed, so no Share invite: invites end when a roll develops.
+        .contextMenu {
+            Button { toggleMute(roll) } label: {
+                let muted = mutedRolls.contains(roll.id)
+                Label(muted ? "Unmute notifications" : "Mute notifications",
+                      systemImage: muted ? "bell.slash" : "bell")
+            }
+            if !isCreator(roll) {
+                Button(role: .destructive) { rollToLeave = roll } label: {
+                    Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(roll.name)\(isNew ? ", new" : ""), \([people, shots, isNew ? "ready to open" : opened].compactMap { $0 }.joined(separator: ", ")). Opens the roll.")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// 1s only while the closing label is (or is about to be) counting seconds; 60s otherwise.
@@ -771,7 +950,7 @@ struct RollsView: View {
     private var nothingOpenBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("No roll is open")
-                .flimFont(26, weight: .light, relativeTo: .title3)
+                .modifier(DeskTitleOr(size: 28) { $0.flimFont(26, weight: .light, relativeTo: .title3) })
                 .foregroundStyle(FlimTheme.textPrimary)
                 .padding(.horizontal, Self.margin)
             // The duration must come from the constant: a literal "12 hours" is false in
@@ -990,8 +1169,25 @@ struct RollsView: View {
     private func load() async {
         #if DEBUG
         if let rollsFixture {
-            rolls.rolls = [rollsFixture.roll]
+            // Two developed rolls beside the developing one, so OPENED has rows: one already
+            // watched, one waiting (New).
+            let owner = rollsFixture.roll.createdBy
+            let day: TimeInterval = 86_400
+            let watched = Roll(id: UUID(uuidString: "00000000-0000-0000-0000-000000009211") ?? UUID(),
+                               name: "Noor's 30th", inviteCode: "NOOR30", createdBy: owner,
+                               createdAt: .now.addingTimeInterval(-9 * day), revealAt: .now.addingTimeInterval(-8 * day))
+            let waiting = Roll(id: UUID(uuidString: "00000000-0000-0000-0000-000000009212") ?? UUID(),
+                               name: "Lake weekend", inviteCode: "LAKE11", createdBy: owner,
+                               createdAt: .now.addingTimeInterval(-2 * day), revealAt: .now.addingTimeInterval(-day))
+            UserDefaults.standard.set(true, forKey: "rollRevealSeen.\(watched.id.uuidString)")
+            UserDefaults.standard.removeObject(forKey: "rollRevealSeen.\(waiting.id.uuidString)")
+            rolls.rolls = [rollsFixture.roll, watched, waiting]
             frameCounts[rollsFixture.roll.id] = rollsFixture.photos.count
+            frameCounts[watched.id] = 5
+            frameCounts[waiting.id] = 11
+            rolls.memberCounts[rollsFixture.roll.id] = 5
+            rolls.memberCounts[watched.id] = 9
+            rolls.memberCounts[waiting.id] = 5
             return
         }
         #endif

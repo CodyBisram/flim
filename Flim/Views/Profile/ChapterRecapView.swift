@@ -18,6 +18,9 @@ struct ChapterRecapView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Accessibility text sizes stack the box's title row and its two buttons instead of
+    /// squeezing them side by side.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     let profileId: UUID
     let chapterCoverURLs: [String: URL]
@@ -261,13 +264,13 @@ struct ChapterRecapView: View {
             .padding(.horizontal, 24)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    boxTitleLayout {
                         Text(month)
                             .font(DeskType.serif(34, relativeTo: .largeTitle))
                             .foregroundStyle(FlimTheme.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        Spacer(minLength: 8)
+                        if !typeSize.isAccessibilitySize { Spacer(minLength: 8) }
                         Text(viewModel.chapter.statsLine)
                             .flimFont(14, relativeTo: .subheadline)
                             .foregroundStyle(FlimTheme.textSecondary)
@@ -278,10 +281,12 @@ struct ChapterRecapView: View {
                     boxCover
                         .padding(.top, 14)
 
-                    HStack(spacing: 10) {
+                    boxButtonLayout {
                         Button { play() } label: {
                             Label("Play \(month)", systemImage: "play.fill")
                                 .flimFont(15, weight: .semibold, relativeTo: .body)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                                 .labelStyle(.titleAndIcon)
                                 .foregroundStyle(FlimTheme.bg)
                                 .frame(maxWidth: .infinity, minHeight: 46)
@@ -302,11 +307,13 @@ struct ChapterRecapView: View {
                                         Image(systemName: "square.and.arrow.up")
                                     }
                                     Text("Share")
+                                        .lineLimit(1)
+                                        .fixedSize()
                                 }
                                 .flimFont(15, weight: .semibold, relativeTo: .body)
                                 .foregroundStyle(FlimTheme.textPrimary)
                                 .padding(.horizontal, 22)
-                                .frame(minHeight: 46)
+                                .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, minHeight: 46)
                                 .background(FlimTheme.chip, in: Capsule())
                                 .contentShape(Capsule())
                             }
@@ -371,6 +378,17 @@ struct ChapterRecapView: View {
                 ActivityView(items: [file])
             }
         }
+    }
+
+    /// The box's rows side by side, or stacked at accessibility sizes: the title row on its
+    /// baseline, the buttons centred.
+    private var boxTitleLayout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                                     : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+    }
+
+    private var boxButtonLayout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
     }
 
     /// The box's cover: the month's first cover shot, its stamp, and a play mark; a tap plays.
