@@ -108,6 +108,16 @@ final class VersionGateService {
     /// doesn't decode all reset to `.none` rather than holding on to a stale `.blocked`/`.nudge`
     /// from a previous, successful check.
     func check() async {
+        #if DEBUG
+        // `-versionGateDemo blocked|nudge`: shows that screen with no server row, to look at it.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-versionGateDemo"),
+           ProcessInfo.processInfo.arguments.indices.contains(i + 1) {
+            decision = ProcessInfo.processInfo.arguments[i + 1] == "blocked" ? .blocked : .nudge
+            latestVersion = "99.0"
+            message = nil
+            return
+        }
+        #endif
         guard let row: GateRow = try? await supabase
             .from("app_release_gate")
             .select()

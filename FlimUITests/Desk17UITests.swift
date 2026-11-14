@@ -364,6 +364,19 @@ final class Desk17UITests: XCTestCase {
         app.buttons["Cancel"].firstMatch.tap()
     }
 
+    /// The hard update gate on both desks: once 1.7 is the minimum, a later minimum blocks 1.7
+    /// installs with this screen, so it has to read on Paper.
+    func testUpdateRequiredReadsOnBothDesks() {
+        for desk in ["paper", "slate"] {
+            app.terminate()
+            app.launchArguments = ["-versionGateDemo", "blocked", "-desk", desk]
+            app.launch()
+            XCTAssertTrue(app.staticTexts["Update required"].waitForExistence(timeout: 15), "no update screen")
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Update'")).firstMatch.exists)
+            shot("update_required_\(desk)")
+        }
+    }
+
     /// The screens built this week on the Duo's closed display (466 x 678, rail on the trailing
     /// edge): the Rolls list, the sealed roll and the month box.
     func testClosedDuoNewScreens() {
