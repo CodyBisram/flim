@@ -56,7 +56,10 @@ struct DeskNotificationPrimer: View {
             }
             }
             .scrollBounceBehavior(.basedOnSize)
-            Spacer(minLength: 12)
+            // The scroll view takes all the room the buttons leave; a flexible spacer beside it
+            // split that room in half and squeezed the samples (nightly review, 2026-11-12).
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.bottom, 12)
             Button {
                 Task { await notifications.requestAuthorizationIfNeeded(); onDecision(); dismiss() }
             } label: {

@@ -614,6 +614,9 @@ Text("Darkroom")
             .onChange(of: isSelecting, initial: true) { _, now in
                 if AppInfo.is17 { DeskChrome.shared.selecting = now }
             }
+            // Back on the tab mid-select: `onChange` does not fire again, so this puts the Select
+            // bar back in the tab bar's place (nightly review, 2026-11-12).
+            .onAppear { if AppInfo.is17 { DeskChrome.shared.selecting = isSelecting } }
             .onDisappear { if AppInfo.is17 { DeskChrome.shared.selecting = false } }
     }
 

@@ -379,3 +379,121 @@ final class Desk17UITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 5), "closing the screening did not come back to the box")
     }
 }
+
+/// 1.7 against a real account on FLIM Dev: the App Review tester (password sign-in, no email
+/// sent) in FLIM Beta. Skipped unless the tester's password is handed in:
+///
+///     TEST_RUNNER_FLIM_REVIEW_PASS=... xcodebuild test -scheme FlimUITests -configuration Debug-Beta \
+///       -only-testing:FlimUITests/Desk17LiveUITests
+///
+/// Reads only, apart from what signing in and first-run answers write for that account.
+final class Desk17LiveUITests: XCTestCase {
+    private var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        guard let pass = ProcessInfo.processInfo.environment["FLIM_REVIEW_PASS"], !pass.isEmpty else {
+            throw XCTSkip("FLIM_REVIEW_PASS not set")
+        }
+        continueAfterFailure = true
+        app = XCUIApplication()
+        app.launchArguments = ["-desk", ProcessInfo.processInfo.environment["FLIM_DESK"] ?? "slate"]
+        app.launch()
+        addUIInterruptionMonitor(withDescription: "system asks") { alert in
+            for label in ["Allow", "OK", "Allow While Using App", "Don’t Allow", "Don't Allow"] where alert.buttons[label].exists {
+                alert.buttons[label].tap(); return true
+            }
+            return false
+        }
+        signIn(password: pass)
+    }
+
+    private func shot(_ name: String) {
+        guard let dir = ProcessInfo.processInfo.environment["FLIM_SHOTS"] else { return }
+        let data = XCUIScreen.main.screenshot().pngRepresentation
+        try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("live17_\(name).png"))
+    }
+
+    private func bar(_ label: String) -> XCUIElement { app.buttons[label].firstMatch }
+
+    /// Signs in through the App Review password sheet when signed out, then answers whatever
+    /// first-run screens come up, until the desk's bar is there.
+    private func signIn(password: String) {
+        let email = app.textFields.firstMatch
+        if !bar("Feed").waitForExistence(timeout: 8), email.exists, app.buttons["Send code"].exists {
+            email.tap()
+            email.typeText("review@flim-app.com")
+            app.buttons["Send code"].tap()
+            let field = app.secureTextFields["Password"]
+            XCTAssertTrue(field.waitForExistence(timeout: 10), "the password sheet never came")
+            field.tap()
+            field.typeText(password)
+            app.buttons["Sign In"].tap()
+        }
+        for _ in 0..<8 {
+            if bar("Feed").exists && bar("Feed").isHittable { break }
+            for label in ["Allow camera", "Continue", "Not now", "Got it"] {
+                let button = app.buttons[label].firstMatch
+                if button.exists && button.isHittable { button.tap(); break }
+            }
+            app.tap()   // lets the interruption monitor answer a system ask
+            sleep(2)
+        }
+        XCTAssertTrue(bar("Feed").waitForExistence(timeout: 15), "never reached the app:\n\(app.debugDescription)")
+    }
+
+    func testEveryTabWithARealAccount() {
+        bar("Feed").tap()
+        sleep(4)
+        shot("feed")
+        let comments = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View all' OR label == 'Add a comment'")).firstMatch
+        if comments.waitForExistence(timeout: 5), comments.isHittable {
+            comments.tap()
+            sleep(2)
+            shot("comments")
+            app.swipeDown(velocity: .fast)
+            sleep(1)
+        }
+
+        bar("Darkroom").tap()
+        sleep(4)
+        shot("darkroom")
+
+        bar("Rolls").tap()
+        sleep(4)
+        shot("rolls")
+        let roll = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH 'Opens the roll.'")).firstMatch
+        if roll.waitForExistence(timeout: 5) {
+            roll.tap()
+            sleep(4)
+            shot("roll")
+            app.navigationBars.buttons.firstMatch.tap()
+            sleep(1)
+        }
+
+        bar("You").tap()
+        sleep(4)
+        shot("you")
+        let seals = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Seals'")).firstMatch
+        if seals.waitForExistence(timeout: 5) {
+            seals.tap()
+            sleep(4)
+            shot("seals")
+            app.buttons["Cancel"].firstMatch.tap()
+            sleep(1)
+        }
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        if box.waitForExistence(timeout: 5) {
+            box.tap()
+            sleep(5)
+            shot("month_box")
+            let back = app.buttons["Back to your page"].firstMatch
+            if back.exists { back.tap() }
+        }
+
+        bar("Camera").tap()
+        sleep(2)
+        shot("camera")
+        XCTAssertTrue(app.buttons["Flip camera"].exists, "the camera has no flip button")
+    }
+}

@@ -12,6 +12,9 @@ import UIKit
 struct FeedView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
+    /// Bumped when a notification routes to the Feed tab: Activity steps aside so the route's
+    /// destination is what shows (see `MainTabView.feedRouteSignal`).
+    var routeArrived: Int = 0
     /// Whether the Feed tab is the one showing. The tab stays mounted behind the others, and a
     /// card that was on screen when you left still reads as visible, so without this a reload
     /// run from another tab (the 04:00 one on foreground) could mark the new top day seen before
@@ -430,6 +433,7 @@ struct FeedView: View {
         .navigationDestination(isPresented: Binding(get: { showActivity && AppInfo.is17 }, set: { showActivity = $0 })) {
             activityView(embedded: true)
         }
+        .onChange(of: routeArrived) { showActivity = false }
     }
 
     /// The feed itself under its header: the whole screen on a phone, the left column on the

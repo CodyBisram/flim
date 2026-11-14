@@ -171,6 +171,11 @@ struct MainTabView: View {
     /// Owned here (not in FeedView) so `profile` and `post` push destinations can push straight
     /// into a page or a post without the Feed tab needing to already be open.
     @State private var feedPath = NavigationPath()
+    /// Bumped by every notification route that lands on the Feed tab. 1.7 pushes Activity with
+    /// `navigationDestination(isPresented:)`, outside `feedPath`, so resetting or appending to the
+    /// path alone left a route stuck under Activity (nightly review, 2026-11-10); FeedView closes
+    /// Activity on each bump.
+    @State private var feedRouteSignal = 0
     /// Your avatar for 1.7's You tab, paired with the path it was signed for.
     @State private var myAvatar: SignedPath?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -270,7 +275,8 @@ struct MainTabView: View {
         // notification did. The Rolls tab never had the bug because RollsView declares
         // its own destination inside itself.
         NavigationStack(path: $feedPath) {
-            FeedView(scrollToTop: scrollSignal[3, default: 0], isFrontmost: selected == 3)
+            FeedView(scrollToTop: scrollSignal[3, default: 0], routeArrived: feedRouteSignal,
+                     isFrontmost: selected == 3)
                 .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
                 .navigationDestination(for: FeedItem.self) { item in
                     let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
@@ -377,7 +383,7 @@ struct MainTabView: View {
         DeskTabBar(selection: selection,
                    rollsDot: signals.rollsHaveUnwatched,
                    feedDot: signals.feedHasUnread,
-                   youDot: false,
+                   youDot: feed.unseenBadgeCount > 0,
                    avatarURL: myAvatar?.url,
                    avatarKey: myAvatar?.path,
                    initial: String((auth.currentUser?.username ?? "?").prefix(1)).uppercased(),
@@ -502,7 +508,10 @@ struct MainTabView: View {
         // 1.7's update card, once, for an account that was already here (Blend 1, 5b). Always
         // Slate when it opens; the desk it sets takes over after Continue.
         .fullScreenCover(isPresented: Binding(get: { AppInfo.is17 && hasOnboarded && !deskUpdateCardSeen }, set: { _ in })) {
-            DeskUpdateCard { deskUpdateCardSeen = true }
+            DeskUpdateCard {
+                deskUpdateCardSeen = true
+                maybeShowNotifPrimer()
+            }
                 .environment(\.colorScheme, .dark)
                 .preferredColorScheme(.dark)
         }
@@ -828,6 +837,7 @@ struct MainTabView: View {
             // list itself was scrolled to) would not be that, so both are reset the same way
             // `.rolls` resets `rollsPath` just below.
             selected = 3
+            feedRouteSignal += 1
             feedPath = NavigationPath()
             scrollSignal[3, default: 0] += 1
 
@@ -835,6 +845,7 @@ struct MainTabView: View {
             // Your frame is in Spotlight: the week's sheet, over the Feed tab at its root. The
             // sheet reads the week from the server, so this works after the strip has aged out.
             selected = 3
+            feedRouteSignal += 1
             feedPath = NavigationPath()
             Usage.log(.spotlightWeeksOpen)
             presentSpotlightSheet(focusWeek: weekKey)
@@ -897,6 +908,7 @@ struct MainTabView: View {
 
         case .post(let postId, let comments):
             selected = 3
+            feedRouteSignal += 1
             Task {
                 let epoch = AccountEpoch.current
                 var item: FeedItem?
@@ -936,6 +948,7 @@ struct MainTabView: View {
             // UserPageView loads and fails safely on its own (a blocked or vanished account shows
             // its own real state, see `UserPageView.load()`), so there's nothing to pre-check here.
             selected = 3
+            feedRouteSignal += 1
             #if FLIM_V2
             v2Route = .page(ProfileRoute(id: userId))
             #else
@@ -944,6 +957,7 @@ struct MainTabView: View {
         case .invite:
             guard let uid = auth.currentUser?.id else { return }
             selected = 3
+            feedRouteSignal += 1
             #if FLIM_V2
             v2Route = .page(ProfileRoute(id: uid, openInvite: true))
             #else
@@ -968,7 +982,10 @@ struct MainTabView: View {
         // the onboarding flag; it only moves this soft ask to the coach's "Got it". Everyone past
         // their first run has seen the coach, so for them nothing changes. A refused camera
         // never shows the coach, so it counts as done (`cameraCoachIsSettled`).
-        guard hasOnboarded,
+        // 1.7's one-time update card is a full-screen cover; a primer presented under it is never
+        // seen, and its one retry would be spent on nothing (nightly review, 2026-11-10). The
+        // card's own close asks again.
+        guard hasOnboarded, !AppInfo.is17 || deskUpdateCardSeen,
               cameraCoachIsSettled(hasSeenCoach: hasSeenCameraCoach,
                                    cameraStatus: AVCaptureDevice.authorizationStatus(for: .video))
         else { return }

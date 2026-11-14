@@ -576,6 +576,9 @@ struct CameraView: View {
                     // Blend 2, 7f: once, until the first shot (or a tap).
                     if !hasSeenCoach, camera.permission == .authorized {
                         deskFirstShotHint
+                            // Its tap dismisses the hint only; without this it also reached the
+                            // preview's tap-to-focus underneath (nightly review, 2026-11-12).
+                            .reportsControlRegion()
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                     DeskZoomDial(camera: camera, presets: zoomPresets, label: zoomLabel)
@@ -1509,7 +1512,10 @@ private struct DeskZoomDial: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        chipTapped = true
+                        // Latched only when the tap will change the zoom: a tap on the chip
+                        // already active changes nothing, and a latch left set swallowed the next
+                        // real pinch instead of opening the dial (nightly review, 2026-11-10).
+                        chipTapped = camera.zoomFactor != level
                         withAnimation(.snappy(duration: 0.2)) { camera.zoom(to: level) }
                         Haptics.tap()
                     }

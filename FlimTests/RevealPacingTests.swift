@@ -84,7 +84,8 @@ struct RevealPacingTests {
         // view's bounds and washed the photograph up under the header. The blur is gone and the
         // box stays, because it is also what keeps the print off the chrome and rounds it the
         // way every other photo surface is rounded.
-        #expect(RevealPacing.frameAspectRatio == 3.0 / 4.0)
+        // Within a hair, not `==`: this toolchain's #expect reported 0.75 == 0.75 as false.
+        #expect(abs(RevealPacing.frameAspectRatio - 3.0 / 4.0) < 0.0001)
         #expect(RevealPacing.frameCornerRadius > 0)
     }
 

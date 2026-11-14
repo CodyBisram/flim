@@ -95,7 +95,7 @@ struct AudienceLine: View {
         VStack(alignment: .leading, spacing: FlimSpace.xxs) {
             Text(audience.title)
                 .flimType(.body)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
             Text(audience.detail)
                 .flimType(.meta)
                 .foregroundStyle(FlimTheme.textSecondary)
@@ -204,7 +204,7 @@ struct ShareToFeedSheet: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Post to your page")
                     .flimFont(17, weight: .light, relativeTo: .body)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .center)
 
                 destinationRow
@@ -278,7 +278,7 @@ struct ShareToFeedSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(shareDestinationLine1(dayLabel: dayLabel, count: todayCount))
                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                 Text(shareDestinationLine2(shotTime: FeedUnit.clockTime(photo.takenAt), count: todayCount))
                     .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textTertiary)
@@ -292,7 +292,7 @@ struct ShareToFeedSheet: View {
         TextField("Add a caption…", text: $caption, axis: .vertical)
             .lineLimit(2...6)
             .flimFont(15, relativeTo: .body)
-            .foregroundStyle(.white)
+            .foregroundStyle(FlimTheme.textPrimary)
             .tint(accent)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -338,7 +338,7 @@ struct ShareToFeedSheet: View {
             AvatarView(path: tag.user.avatarPath, name: tag.user.username, size: 22)
             Text(tag.user.name)
                 .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .lineLimit(1)
             Button {
                 Haptics.tap()
@@ -473,7 +473,7 @@ struct AddPeopleSheet: View {
         return HStack(spacing: 12) {
             AvatarView(path: profile.avatarPath, name: profile.username, size: 34)
             VStack(alignment: .leading, spacing: 1) {
-                Text(profile.name).flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+                Text(profile.name).flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 Text(profile.handle).flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
             }
             Spacer()

@@ -138,7 +138,10 @@ struct UserPageView: View {
             VStack(spacing: 18) { content() }
                 .padding(.bottom, 30)
         }
-        .refreshableToCompletion { await load() }
+        .refreshableToCompletion {
+            await load()
+            await loadDeskFollowSets()
+        }
         .modifier(NoTopEdgeFrost(active: AppInfo.is17))
         .onScrollPhaseChange { _, newPhase in
             // `.tracking` is the finger landing, `.interacting` is it moving; either one
@@ -444,12 +447,7 @@ struct UserPageView: View {
                 showInvite = true
             }
             await load()
-            // 1.7's header counts friends (mutual follows) from your own follow sets.
-            if AppInfo.is17, isSelf, let uid = auth.currentUser?.id {
-                await feed.loadFollowing(userId: uid)
-                await feed.loadFollowers(userId: uid)
-                deskFollowSetsLoaded = true
-            }
+            await loadDeskFollowSets()
             // Only the owner's own page shows a count, and it fails soft to `.unknown`, which
             // renders a plain "Invite" rather than a number that could be wrong.
             if isSelf { inviteQuota = await auth.ownInviteQuota() }
@@ -563,6 +561,17 @@ struct UserPageView: View {
     @ViewBuilder
     private func pageHeader(topInset: CGFloat) -> some View {
         if AppInfo.is17 { deskPageHeader(topInset: topInset) } else { v1PageHeader(topInset: topInset) }
+    }
+
+    /// 1.7's header counts friends (mutual follows) from your own follow sets, shown only once
+    /// both reads land: an offline cold start keeps empty sets, and the header then leaves the
+    /// count out rather than saying "0 friends" (nightly review, 2026-11-10). It fills in on the
+    /// next visit or a pull to refresh.
+    private func loadDeskFollowSets() async {
+        guard AppInfo.is17, isSelf, let uid = auth.currentUser?.id else { return }
+        let following = await feed.loadFollowing(userId: uid)
+        let followers = await feed.loadFollowers(userId: uid)
+        if following && followers { deskFollowSetsLoaded = true }
     }
 
     /// Mutual follows: 1.7's friends. Known for your own page only (your follow sets are loaded).
@@ -743,7 +752,7 @@ struct UserPageView: View {
 
             VStack(spacing: 4) {
                 Text(profile?.name ?? "…")
-                    .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(.white)
+                    .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(FlimTheme.textPrimary)
                 // The handle stays visually centered; the signup number is pinned to the
                 // trailing edge of the same row instead of its own line, quiet enough that it
                 // reads like an edge number on film stock rather than a second headline.
@@ -860,7 +869,7 @@ struct UserPageView: View {
                 HStack(spacing: 10) {
                     Button { showEditProfile = true } label: {
                         Text("Edit profile")
-                            .flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
+                            .flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(FlimTheme.textPrimary)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .background(Color.white.opacity(0.12), in: Capsule())
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
@@ -1040,7 +1049,7 @@ struct UserPageView: View {
 
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
-            Text(value).flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+            Text(value).flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
                 .contentTransition(.numericText())
                 .animation(.snappy(duration: 0.28), value: value)
             Text(label).flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
@@ -1158,7 +1167,7 @@ struct UserPageView: View {
             Image(systemName: "hand.raised.slash")
                 .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
             Text("You blocked \(profile?.handle ?? "this account")")
-                .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+                .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(FlimTheme.textPrimary)
             Text("You won't see their posts, and they won't see yours.")
                 .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
@@ -1692,7 +1701,7 @@ struct FollowListView: View {
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .task {
@@ -1730,6 +1739,7 @@ struct FollowButton: View {
         let following = feed.isFollowing(userId)
         Button {
             guard let uid = auth.currentUser?.id, !busy else { return }
+            let undoKey = FollowButton.undoKey(userId)
             // 1.7: taking back a friend or a request goes behind the undo capsule, like every
             // other removal (the "Friends ✓" chip reads as a status as much as a button).
             if AppInfo.is17, following {
@@ -1741,6 +1751,7 @@ struct FollowButton: View {
                 UndoCenter.shared.stage(
                     title: wasFriend ? "Removed as a friend" : "Request cancelled",
                     failureText: "That didn't go through. Check your connection and try again.",
+                    key: undoKey,
                     revert: { service.followingIds.insert(target) },
                     commit: {
                         service.followingIds.insert(target)   // unfollow flips it out itself
@@ -1748,9 +1759,18 @@ struct FollowButton: View {
                     })
                 return
             }
+            // Tapped again while that removal is still waiting in the capsule: it is the same as
+            // Undo. Nothing reached the server, so there is nothing to follow back.
+            if AppInfo.is17, !following, UndoCenter.shared.staged?.key == undoKey {
+                UndoCenter.shared.undo()
+                return
+            }
             Haptics.tap()
             busy = true
             Task {
+                // A removal of this person already on its way to the server finishes first, so
+                // this follow lands after it rather than being undone by it.
+                if AppInfo.is17 { await UndoCenter.shared.supersede(key: undoKey) }
                 let landed = following
                     ? await feed.unfollow(userId, from: uid)
                     : await feed.follow(userId, from: uid)
@@ -1783,6 +1803,10 @@ struct FollowButton: View {
 }
 
 extension FollowButton {
+    /// What a staged removal of this person is filed under in the undo capsule, so a second tap
+    /// can find it (nightly review, 2026-11-12).
+    static func undoKey(_ userId: UUID) -> String { "follow.\(userId.uuidString)" }
+
     /// 1.7's three states (Blend 1, 4b): Add friend solid, Requested outlined, Friends with a tick
     /// on the box tone.
     @ViewBuilder

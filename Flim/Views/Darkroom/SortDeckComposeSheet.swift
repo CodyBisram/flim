@@ -43,7 +43,7 @@ struct SortDeckComposeSheet: View {
                             Image(systemName: "chevron.right").font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.4))
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(Color.white.opacity(0.1), in: Capsule())
                     }
@@ -53,7 +53,7 @@ struct SortDeckComposeSheet: View {
                         .lineLimit(1...4)
                         .focused($captionFocused)
                         .flimFont(15)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .tint(accent)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
@@ -75,7 +75,7 @@ struct SortDeckComposeSheet: View {
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
         }

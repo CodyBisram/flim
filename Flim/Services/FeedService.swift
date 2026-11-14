@@ -103,13 +103,15 @@ final class FeedService {
 
     // MARK: - Follows
 
-    func loadFollowing(userId: UUID) async {
+    /// Returns whether the read landed; a failed one keeps the last known set.
+    @discardableResult
+    func loadFollowing(userId: UUID) async -> Bool {
         // Same write as loadFeed's, reached from Activity and profile screens on appear, so it
         // needs the same guard.
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: userId)
-        guard AccountEpoch.isCurrent(epoch) else { return }
-        applyFollowingRead(following)
+        guard AccountEpoch.isCurrent(epoch) else { return false }
+        return applyFollowingRead(following)
     }
 
     /// The one writer of a follows READ into `followingIds`/`confirmedFollowingIds`, shared by
@@ -154,13 +156,17 @@ final class FeedService {
 
     /// Mirrors `loadFollowing`'s shape exactly, same guard, same reasoning, just the reverse edge
     /// of the same `follows` table.
-    func loadFollowers(userId: UUID) async {
+    /// Returns whether the read landed; a failed one keeps the last known set.
+    @discardableResult
+    func loadFollowers(userId: UUID) async -> Bool {
         let epoch = AccountEpoch.current
         let followers = await fetchFollowerIds(userId: userId)
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        guard AccountEpoch.isCurrent(epoch) else { return false }
         // A failed read keeps the last known set, the same rule as `applyFollowingRead`: an
         // empty one would drop every "Follows you" badge and "Follow back" label on screen.
-        if let followers { followerIds = followers }
+        guard let followers else { return false }
+        followerIds = followers
+        return true
     }
 
     /// Ordered on the unique key for the same reason as `fetchFollowingIds`, and `nil` on any

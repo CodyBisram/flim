@@ -62,6 +62,10 @@ struct DeskPostView: View {
         .sheet(isPresented: $showTags) {
             AddPeopleSheet(tags: $tags)
         }
+        // This week's Spotlight entry is otherwise read only by the Feed and the sort deck, so a
+        // cold launch straight into the Darkroom never offered "Send to Spotlight too" (nightly
+        // review, 2026-11-10).
+        .task { if feed.currentSpotlightEntry == nil { await feed.refreshOwnSpotlightEntry() } }
     }
 
     private var header: some View {
@@ -213,10 +217,14 @@ struct DeskPostView: View {
         onPosted(count)
         Task {
             var failed = 0
+            var tagsFailed = false
             for photo in ordered {
                 do {
                     let created = try await service.createPost(photo: photo, caption: capturedCaptions[photo.id],
                                                                userId: uid, tags: capturedTags)
+                    // The post is live; only its tags didn't attach. Said after, like 1.6's
+                    // composer, never reported as a full success (nightly review, 2026-11-10).
+                    if shouldWarnThatTagsDidNotSave(created.tagsSaved) { tagsFailed = true }
                     if photo.id == spotlightPhotoId {
                         await service.putUpForSpotlight(created.post)
                     }
@@ -230,6 +238,9 @@ struct DeskPostView: View {
                 UndoCenter.shared.showNotice(failed == count
                     ? "Couldn't post. Your shots are still in the Darkroom; try again when you're connected."
                     : "\(failed) of \(count) didn't post. They're still in the Darkroom; try again when you're connected.")
+            } else if tagsFailed {
+                Haptics.error()
+                UndoCenter.shared.showNotice("Posted, but the tags didn't save. Try again from Edit tags.")
             } else {
                 Haptics.success()
             }

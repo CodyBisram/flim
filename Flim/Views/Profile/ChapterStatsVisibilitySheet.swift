@@ -21,13 +21,13 @@ struct ChapterStatsVisibilitySheet: View {
             }
         } else {
             NavigationStack {
-                ZStack { ProgressView().tint(.white) }
+                ZStack { ProgressView().tint(FlimTheme.textPrimary) }
                     .navigationBarTitleDisplayMode(.inline)
                     .flimInlineTitle("Chapter stats")
                     .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                            Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                         }
                     }
             }
@@ -92,7 +92,7 @@ private struct ChapterStatsVisibilityContent: View {
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -136,7 +136,7 @@ private struct ChapterStatsVisibilityContent: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(toggle.title)
                     .flimFont(15, relativeTo: .body)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                 Text(toggle.subtitle)
                     .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textTertiary)
@@ -186,7 +186,7 @@ struct ChapterStatsPickerDemoHost: View {
         ZStack {
             DeskGround()
             Button("Reopen") { showSheet = true }
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
         }
         .sheet(isPresented: $showSheet) {
             ChapterStatsVisibilityContent(initialPublicKeys: []) { _ in }

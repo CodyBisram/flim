@@ -72,6 +72,9 @@ struct DeskFriendsView: View {
                 if let notice { FlimToast(notice, kind: .error).padding(.top, 8) }
             }
             .task { await load() }
+            // Its own capsule: a sheet draws over the app's, so taking back a friend here
+            // otherwise showed no Undo and no failure line (nightly review, 2026-11-12).
+            .undoCapsuleHost(bottomPadding: 24)
             .sheet(isPresented: $showFind, onDismiss: { Task { await load() } }) { DiscoverPeopleView() }
         }
         .flimSheetSurface()
@@ -80,7 +83,9 @@ struct DeskFriendsView: View {
     private var tabs: some View {
         HStack(spacing: 24) {
             tabButton(.friends, "Friends \(friends.count)")
-            tabButton(.requests, "Requests \(incoming.count)")
+            // Both directions, the same rows the tab lists, so the count never reads 0 over
+            // requests you sent (nightly review, 2026-11-10).
+            tabButton(.requests, "Requests \(incoming.count + outgoing.count)")
             Spacer()
         }
         .padding(.horizontal, 24)

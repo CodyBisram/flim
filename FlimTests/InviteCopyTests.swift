@@ -94,8 +94,10 @@ struct InviteCopyTests {
         // n + 1 gaps in total. Getting this wrong by one gap is what makes a strip's last frame
         // sit flush against the cut edge with no film around it.
         let m = FilmStripMetrics.self
-        #expect(m.width(frameCount: 1) == m.frameWidth + 2 * m.frameGap)
-        #expect(m.width(frameCount: 3) == 3 * m.frameWidth + 4 * m.frameGap)
+        // Compared within a hair, not with `==`: this toolchain's #expect reported 84.0 == 84.0
+        // as false for these CGFloat expressions.
+        #expect(abs(m.width(frameCount: 1) - (m.frameWidth + 2 * m.frameGap)) < 0.001)
+        #expect(abs(m.width(frameCount: 3) - (3 * m.frameWidth + 4 * m.frameGap)) < 0.001)
     }
 
     @Test("an empty strip has no width, rather than two margins of nothing")
