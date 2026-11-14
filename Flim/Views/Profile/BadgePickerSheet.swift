@@ -334,16 +334,11 @@ private struct BadgePickerContent: View {
             toggle(badge.id)
         } label: {
             VStack(spacing: 8) {
-                DeskSeal(badge: badge, scale: 1.4)
+                DeskSeal(badge: badge, scale: 1.4, selected: position != nil)
                     .opacity(developed ? 1 : 0.4)
                     .blur(radius: developed ? 0 : 6)
                     .animation(.easeOut(duration: 0.7), value: developed)
                     .frame(width: 100, height: 100)
-                    .overlay {
-                        if position != nil {
-                            Circle().strokeBorder(FlimTheme.textPrimary, lineWidth: 1.5)
-                        }
-                    }
                     .overlay(alignment: .topTrailing) {
                         if let position, order.count > 1 {
                             Text("\(position)")

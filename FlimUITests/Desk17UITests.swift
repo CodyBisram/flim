@@ -377,6 +377,33 @@ final class Desk17UITests: XCTestCase {
         }
     }
 
+    /// Your page's header sits just under the bar's glyphs, and chosen seals are outlined in
+    /// their own shapes (owner, 2026-11-14), on Slate as the owner's phone runs it.
+    func testPageHeaderAndChosenSeals() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "slate"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Friends"].firstMatch.waitForExistence(timeout: 15))
+        sleep(2)
+        shot("page_header_slate")
+
+        app.terminate()
+        app.launchArguments = ["-badgePickerDemo", "-desk", "slate"]
+        app.launch()
+        let custom = app.buttons["Custom"].firstMatch
+        XCTAssertTrue(custom.waitForExistence(timeout: 15))
+        sleep(6)
+        custom.tap()
+        for name in ["Founder", "Full Set", "First In"] {
+            let seal = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", name)).firstMatch
+            if seal.exists { seal.tap(); break }
+        }
+        let second = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Kept One' OR label CONTAINS[c] 'Open Door'")).firstMatch
+        if second.exists { second.tap() }
+        sleep(1)
+        shot("seals_chosen_slate")
+    }
+
     /// The screens built this week on the Duo's closed display (466 x 678, rail on the trailing
     /// edge): the Rolls list, the sealed roll and the month box.
     func testClosedDuoNewScreens() {

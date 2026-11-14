@@ -589,7 +589,9 @@ struct UserPageView: View {
     /// Friends, Seals. Someone else's: Add friend, Requested or Friends.
     private func deskPageHeader(topInset: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Color.clear.frame(height: topInset + 26)
+            // The page scrolls under the bar, so this clears it; the name row then sits just
+            // under the bar's glyphs rather than a whole bar's height below them.
+            Color.clear.frame(height: max(0, topInset - 14))
             HStack(spacing: 16) {
                 Button { if avatarURL != nil { showAvatarViewer = true } } label: {
                     Circle()
