@@ -17,9 +17,9 @@ final class Desk17Tests: XCTestCase {
         XCTAssertNil(Desk.system.colorScheme)
     }
 
-    func testTheAppStoreBuildLeaves17Off() {
-        // Unit tests run in Debug, the App Store app's configuration: 1.7 must be off there.
-        XCTAssertFalse(AppInfo.is17)
+    func testTheAppStoreBuildHas17On() {
+        // Unit tests run in Debug, the App Store app's configuration: 1.7 is on there from 1.7.
+        XCTAssertTrue(AppInfo.is17)
     }
 }
 

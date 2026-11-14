@@ -2152,7 +2152,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -2240,7 +2240,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2353,7 +2353,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
@@ -2420,7 +2420,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG FLIM_17";
@@ -2553,7 +2553,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -2597,7 +2597,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2617,17 +2617,18 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DCU7GHRVUQ;
 				ENABLE_PREVIEWS = YES;
-				FLIM_LAUNCH_COLOR = LaunchBlack;
-				FLIM_UI_STYLE = Dark;
+				FLIM_LAUNCH_COLOR = V2LaunchDesk;
+				FLIM_UI_STYLE = Automatic;
 				INFOPLIST_FILE = Flim/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG FLIM_17";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -2730,7 +2731,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
@@ -2759,7 +2760,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
@@ -2783,7 +2784,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2806,7 +2807,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2826,19 +2827,20 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DCU7GHRVUQ;
 				ENABLE_PREVIEWS = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = "V2*.swift *.ttf OFL-*.txt";
-				FLIM_LAUNCH_COLOR = LaunchBlack;
-				FLIM_UI_STYLE = Dark;
+				EXCLUDED_SOURCE_FILE_NAMES = "V2*.swift";
+				FLIM_LAUNCH_COLOR = V2LaunchDesk;
+				FLIM_UI_STYLE = Automatic;
 				INFOPLIST_FILE = Flim/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.4;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = FLIM_17;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
