@@ -356,7 +356,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         // are still shooting a month later."): as written it measured 361pt against the 337pt the
         // swap-in line has, see `BadgeSwapLineTests.explanationsFitOneLine`.
         case .recruiter:
-            return "Three people you invited still shoot a month later."
+            return "Three you invited still shoot a month later."
         // The two hand-given badges say what happened and stop (owner, 2026-10-01). Who gives them
         // is in `howToEarn` ("the team gives you this"); "Given by Cody." was dropped here, and
         // "Given by the team at FLIM." did not fit the one line this has.

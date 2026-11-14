@@ -99,7 +99,7 @@ struct SilverTrioBadgeTests {
     @Test("copy is the plan's, with the app's name where the plan says FLIM")
     func copy() {
         let app = AppInfo.appName
-        #expect(ProfileBadgeKind.recruiter.explanation == "Three people you invited still shoot a month later.")
+        #expect(ProfileBadgeKind.recruiter.explanation == "Three you invited still shoot a month later.")
         #expect(ProfileBadgeKind.feedback.explanation == "Your feedback changed \(app).")
         #expect(ProfileBadgeKind.bugCatcher.explanation == "You found a bug, and it got fixed.")
         #expect(ProfileBadgeKind.recruiter.howToEarn == "Invite people who stay: three still shooting a month after they join.")
