@@ -20,14 +20,15 @@ struct ChapterPreviewDemoHost: View {
 
     var body: some View {
         if let size = DeskDebugFrame.size {
-            // `-deskFrame WxH` here too: your page at the Duo's open size, with the rail's width
-            // set aside on the leading edge the way 1.7's tabs set it aside.
+            // `-deskFrame WxH` here too: your page at the Duo's size, judged closed or open by the
+            // app's own rule, with the rail's width set aside on its edge the way 1.7's tabs do.
             GeometryReader { screen in
                 let fitWidth = DeskDebugFrame.fitWidth ?? screen.size.width
                 let scale = min(fitWidth / size.width, screen.size.height / size.height)
+                let layout = DeskLayout.resolve(horizontalSizeClass: .compact, size: size)
                 page
-                    .environment(\.deskLayout, .open)
-                    .padding(.leading, DeskTabBar.railSpace)
+                    .environment(\.deskLayout, layout)
+                    .padding(layout.railEdge == .leading ? .leading : .trailing, DeskTabBar.railSpace)
                     .background(DeskGround())
                     .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: 24))

@@ -338,6 +338,32 @@ final class Desk17UITests: XCTestCase {
         XCTAssertTrue(app.buttons["Back to your page"].isHittable, "the box's Back is off screen")
     }
 
+    /// The screens built this week on the Duo's closed display (466 x 678, rail on the trailing
+    /// edge): the Rolls list, the sealed roll and the month box.
+    func testClosedDuoNewScreens() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabRolls", "-rollsFixture", "-desk", "paper",
+                               "-deskFrame", "466x678", "-deskFrameFit", "380"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["DEVELOPING"].waitForExistence(timeout: 15))
+        shot("closed_rolls")
+        let open = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH 'Opens the roll.' AND label BEGINSWITH 'Test, day 2'")).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        open.tap()
+        XCTAssertTrue(app.buttons["Shoot into it"].waitForExistence(timeout: 5), "no sealed roll on the closed display")
+        shot("closed_sealed")
+
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-desk", "paper", "-deskFrame", "466x678", "-deskFrameFit", "380"]
+        app.launch()
+        let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 15), "no month box on the shelf")
+        box.tap()
+        sleep(2)
+        shot("closed_month_box")
+    }
+
     /// The Rolls list (Blend 1, 3c): open rolls as sealed cards under DEVELOPING, developed ones
     /// under OPENED, the unwatched one first and marked New.
     func testRollsListHasDevelopingAndOpened() {
