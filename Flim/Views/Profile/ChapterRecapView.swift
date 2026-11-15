@@ -69,6 +69,9 @@ struct ChapterRecapView: View {
     @State private var showBoxEdit = false
     @State private var boxCoverPhotoId: UUID?
     @State private var asFriendsSee = false
+    /// True once the put-away read (and the cover lookup) in the month's `.task` has landed, so
+    /// Edit cannot open on a stale, incomplete `putAwayPostIds` and un-hide shots on Done.
+    @State private var putAwayLoaded = false
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL],
          docked: Bool = false, onClose: @escaping () -> Void = {}) {
@@ -335,7 +338,7 @@ struct ChapterRecapView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(docked ? "Close" : (isOwnRecap ? "Back to your page" : "Back"))
                 Spacer()
-                if isOwnRecap, !viewModel.monthPhotos.isEmpty {
+                if isOwnRecap, !viewModel.monthPhotos.isEmpty, putAwayLoaded {
                     Button { Haptics.tap(); asFriendsSee = false; showBoxEdit = true } label: {
                         Text("Edit")
                             .flimFont(17, weight: .medium, relativeTo: .body)
@@ -487,6 +490,7 @@ struct ChapterRecapView: View {
                 if boxCoverPhotoId == nil {
                     boxCoverPhotoId = await chapters.monthCoverPhotoId(userId: uid, monthStart: viewModel.chapter.monthStart)
                 }
+                putAwayLoaded = true
             }
         }
         .sheet(isPresented: $showBoxEdit) {
