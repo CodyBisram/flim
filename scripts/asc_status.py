@@ -82,9 +82,33 @@ def fetch_versions():
     return sorted(rows, key=lambda r: r["created"], reverse=True)
 
 
+def fetch_builds(limit=3):
+    """The app's most recent uploads, newest first, with Apple's processing state (PROCESSING,
+    VALID = landed and testable, FAILED, INVALID): [{"build", "version", "state", "uploaded"}]."""
+    bearer = token()
+    apps = [app for app in get(f"/v1/apps?filter[bundleId]={BUNDLE_ID}&fields[apps]=bundleId", bearer)["data"]
+            if app.get("attributes", {}).get("bundleId") == BUNDLE_ID]
+    if not apps:
+        sys.exit(f"no app with bundle id {BUNDLE_ID}")
+    builds = get(f"/v1/builds?filter[app]={apps[0]['id']}&sort=-uploadedDate&limit={limit}"
+                 "&fields[builds]=version,processingState,uploadedDate,preReleaseVersion"
+                 "&include=preReleaseVersion&fields[preReleaseVersions]=version", bearer)
+    trains = {v["id"]: v["attributes"].get("version")
+              for v in builds.get("included", []) if v["type"] == "preReleaseVersions"}
+    rows = []
+    for build in builds["data"]:
+        attrs = build["attributes"]
+        link = (build.get("relationships", {}).get("preReleaseVersion") or {}).get("data")
+        rows.append({"build": attrs.get("version"), "version": trains.get(link["id"]) if link else None,
+                     "state": attrs.get("processingState"), "uploaded": attrs.get("uploadedDate") or ""})
+    return rows
+
+
 def main():
     for row in fetch_versions():
         print(f"ASC_STATUS {row['version']} build={row['build'] or '-'} state={row['state']}")
+    for row in fetch_builds():
+        print(f"ASC_BUILD {row['version'] or '-'} ({row['build']}) processing={row['state']} uploaded={row['uploaded']}")
 
 
 if __name__ == "__main__":
