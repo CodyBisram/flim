@@ -83,6 +83,9 @@ struct DeskEnvironment: ViewModifier {
     @AppStorage(Desk.storageKey) private var deskRaw = Desk.fallback.rawValue
     /// Read so coming back to the app re-reads the phone's own setting for Match system.
     @Environment(\.scenePhase) private var scenePhase
+    /// The ambient system appearance at this point in the tree, read as a tracked dependency so
+    /// Match system follows a live system appearance change while the app stays frontmost too.
+    @Environment(\.colorScheme) private var systemColorScheme
 
     func body(content: Content) -> some View {
         _ = scenePhase
@@ -90,16 +93,7 @@ struct DeskEnvironment: ViewModifier {
         // Match system is the phone's actual setting, applied explicitly. A nil preference does
         // not undo a Paper or Slate one already applied to a screen on show, so switching to
         // Match system left Settings on Paper while its ground went dark (owner, 2026-11-14).
-        return content.preferredColorScheme(desk.colorScheme ?? DeskSystemScheme.current)
-    }
-}
-
-/// The phone's own light or dark setting, read from the screen rather than from a view, whose
-/// traits already carry whatever the app forced.
-enum DeskSystemScheme {
-    @MainActor static var current: ColorScheme {
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        return scene?.screen.traitCollection.userInterfaceStyle == .light ? .light : .dark
+        return content.preferredColorScheme(desk.colorScheme ?? systemColorScheme)
     }
 }
 
