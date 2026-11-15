@@ -18,6 +18,9 @@ struct DeskFriendsView: View {
     @State private var hidden: Set<UUID> = []
     @State private var notice: String?
     @State private var showFind = false
+    /// Pushed onto your page's stack (1.7, owner 2026-11-14) rather than a sheet: no stack or
+    /// Done of its own, and Find and a person's page push on the same stack, full screen.
+    var pushed = false
     @Environment(NetworkMonitor.self) private var network
     /// Offline with nothing loaded: say it failed rather than "No friends yet".
     private var failed: Bool { loaded && !network.isConnected && followers.isEmpty && following.isEmpty }
@@ -33,7 +36,14 @@ struct DeskFriendsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        if pushed {
+            friendsContent
+        } else {
+            NavigationStack { friendsContent }.flimSheetSurface()
+        }
+    }
+
+    private var friendsContent: some View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Friends")
                     .font(DeskType.serif(30, relativeTo: .largeTitle))
@@ -63,8 +73,10 @@ struct DeskFriendsView: View {
             }
             .background(DeskGround())
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
+                if !pushed {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
+                    }
                 }
             }
             .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
@@ -74,10 +86,13 @@ struct DeskFriendsView: View {
             .task { await load() }
             // Its own capsule: a sheet draws over the app's, so taking back a friend here
             // otherwise showed no Undo and no failure line (nightly review, 2026-11-12).
-            .undoCapsuleHost(bottomPadding: 24)
-            .sheet(isPresented: $showFind, onDismiss: { Task { await load() } }) { DiscoverPeopleView() }
-        }
-        .flimSheetSurface()
+            .undoCapsuleHost(bottomPadding: 24, active: !pushed)
+            .deskPlainBack(pushed)
+            .sheet(isPresented: Binding(get: { showFind && !pushed }, set: { showFind = $0 }),
+                   onDismiss: { Task { await load() } }) { DiscoverPeopleView() }
+            .navigationDestination(isPresented: Binding(get: { showFind && pushed }, set: { showFind = $0 })) {
+                DiscoverPeopleView(pushed: true)
+            }
     }
 
     private var tabs: some View {

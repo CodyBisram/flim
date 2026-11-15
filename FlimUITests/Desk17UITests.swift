@@ -95,8 +95,9 @@ final class Desk17UITests: XCTestCase {
             find.tap()
             XCTAssertTrue(app.buttons["Join a roll by code"].waitForExistence(timeout: 5), "Find has no join-by-code row")
             shot("find")
-            app.buttons["Done"].firstMatch.tap()
-            XCTAssertTrue(bar("Feed").waitForExistence(timeout: 5))
+            // A full screen with Back now, like Activity (owner, 2026-11-14).
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5), "Back did not return from Find")
         }
 
         // A name on a feed card pushes that person's page; the desk's bar stays, the system's
@@ -138,6 +139,37 @@ final class Desk17UITests: XCTestCase {
         shot("settings_paper")
         app.swipeUp()
         shot("settings_paper_lower")
+    }
+
+    /// Match system on a dark phone turns Settings itself dark, not only the ground behind it
+    /// (owner, 2026-11-14). Needs the simulator's appearance set to dark first
+    /// (`xcrun simctl ui <device> appearance dark`); skipped otherwise.
+    func testMatchSystemFollowsADarkPhone() throws {
+        guard ProcessInfo.processInfo.environment["FLIM_SYSTEM_DARK"] == "1" else {
+            throw XCTSkip("set the simulator to dark and FLIM_SYSTEM_DARK=1")
+        }
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo"]
+        app.launch()
+        let gear = app.buttons["Settings"].firstMatch
+        XCTAssertTrue(gear.waitForExistence(timeout: 15))
+        gear.tap()
+        let paper = app.buttons["Paper"].firstMatch
+        if !paper.waitForExistence(timeout: 5) { app.swipeUp() }
+        XCTAssertTrue(paper.waitForExistence(timeout: 5), "no desk picker in Settings")
+        paper.tap()
+        sleep(1)
+        app.buttons["Match system"].firstMatch.tap()
+        sleep(1)
+        shot("settings_match_system_dark")
+        let image = XCUIScreen.main.screenshot().image
+        guard let cg = image.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else {
+            return XCTFail("no screenshot")
+        }
+        // Settings' own ground, at its left edge, a third of the way down.
+        let offset = Int(Double(cg.height) * 0.33) * cg.bytesPerRow + 8 * (cg.bitsPerPixel / 8)
+        let brightness = (CGFloat(bytes[offset]) + CGFloat(bytes[offset + 1]) + CGFloat(bytes[offset + 2])) / (3 * 255)
+        XCTAssertLessThan(brightness, 0.3, "Match system on a dark phone left Settings light")
     }
 
     /// Friends from your page (Blend 1, 4c): the two tabs are there and switch.

@@ -474,7 +474,9 @@ struct UserPageView: View {
             FollowListView(userId: userId, mode: list)
         }
         // 1.7's Friends and requests (Blend 1, 4c).
-        .sheet(isPresented: $showDeskFriends) { DeskFriendsView() }
+        // A full screen with Back, not a sheet (owner, 2026-11-14): a page opened from it is then
+        // full screen too.
+        .navigationDestination(isPresented: $showDeskFriends) { DeskFriendsView(pushed: true) }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await load() } }) {
             ProfileView()
         }
@@ -617,11 +619,36 @@ struct UserPageView: View {
                         .foregroundStyle(FlimTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text([profile?.handle ?? (isSelf ? auth.currentUser?.username.map { "@\($0)" } : nil) ?? "@ ", deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" }]
-                            .compactMap { $0 }.joined(separator: " · "))
-                        .flimFont(14, relativeTo: .subheadline)
-                        .foregroundStyle(FlimTheme.textSecondary)
-                        .lineLimit(1)
+                    HStack(spacing: 0) {
+                        Text([profile?.handle ?? (isSelf ? auth.currentUser?.username.map { "@\($0)" } : nil) ?? "@ ", deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" }]
+                                .compactMap { $0 }.joined(separator: " · "))
+                            .flimFont(14, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .lineLimit(1)
+                        // Friends, said quietly beside the handle rather than as a big button in
+                        // the middle of the page (owner, 2026-11-14). A tap offers Remove friend,
+                        // so it can't be undone by accident.
+                        if !isSelf, !isBlocked, isFollowing, followsMe {
+                            Text(" · ")
+                                .flimFont(14, relativeTo: .subheadline)
+                                .foregroundStyle(FlimTheme.textSecondary)
+                            Menu {
+                                Button(role: .destructive) { toggleFollow() } label: {
+                                    Label("Remove friend", systemImage: "person.badge.minus")
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                                    Text("Friends")
+                                }
+                                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                                .foregroundStyle(FlimTheme.ink(accent))
+                                .fixedSize()
+                            }
+                            .accessibilityLabel("Friends")
+                            .accessibilityHint("Shows the option to remove them as a friend")
+                        }
+                    }
                 }
                 Spacer(minLength: 8)
                 if let seal = displayedBadges.first, !isBlocked {
@@ -649,19 +676,10 @@ struct UserPageView: View {
                     VStack(spacing: 8) { deskPageButtons }
                 }
                 FirstVisitLine(surface: .profile)
-            } else if false {
-                HStack(spacing: 8) {
-                    deskBoxButton("Edit page") { showEditProfile = true }
-                    deskBoxButton("Friends") { showDeskFriends = true }
-                    deskBoxButton(unseenBadgeCount > 0 ? "Seals ·" : "Seals") { showBadgePicker = true }
-                        .overlay(alignment: .topTrailing) {
-                            if unseenBadgeCount > 0 {
-                                Circle().fill(FlimTheme.newRed).frame(width: 8, height: 8).offset(x: -6, y: 4)
-                            }
-                        }
-                }
-                FirstVisitLine(surface: .profile)
-            } else if !isBlocked {
+            } else if !isBlocked, !(isFollowing && followsMe), !gridPosts.isEmpty {
+                // Add friend or Requested: an action, so a button. Friends lives by the handle.
+                // Only over a page of photos: with none, the locked note below carries the one
+                // button (owner, 2026-11-14: two Add friend buttons on a stranger's page).
                 let state = FeedService.FollowRelationship.deskState(following: isFollowing, followsMe: followsMe)
                 Button { toggleFollow() } label: {
                     DeskPill(FeedService.FollowRelationship.deskLabel(state),
@@ -1123,17 +1141,25 @@ struct UserPageView: View {
     /// `FilmStripGrid` lays out identified items; the skeleton has none, so this stands in.
     private struct SkeletonFrame: Identifiable { let id: Int }
 
+    /// What a page you can't see yet says above its one button. With a SPOTLIGHT shelf above,
+    /// some of their photos are already on screen, so it's "the rest".
+    private var lockedLine: String {
+        let rest = spotlightWeeks.isEmpty ? "their photos" : "the rest of their photos"
+        guard AppInfo.is17 else { return "Follow \(profile?.handle ?? "them") to see \(rest)." }
+        let name = profile?.handle ?? "them"
+        if isFollowing { return "Requested. You'll see \(rest) when \(name) adds you back." }
+        if followsMe { return "Add \(name) back to see \(rest)." }
+        return "Add \(name) as a friend to see \(rest)."
+    }
+
     private var emptyState: some View {
         VStack(spacing: 10) {
-            if !isSelf && !isFollowing {
-                // Posts are readable by followers (2026-09-13). The server returns nothing here
-                // until you follow, so say what following does rather than "No posts yet".
+            if !isSelf && (AppInfo.is17 ? !(isFollowing && followsMe) : !isFollowing) {
+                // Posts are readable by followers (2026-09-13), by friends only in 1.7. The server
+                // returns nothing here until then, so say what it takes rather than "No posts yet".
                 Image(systemName: "eye.slash")
                     .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
-                // With a SPOTLIGHT shelf above, some of their photos are already on screen.
-                Text(spotlightWeeks.isEmpty
-                     ? "Follow \(profile?.handle ?? "them") to see their photos."
-                     : "Follow \(profile?.handle ?? "them") to see the rest of their photos.")
+                Text(lockedLine)
                     .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 FollowButton(userId: userId)
@@ -1441,12 +1467,23 @@ struct DiscoverPeopleView: View {
     @State private var searchFailed = false
     @State private var searchGeneration = 0   // bumped by Try again to rerun the same query
 
+    /// 1.7 pushes Find onto the screen it came from (Blend 2, 6k: a full screen with Back), so
+    /// a person opened from it is full screen too; 1.6 keeps the sheet.
+    var pushed = false
+
     private var searching: Bool { !searchText.isEmpty }
     private var searchSettled: Bool { searching && answeredQuery == searchText && !searchFailed }
     private var searchInFlight: Bool { searching && answeredQuery != searchText }
 
     var body: some View {
-        NavigationStack {
+        if pushed {
+            findContent.background(DeskGround()).deskPlainBack()
+        } else {
+            NavigationStack { findContent }.flimSheetSurface()
+        }
+    }
+
+    private var findContent: some View {
             ZStack {
                 VStack(spacing: 0) {
                     PeopleSearchField(query: $searchText, prompt: "Search by name or username")
@@ -1520,8 +1557,10 @@ struct DiscoverPeopleView: View {
             .flimInlineTitle(AppInfo.is17 ? "Find" : "Find friends")
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
+                if !pushed {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
+                    }
                 }
             }
             .sheet(isPresented: $showInvite) { InviteSheet() }
@@ -1547,8 +1586,6 @@ struct DiscoverPeopleView: View {
                 if let found { results = found; searchFailed = false } else { searchFailed = true }
                 answeredQuery = query
             }
-        }
-        .flimSheetSurface()
     }
 
     /// Why each group of people is here. Uppercase tracked caps, the same voice as the old

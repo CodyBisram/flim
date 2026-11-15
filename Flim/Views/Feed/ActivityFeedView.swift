@@ -213,7 +213,17 @@ struct ActivityFeedView: View {
                             .multilineTextAlignment(.center).padding(.horizontal, 50)
                     }
                 } else if !loaded {
-                    ProgressView().tint(FlimTheme.textPrimary)
+                    if AppInfo.is17 {
+                        // The title is already where it will be when the list lands.
+                        VStack(spacing: 0) {
+                            deskTitle
+                            Spacer()
+                            ProgressView().tint(FlimTheme.textPrimary)
+                            Spacer(); Spacer()
+                        }
+                    } else {
+                        ProgressView().tint(FlimTheme.textPrimary)
+                    }
                 } else {
                     ScrollView {
                         if AppInfo.is17 { deskTitle }
@@ -238,6 +248,10 @@ struct ActivityFeedView: View {
                     .refreshableToCompletion { await load(keepingOnFailure: true) }
                 }
             }
+            // The whole screen, in every state: a bare spinner sized the stack to itself, and the
+            // desk's ground behind it covered only that much, leaving the rest of the screen plain
+            // white or black while Activity loaded (owner, 2026-11-14).
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if let toastMessage {
                     FlimToast(toastMessage, kind: .error)
@@ -633,7 +647,7 @@ private struct ActivityChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         if embedded {
-            content
+            content.deskPlainBack()
         } else {
             content
                 .flimInlineTitle("Activity")

@@ -519,11 +519,16 @@ struct EditProfileView: View {
                             divider
                             editRow("Bio", value: bio ?? "Add a bio…",
                                     isPlaceholder: bio == nil) { showEditBio = true }
-                            divider
-                            editRow("Cover photo", value: "Change", isPlaceholder: true) { showCoverPicker = true }
-                            divider
-                            editRow("Badges", value: badgesSummary,
-                                    isPlaceholder: auth.currentUser?.displayedBadges == nil) { showBadgePicker = true }
+                            // 1.7's page has no cover banner, and its own Seals button opens the
+                            // drawer, so neither row has anything left to do here (owner,
+                            // 2026-11-14: the Badges row duplicated the Seals button).
+                            if !AppInfo.is17 {
+                                divider
+                                editRow("Cover photo", value: "Change", isPlaceholder: true) { showCoverPicker = true }
+                                divider
+                                editRow("Badges", value: badgesSummary,
+                                        isPlaceholder: auth.currentUser?.displayedBadges == nil) { showBadgePicker = true }
+                            }
                             divider
                             editRow("Chapter stats", value: "What others see", isPlaceholder: true) { showChapterStatsPicker = true }
                         }

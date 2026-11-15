@@ -164,6 +164,60 @@ struct SwipeBackKeeper: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - Plain Back
+
+extension View {
+    /// 1.7's Back on a pushed screen: a plain chevron like the Feed's header glyphs, with no
+    /// glass circle behind it, and the edge swipe kept (`SwipeBackKeeper`). Your page draws its
+    /// own; Activity, Find and Friends use this (owner, 2026-11-14).
+    func deskPlainBack(_ active: Bool = true) -> some View {
+        modifier(DeskPlainBack(active: active && AppInfo.is17))
+    }
+}
+
+private struct DeskPlainBack: ViewModifier {
+    let active: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .navigationBarBackButtonHidden(true)
+                .background { SwipeBackKeeper().frame(width: 0, height: 0) }
+                .toolbar { DeskBackItem(dismiss: dismiss) }
+        } else {
+            content
+        }
+    }
+}
+
+private struct DeskBackItem: ToolbarContent {
+    let dismiss: DismissAction
+
+    private var button: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 19, weight: .regular))
+                .imageScale(.medium)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+
+    // The same offsets as your page's Back, measured against the Feed's header glyphs.
+    var body: some ToolbarContent {
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: .topBarLeading) { button.offset(x: -6, y: 4) }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { button.offset(x: -2, y: 10) }
+        }
+    }
+}
+
 // MARK: - Top bar
 
 extension View {

@@ -416,24 +416,17 @@ struct FeedView: View {
                     postIds: LiveRefresh.postsToRefresh(feed.feed).map(\.post.id))
             }
         }
-        .sheet(isPresented: $showDiscover) {
-            DiscoverPeopleView()
-        }
+        // 1.7: Find and Activity are full screens with Back on the Feed's stack (Blend 2, 6k);
+        // 1.6 keeps both as sheets. Its own modifier so this body stays small enough to type-check.
+        .modifier(FeedPushedScreens(showDiscover: $showDiscover, showActivity: $showActivity,
+                                    activity: { activityView(embedded: $0) }))
         .sheet(item: $spotlightSheet) { route in
             SpotlightWeeksSheet(focusWeek: route.focusWeek)
         }
         .navigationDestination(item: $spotlightRoute) { route in
             PostDetailView(item: route.item, spotlightWeekKey: route.weekKey)
         }
-        // 1.6 presents Activity as a sheet; 1.7 pushes it onto the Feed (Blend 1, 4d), so the bar
-        // stays and Back returns to the Feed.
-        .sheet(isPresented: Binding(get: { showActivity && !AppInfo.is17 }, set: { showActivity = $0 })) {
-            activityView(embedded: false)
-        }
-        .navigationDestination(isPresented: Binding(get: { showActivity && AppInfo.is17 }, set: { showActivity = $0 })) {
-            activityView(embedded: true)
-        }
-        .onChange(of: routeArrived) { showActivity = false }
+        .onChange(of: routeArrived) { showActivity = false; showDiscover = false }
     }
 
     /// The feed itself under its header: the whole screen on a phone, the left column on the
@@ -1620,3 +1613,28 @@ struct SignedPath: Equatable {
         return SignedPath(path: path, url: url)
     }
 }
+
+/// Find and Activity from the Feed's header: pushed full screens in 1.7 (Blend 1, 4d; Blend 2,
+/// 6k), sheets in 1.6.
+private struct FeedPushedScreens<Activity: View>: ViewModifier {
+    @Binding var showDiscover: Bool
+    @Binding var showActivity: Bool
+    let activity: (Bool) -> Activity
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: Binding(get: { showDiscover && !AppInfo.is17 }, set: { showDiscover = $0 })) {
+                DiscoverPeopleView()
+            }
+            .navigationDestination(isPresented: Binding(get: { showDiscover && AppInfo.is17 }, set: { showDiscover = $0 })) {
+                DiscoverPeopleView(pushed: true)
+            }
+            .sheet(isPresented: Binding(get: { showActivity && !AppInfo.is17 }, set: { showActivity = $0 })) {
+                activity(false)
+            }
+            .navigationDestination(isPresented: Binding(get: { showActivity && AppInfo.is17 }, set: { showActivity = $0 })) {
+                activity(true)
+            }
+    }
+}
+
