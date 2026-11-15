@@ -1146,6 +1146,9 @@ struct MonthBoxEditView: View {
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
                 heldId = photo.id
                 toggleAway(photo)
+                // A hold that ends in a scroll, not a tap, never clears heldId on its own; without
+                // this, the next real tap on this tile is consumed clearing it instead of registering.
+                Task { try? await Task.sleep(for: .seconds(1)); if heldId == photo.id { heldId = nil } }
             })
             .accessibilityElement()
             .accessibilityLabel("Shot from \(photo.takenAt.formatted(date: .abbreviated, time: .shortened))\(isCover ? ", cover" : "")\(away ? ", put away" : "")")
