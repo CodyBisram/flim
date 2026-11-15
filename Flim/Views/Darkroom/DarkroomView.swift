@@ -158,6 +158,15 @@ struct DarkroomView: View {
     @State private var zoom: DarkroomZoom = .month
     @State private var anchor = DarkroomYearMonth(date: .now)
 
+    // MARK: - 1.7: one continuous timeline from the library on the phone
+
+    /// Every kept shot, saved on the phone (`DarkroomLibrary`): 1.7's month rung is one timeline
+    /// from the newest night back to the first, month headings between, with nothing to tap to
+    /// reach an older month. 1.6 keeps the month-at-a-time rung and its paging unchanged.
+    private var usesLibrary: Bool { AppInfo.is17 }
+    @State private var library = DarkroomLibrary.shared
+    @State private var thumbnailWarm: Task<Void, Never>?
+
     // MARK: - The month rung's empty-state evidence (see `DarkroomMonthBodyRule`)
 
     /// One anchor month within one load generation: what an outcome is recorded against and what
@@ -199,6 +208,16 @@ struct DarkroomView: View {
             outcome: anchorFetchOutcomes[currentAnchorFetchKey],
             automaticAttempts: automaticFetchKeys.contains(currentAnchorFetchKey) ? 1 : 0
         )
+    }
+
+    /// The timeline's body: the shots as soon as any are known; the loading skeleton while the
+    /// first sync is still bringing them; the error only when that sync failed with nothing on
+    /// the phone; empty only once the library has reached its end with nothing in it.
+    private var libraryBody: DarkroomMonthBody {
+        if !vm.photos.isEmpty { return .content }
+        if library.syncError != nil, !library.isSyncing { return .error }
+        if library.isLoaded, library.isComplete, !library.isSyncing { return .scopedEmpty }
+        return .skeleton
     }
 
     /// Nothing anywhere says this account has a single kept shot: no server total above zero and
@@ -762,6 +781,10 @@ Text("Darkroom")
             Task { await loadOwnPosts(refresh: false) }
         }
         .onChange(of: anchor) { _, _ in recomputeDayUnits() }
+        // 1.7: the library changed (a sync page, a month check, a delete confirmed elsewhere).
+        .onChange(of: library.revision) { _, _ in
+            if usesLibrary, vm.usesLibrary { vm.adoptLibrary(library.photos) }
+        }
         // A Darkroom that failed to load (a launch with no signal) loads itself when the
         // connection comes back. Nothing happens when nothing failed.
         .onChange(of: network.isConnected) { _, on in
@@ -774,7 +797,7 @@ Text("Darkroom")
         // The 60s develop poll only needs to run while this screen is on it, and an in-flight
         // anchored jump has no reason to keep running once nobody's watching for it to land. A
         // still-pending delete lives in `UndoCenter`, which flushes it on its own terms.
-        .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel() }
+        .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel(); thumbnailWarm?.cancel() }
         .sheet(isPresented: $showDiscover) { DiscoverPeopleView() }
         .sheet(isPresented: $showCreateRoll) { CreateRollView() }
         .sheet(item: $firstFramePostPhoto) { photo in
@@ -811,7 +834,7 @@ Text("Darkroom")
     /// loading/error/empty states, same as before the zoom ladder existed.
     @ViewBuilder
     private var monthContent: some View {
-        let decision = monthBody
+        let decision = usesLibrary ? libraryBody : monthBody
         if decision != .skeleton, decision != .error, let first = firstFrame {
             // A brand-new account's one and only frame, at print size, with the two things you
             // can do with it and the roll introduced as the next shot. Replaces the three
@@ -885,7 +908,7 @@ Text("Darkroom")
             .onScrollGeometryChange(for: Bool.self) { geo in
                 geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 600
             } action: { _, isNearBottom in
-                if isNearBottom, monthPagingActive { Task { await loadMoreIfNeeded() } }
+                if isNearBottom, monthPagingActive, !usesLibrary { Task { await loadMoreIfNeeded() } }
             }
             .refreshableToCompletion { await reload() }
             .onAppear { scrollProxy = proxy }
@@ -907,9 +930,42 @@ Text("Darkroom")
     /// gone, replaced by the zoom ladder. Unit separators stay between every pair of nights, same
     /// as before; the closing row (PR 5) takes the separator's place after the LAST one, once
     /// pagination for this month has genuinely stopped.
+    /// Where a month begins in the timeline: its name and year in the desk's mono, like the
+    /// month labels on your page.
+    private func timelineMonthHeading(_ ym: DarkroomYearMonth, first: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(Self.timelineMonthLabel(ym))
+                .font(DeskType.data(13))
+                .tracking(2.4)
+                .foregroundStyle(FlimTheme.textSecondary)
+            Rectangle().fill(FlimTheme.stroke).frame(height: 1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, first ? 4 : 26)
+        .padding(.bottom, 6)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private static func timelineMonthLabel(_ ym: DarkroomYearMonth) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        guard let date = calendar.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)) else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date).uppercased()
+    }
+
     private var nightList: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(monthScopedUnits) { unit in
+        let units = usesLibrary ? dayUnits : monthScopedUnits
+        let lastUnitId = units.last?.id
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(units.enumerated()), id: \.element.id) { index, unit in
+                // The timeline names each month where it begins (1.7). Not the first: the zoom bar
+                // above already names the month at the top, and follows the scroll from there.
+                if usesLibrary, index > 0, DarkroomYearMonth(date: units[index - 1].dayKey) != DarkroomYearMonth(date: unit.dayKey) {
+                    timelineMonthHeading(DarkroomYearMonth(date: unit.dayKey), first: false)
+                }
                 DarkroomDayUnitView(
                     unit: unit,
                     capacity: stripCapacity,
@@ -936,10 +992,24 @@ Text("Darkroom")
                     },
                     viewingID: docksViewer ? (viewingID ?? dockedStart?.id) : nil
                 )
-                if unit.id != lastMonthScopedUnitId {
+                if unit.id != lastUnitId,
+                   !(usesLibrary && index + 1 < units.count
+                     && DarkroomYearMonth(date: units[index + 1].dayKey) != DarkroomYearMonth(date: unit.dayKey)) {
                     DarkroomUnitSeparator()
                 }
             }
+            if usesLibrary {
+                if !library.isComplete {
+                    // The backfill is still bringing older months.
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small).tint(FlimTheme.textSecondary)
+                        Text("Bringing in older shots")
+                            .flimFont(14, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 64)
+                }
+            } else {
             loadMoreSentinel
             // Only once pagination has genuinely stopped (`loadMoreSentinel` itself has already
             // gone quiet, see its own doc) AND a next-older month is actually known: never shown
@@ -953,6 +1023,7 @@ Text("Darkroom")
                     Haptics.tap()
                     selectMonth(info.month)
                 }
+            }
             }
         }
         .padding(.bottom, 12)
@@ -1213,7 +1284,13 @@ Text("Darkroom")
     /// its own doc for why this used to also carry that trigger and why that broke.
     private func onFrameAppear(_ photo: Photo) async {
         if photo.isReady, vm.signedURLCache[photo.id] == nil {
-            _ = await vm.signedURL(for: photo, photoService: photoService)
+            if usesLibrary {
+                // One batch for the stretch around it, not one round trip per frame.
+                await vm.prefetchAround(photo, photoService: photoService)
+                if vm.signedURLCache[photo.id] == nil { _ = await vm.signedURL(for: photo, photoService: photoService) }
+            } else {
+                _ = await vm.signedURL(for: photo, photoService: photoService)
+            }
         }
     }
 
@@ -1465,6 +1542,7 @@ Text("Darkroom")
                     guard AccountEpoch.isCurrent(epoch) else { return false }
                     model.photos.removeAll { confirmed.contains($0.id) }
                     feedService.dropPosts(forDeletedPhotoIds: Array(confirmed))
+                    DarkroomLibrary.shared.remove(ids: confirmed)
                     return false
                 }
                 model.pendingHiddenIds.subtract(ids)
@@ -1477,6 +1555,7 @@ Text("Darkroom")
                 // holds.
                 model.photos.removeAll { ids.contains($0.id) }
                 feedService.dropPosts(forDeletedPhotoIds: Array(ids))
+                DarkroomLibrary.shared.remove(ids: ids)
                 return true
             })
     }
@@ -1503,6 +1582,7 @@ Text("Darkroom")
             pagerDeleteEpochs.byPhoto.removeValue(forKey: photo.id)
             model.pendingHiddenIds.remove(photo.id)
             model.photos.removeAll { $0.id == photo.id }
+            DarkroomLibrary.shared.remove(ids: [photo.id])
         }
     }
 
@@ -1940,6 +2020,25 @@ Text("Darkroom")
     /// skeleton, the error and empty states): there is nothing to scroll, and the list mounts at
     /// its own top, which is the month's newest night.
     private func landOnAnchorMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy?) {
+        if usesLibrary {
+            // The timeline holds every month: a jump is a scroll. A month the backfill has not
+            // reached yet is read first, then scrolled to.
+            if let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
+                if let proxy { withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) } }
+                if pendingMonthLanding == ym { pendingMonthLanding = nil }
+                return
+            }
+            Task {
+                await library.ensureMonth(ym, photoService: photoService)
+                vm.adoptLibrary(library.photos)
+                recomputeDayUnits()
+                if let proxy, let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
+                    withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) }
+                }
+                if pendingMonthLanding == ym { pendingMonthLanding = nil }
+            }
+            return
+        }
         if let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
             // This landing is authoritative now: bump the token so any anchored fetch still
             // running for an earlier target (cancelled below, but possibly already past its own
@@ -2116,7 +2215,26 @@ Text("Darkroom")
             if vm.photos.isEmpty {
                 let fixture = PagerPreviewDemoHost.makeFixture()
                 vm.signedURLCache = fixture.urls
-                vm.photos = fixture.photos
+                if usesLibrary {
+                    // The timeline needs months to scroll through: the same four frames again in
+                    // each of the five months before this one, on the same image files.
+                    var photos = fixture.photos
+                    for monthsBack in 1...5 {
+                        for original in fixture.photos {
+                            let id = UUID()
+                            let at = Calendar.current.date(byAdding: .month, value: -monthsBack, to: original.takenAt) ?? original.takenAt
+                            photos.append(Photo(id: id, userId: original.userId, rollId: nil, storagePath: original.storagePath,
+                                                thumbPath: original.thumbPath, feedPath: original.feedPath, takenAt: at,
+                                                developsAt: at, isDeveloped: true, caption: nil, isSorted: true))
+                            vm.signedURLCache[id] = fixture.urls[original.id]
+                        }
+                    }
+                    vm.usesLibrary = true
+                    library.installFixture(photos, userId: fixture.photos.first?.userId ?? UUID())
+                    vm.adoptLibrary(library.photos)
+                } else {
+                    vm.photos = fixture.photos
+                }
             }
             return
         }
@@ -2148,6 +2266,24 @@ Text("Darkroom")
         loadGeneration += 1
         anchorFetchOutcomes = [:]
         automaticFetchKeys = []
+        if usesLibrary {
+            // 1.7: the saved library shows at once, then syncs (see `DarkroomLibrary`).
+            vm.usesLibrary = true
+            library.open(userId: userId)
+            vm.adoptLibrary(library.photos)
+            async let count = photoService.personalPhotoCount(userId: userId)
+            await library.sync(photoService: photoService)
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            vm.adoptLibrary(library.photos)
+            if let total = await count { vm.totalCount = total }
+            vm.error = vm.photos.isEmpty ? library.syncError : nil
+            vm.startLibraryPolling(photoService: photoService)
+            await vm.prefetchURLs(photoService: photoService)
+            // Older thumbnails come in behind, so scrolling back never waits (cancelled with the screen).
+            thumbnailWarm?.cancel()
+            let scale = displayScale
+            thumbnailWarm = Task { await library.warmThumbnails(photoService: photoService, scale: scale) }
+        } else {
         let fetchKey: AnchorFetchKey? = zoom == .month ? AnchorFetchKey(anchor: anchor, generation: loadGeneration) : nil
         let loadOutcome: DarkroomViewModel.LoadOutcome
         if anchoredBranch {
@@ -2158,6 +2294,7 @@ Text("Darkroom")
         if let fetchKey, AccountEpoch.isCurrent(epoch) {
             let anchorHasRows = !DarkroomDayUnit.units(from: vm.photos, anchor: fetchKey.anchor).isEmpty
             recordAnchorFetch(fetchKey, DarkroomMonthBodyRule.outcome(for: loadOutcome, anchorHasRows: anchorHasRows))
+        }
         }
         if let resolvedSummaries = await summaries, AccountEpoch.isCurrent(epoch) {
             monthSummaries = resolvedSummaries
@@ -2197,7 +2334,7 @@ Text("Darkroom")
         // window: a roll that developed while you were parked on last month would never get
         // its reveal, permanently. The anchored branch leaves the watermark alone so the next
         // present-anchored reload still gets its chance.
-        if !anchoredBranch { checkForReveal() }
+        if !anchoredBranch || usesLibrary { checkForReveal() }
         // The library is loaded now, so a pending widget tap can finally be answered — or
         // recognised as pointing at something that is gone.
         openRequestedPhoto()

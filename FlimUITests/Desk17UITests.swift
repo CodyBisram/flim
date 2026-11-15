@@ -404,6 +404,24 @@ final class Desk17UITests: XCTestCase {
         shot("seals_chosen_slate")
     }
 
+    /// The Darkroom is one timeline (owner, 2026-11-14): scrolling down runs from this month into
+    /// the ones before it, each named where it begins, with nothing to tap to reach the next.
+    func testDarkroomIsOneContinuousTimeline() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabDarkroom", "-darkroomFixture", "-desk", "paper"]
+        app.launch()
+        // The headings name each older month where it begins (the zoom bar names the top one).
+        let headings = app.staticTexts.matching(NSPredicate(format: "label MATCHES '^[A-Z]+ 20[0-9][0-9]$'"))
+        XCTAssertTrue(headings.firstMatch.waitForExistence(timeout: 15), "no month heading in the timeline")
+        shot("darkroom_timeline_top")
+        let seenAtTop = Set(headings.allElementsBoundByIndex.map(\.label))
+        for _ in 0..<4 { app.swipeUp(velocity: .fast) }
+        sleep(1)
+        shot("darkroom_timeline_scrolled")
+        let seenLater = Set(headings.allElementsBoundByIndex.map(\.label))
+        XCTAssertFalse(seenLater.subtracting(seenAtTop).isEmpty, "scrolling down never reached an older month")
+    }
+
     /// The screens built this week on the Duo's closed display (466 x 678, rail on the trailing
     /// edge): the Rolls list, the sealed roll and the month box.
     func testClosedDuoNewScreens() {
@@ -684,5 +702,29 @@ final class Desk17LiveUITests: XCTestCase {
         hold(" AND label CONTAINS 'put away'")
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Friends see'")).firstMatch.exists,
                        "bringing the shot back left it put away")
+    }
+
+    /// The Darkroom as one timeline against FLIM Dev: the library syncs, scrolling runs back
+    /// through older months, and a relaunch opens straight from what the phone saved.
+    func testDarkroomTimelineWithARealAccount() {
+        bar("Darkroom").tap()
+        let headings = app.staticTexts.matching(NSPredicate(format: "label MATCHES '^[A-Z]+ 20[0-9][0-9]$'"))
+        sleep(6)   // the first sync
+        shot("darkroom_live_top")
+        var seen = Set(headings.allElementsBoundByIndex.map(\.label))
+        for _ in 0..<10 {
+            app.swipeUp(velocity: .fast)
+            seen.formUnion(headings.allElementsBoundByIndex.map(\.label))
+        }
+        shot("darkroom_live_scrolled")
+        XCTAssertGreaterThanOrEqual(seen.count, 1, "the timeline never showed an older month's heading")
+
+        // Relaunch: the library is on the phone, so the frames are there before any sync lands.
+        app.terminate()
+        app.launch()
+        bar("Darkroom").tap()
+        let frame = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Photo' OR label BEGINSWITH 'Shot'")).firstMatch
+        XCTAssertTrue(frame.waitForExistence(timeout: 4), "the Darkroom did not open from the saved library")
+        shot("darkroom_live_relaunch")
     }
 }

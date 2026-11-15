@@ -189,6 +189,7 @@ struct ContentView: View {
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
             chapters.resetForAccountChange()
+            DarkroomLibrary.shared.reset()
             tabSignals.resetForAccountChange()
             // Restored synchronously, right here, rather than waiting for RollsView's own
             // `fetchRolls` call: this runs before MainTabView (and so RollsView) ever mounts for

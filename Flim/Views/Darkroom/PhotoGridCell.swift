@@ -297,6 +297,11 @@ enum DiskImageCache {
     ///
     /// Deliberately in the same directory as the sized entries, so `trim()` bounds it too without
     /// a second budget to keep in sync.
+    /// Whether this path's raw bytes are on the device, without reading them.
+    static func hasRaw(path: String) -> Bool {
+        FileManager.default.fileExists(atPath: file("raw|" + path).path)
+    }
+
     static func loadRaw(path: String) async -> Data? {
         await Task.detached(priority: .userInitiated) {
             let url = file("raw|" + path)

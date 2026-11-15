@@ -139,6 +139,44 @@ final class DarkroomViewModel {
         ownsSharedList(photoService) ? photoService.hasMore : true
     }
 
+    // MARK: - 1.7: the library on the phone
+
+    /// 1.7: `photos` mirrors `DarkroomLibrary` (every kept shot, saved on the phone) instead of
+    /// the shared paging session, so the Darkroom is one continuous timeline. Set by
+    /// `DarkroomView` before its first load; never on in 1.6.
+    var usesLibrary = false
+
+    /// Takes the library's rows as `photos`, through the same hidden-delete filter as `assign`.
+    /// Readiness is time-based, so the develop flag is brought up to date locally as it lands.
+    func adoptLibrary(_ rows: [Photo]) {
+        let next = filterHiddenPhotos(rows, hiding: pendingHiddenIds).map { photo -> Photo in
+            guard photo.isReady, !photo.isDeveloped else { return photo }
+            var updated = photo
+            updated.isDeveloped = true
+            return updated
+        }
+        guard next.map(\.id) != photos.map(\.id) || next.map(\.isDeveloped) != photos.map(\.isDeveloped)
+                || next.map(\.displayPath) != photos.map(\.displayPath) else { return }
+        photos = next
+        ownedSession = nil
+    }
+
+    /// Download links for the frames around one that just scrolled into view, in one batch: a
+    /// library of thousands is never signed all at once, only the stretch being looked at.
+    /// Buckets of 60 are asked for once each per hour-long link lifetime.
+    func prefetchAround(_ photo: Photo, photoService: PhotoService) async {
+        guard let index = photos.firstIndex(where: { $0.id == photo.id }) else { return }
+        let bucket = index / Self.windowSize
+        let now = Date.now
+        if let asked = windowAsked[bucket], now.timeIntervalSince(asked) < 3000 { return }
+        windowAsked[bucket] = now
+        let start = bucket * Self.windowSize
+        let end = min(photos.count, start + Self.windowSize * 2)
+        await prefetchURLs(for: Array(photos[start..<end]), photoService: photoService)
+    }
+    private static let windowSize = 60
+    private var windowAsked: [Int: Date] = [:]
+
     private func recomputeSplits() {
         developingPhotos = photos.filter { !$0.isReady }
         developedPhotos = photos.filter(\.isReady)
@@ -331,9 +369,16 @@ final class DarkroomViewModel {
     /// thought every already-seen photo was still covered, and every one of those cells fell back
     /// to `onFrameAppear`'s per-cell mint one row at a time instead of re-batching here.
     func prefetchURLs(photoService: PhotoService) async {
+        // The library can hold thousands: only the newest stretch up front, the rest as it
+        // scrolls into view (`prefetchAround`).
+        await prefetchURLs(for: usesLibrary ? Array(photos.prefix(Self.windowSize * 2)) : photos,
+                           photoService: photoService)
+    }
+
+    func prefetchURLs(for candidates: [Photo], photoService: PhotoService) async {
         let now = Date.now
         let freshIds = Set(signedURLCache.keys.filter { (urlExpiry[$0] ?? .distantPast) > now })
-        let ready = photosNeedingSignedURL(photos, cached: freshIds)
+        let ready = photosNeedingSignedURL(candidates, cached: freshIds)
         guard !ready.isEmpty else { return }
         // Grid shows the thumbnail (displayPath), tiny download vs the full image.
         let map = await photoService.signedURLs(for: ready.map(\.displayPath))
@@ -373,6 +418,11 @@ final class DarkroomViewModel {
 
     private func markReadyPhotos(photoService: PhotoService, notify: Bool = false) async {
         let before = developedPhotos.count
+        // The library is this list's own source, never the shared session.
+        if usesLibrary {
+            markReadyLocally(notify: notify, before: before)
+            return
+        }
         // The shared list is someone else's now (see `ownedSession`): never copy it in. Readiness
         // is time-based, so a shot crossing its develop time still moves buckets from this list
         // alone; the server's `is_developed` flag catches up on the next fetch this list owns.
@@ -423,6 +473,11 @@ final class DarkroomViewModel {
             return updated
         }
         if notify, developedPhotos.count > before { Haptics.reveal() }
+    }
+
+    /// The 60s develop poll for the library: the same loop, started once.
+    func startLibraryPolling(photoService: PhotoService) {
+        if refreshTask == nil { startRefreshLoop(photoService: photoService) }
     }
 
     // Polls every 60s to reveal newly developed photos.

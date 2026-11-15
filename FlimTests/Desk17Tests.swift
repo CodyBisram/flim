@@ -107,3 +107,52 @@ final class RevealClosingLineTests: XCTestCase {
         XCTAssertNil(RevealClosingLine.credits(shots: shots([gem, gem]), names: names, me: me))
     }
 }
+
+final class DarkroomLibraryMergeTests: XCTestCase {
+    private let base = Date(timeIntervalSince1970: 1_790_000_000)   // November 2026
+    private func photo(_ minutesAgo: Double, id: UUID = UUID()) -> Photo {
+        let at = base.addingTimeInterval(-minutesAgo * 60)
+        return Photo(id: id, userId: UUID(), rollId: nil, storagePath: "u/\(id.uuidString).jpg",
+                     thumbPath: nil, feedPath: nil, takenAt: at, developsAt: at,
+                     isDeveloped: true, caption: nil, isSorted: true)
+    }
+
+    func testTheHeadReplacesWhatItSpansAndKeepsOlderRows() {
+        let gone = photo(5), kept = photo(10), old = photo(60 * 24 * 40)
+        let fresh = photo(1)
+        // Server head now: fresh + kept (gone was deleted elsewhere); old is beyond the head.
+        let merged = DarkroomLibraryMerge.replacingHead([gone, kept, old], with: [fresh, kept], reachedEnd: false)
+        XCTAssertEqual(merged.map(\.id), [fresh.id, kept.id, old.id])
+    }
+
+    func testAHeadThatIsTheWholeLibraryDropsEverythingElse() {
+        let a = photo(1), b = photo(2), stale = photo(500)
+        XCTAssertEqual(DarkroomLibraryMerge.replacingHead([a, b, stale], with: [a, b], reachedEnd: true).map(\.id), [a.id, b.id])
+        XCTAssertEqual(DarkroomLibraryMerge.replacingHead([a, stale], with: [], reachedEnd: true).count, 0)
+    }
+
+    func testOlderPagesAppendWithoutDuplicates() {
+        let a = photo(1), b = photo(2), c = photo(3)
+        XCTAssertEqual(DarkroomLibraryMerge.appendingOlder([a, b], [b, c]).map(\.id), [a.id, b.id, c.id])
+    }
+
+    func testAMonthIsReplacedWholesale() {
+        let now = photo(1), monthOld = photo(60 * 24 * 35), monthOld2 = photo(60 * 24 * 36)
+        let month = DarkroomYearMonth(date: monthOld.takenAt)
+        let merged = DarkroomLibraryMerge.replacingMonth([now, monthOld, monthOld2], month: month, with: [monthOld2])
+        XCTAssertEqual(merged.map(\.id), [now.id, monthOld2.id])
+    }
+
+    func testOnlyMonthsWhoseCountsDifferAreRefetched() throws {
+        let a = photo(1), b = photo(2), old = photo(60 * 24 * 40)
+        let thisMonth = DarkroomYearMonth(date: a.takenAt), oldMonth = DarkroomYearMonth(date: old.takenAt)
+        func row(_ ym: DarkroomYearMonth, _ count: Int) throws -> DarkroomMonthSummaryV2 {
+            let start = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)))
+            return DarkroomMonthSummaryV2(monthStart: start, shotCount: count, nightCount: 1, developingCount: 0,
+                                          coverPaths: [], topCoverPath: nil)
+        }
+        // This month matches (2 = 2); the old month differs (1 local, 3 on the server).
+        let stale = DarkroomLibraryMerge.monthsToRefetch(local: [a, b, old], server: [try row(thisMonth, 2), try row(oldMonth, 3)])
+        XCTAssertEqual(stale, [oldMonth])
+    }
+}
