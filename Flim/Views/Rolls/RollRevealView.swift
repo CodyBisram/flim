@@ -107,7 +107,8 @@ struct RollRevealView: View {
 
     private var revealBody: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // 1.7: Slate with its grain (always Slate here), the board's screening (3e).
+            if AppInfo.is17 { DeskGround() } else { Color.black.ignoresSafeArea() }
 
             if viewModel.showCover {
                 coverCard

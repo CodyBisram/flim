@@ -1,4 +1,4 @@
--- Scenario test for 01_month_boxes.sql then 02_mutual_friends.sql, applied in that order on a
+-- Scenario test for 01_month_boxes.sql, 03_review_fixes.sql, then 02_mutual_friends.sql, in that order on a
 -- staging copy (scripts/schema_bootstrap.sh --keep). One transaction, rolled back: nothing
 -- persists. Every row of the final result should read ok = true.
 --   psql postgresql://postgres:postgres@localhost:54329/postgres -v ON_ERROR_STOP=1 \
@@ -69,6 +69,34 @@ UPDATE public.posts SET put_away = false WHERE id = '00000000-0000-0000-0000-000
 RESET ROLE;
 INSERT INTO results SELECT 'a friend cannot bring back someone else''s post',
   (SELECT put_away FROM public.posts WHERE id = '00000000-0000-0000-0000-0000000000e2');
+
+\i supabase/release-1.7/03_review_fixes.sql
+
+-- Step 1b. e1 and the put-away e2 were each chosen in a published Spotlight week.
+INSERT INTO public.spotlight_weeks (week_key, published_at) VALUES ('2026-11-02', now()), ('2026-11-09', now());
+INSERT INTO public.spotlight_entries (post_id, user_id, week_key, chosen_at) VALUES
+ ('00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-00000000b002','2026-11-02', now()),
+ ('00000000-0000-0000-0000-0000000000e2','00000000-0000-0000-0000-00000000b002','2026-11-09', now());
+INSERT INTO results SELECT 'step 1b: a chosen frame is still public',
+  public.spotlight_post_public('00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-00000000d004');
+INSERT INTO results SELECT 'step 1b: a chosen frame put away is not',
+  NOT public.spotlight_post_public('00000000-0000-0000-0000-0000000000e2','00000000-0000-0000-0000-00000000d004');
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000d004","role":"authenticated"}', true);
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000d004', true);
+INSERT INTO results SELECT 'step 1b: a stranger''s view of the shelf skips the put-away frame',
+  NOT EXISTS (SELECT 1 FROM public._spotlight_weeks_for('00000000-0000-0000-0000-00000000b002', NULL, 12) w,
+              jsonb_array_elements(w.frames) f WHERE f->>'post_id' = '00000000-0000-0000-0000-0000000000e2')
+  AND EXISTS (SELECT 1 FROM public._spotlight_weeks_for('00000000-0000-0000-0000-00000000b002', NULL, 12) w,
+              jsonb_array_elements(w.frames) f WHERE f->>'post_id' = '00000000-0000-0000-0000-0000000000e1');
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000b002","role":"authenticated"}', true);
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000b002', true);
+INSERT INTO results SELECT 'step 1b: the author''s own shelf keeps it',
+  EXISTS (SELECT 1 FROM public._spotlight_weeks_for('00000000-0000-0000-0000-00000000b002', NULL, 12) w,
+          jsonb_array_elements(w.frames) f WHERE f->>'post_id' = '00000000-0000-0000-0000-0000000000e2');
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000c003","role":"authenticated"}', true);
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000c003', true);
+INSERT INTO results SELECT 'step 1b: a friend still sees the chosen cover',
+  EXISTS (SELECT 1 FROM public.month_box_covers('00000000-0000-0000-0000-00000000b002') WHERE cover_path = 'b/1.jpg');
 
 \i supabase/release-1.7/02_mutual_friends.sql
 

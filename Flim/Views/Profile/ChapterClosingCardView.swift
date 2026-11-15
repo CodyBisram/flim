@@ -23,6 +23,8 @@ struct ChapterClosingCardView: View {
     let onSelectProfile: (UUID) -> Void
     let onPlayAgain: () -> Void
     let onClose: () -> Void
+    /// 1.7: its own X. Off beside the screening on the open Duo, whose header already has one.
+    var showsClose = true
 
     /// Drives this card's own swipe-to-dismiss, same as the opening card's `cardOffset`: a plain
     /// drag-anywhere gesture, not a paging surface, so `View.swipeToDismiss(offset:onDismiss:)`
@@ -67,15 +69,17 @@ struct ChapterClosingCardView: View {
         }
         .scrollIndicators(.hidden)
         .overlay(alignment: .topTrailing) {
-            Button { Haptics.tap(); onClose() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(FlimTheme.textPrimary)
+            if showsClose {
+                Button { Haptics.tap(); onClose() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                }
+                .accessibilityLabel("Close")
+                .expandTapTarget(by: 14)
+                .padding(.top, 14)
+                .padding(.trailing, 20)
             }
-            .accessibilityLabel("Close")
-            .expandTapTarget(by: 14)
-            .padding(.top, 14)
-            .padding(.trailing, 20)
         }
         .safeAreaInset(edge: .bottom) {
             Button { Haptics.tap(); onClose() } label: {

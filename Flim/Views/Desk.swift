@@ -85,21 +85,53 @@ struct DeskEnvironment: ViewModifier {
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
-        _ = scenePhase
         let desk = Desk(rawValue: deskRaw) ?? Desk.fallback
         // Match system is the phone's actual setting, applied explicitly. A nil preference does
         // not undo a Paper or Slate one already applied to a screen on show, so switching to
         // Match system left Settings on Paper while its ground went dark (owner, 2026-11-14).
-        return content.preferredColorScheme(desk.colorScheme ?? DeskSystemScheme.current)
+        return content
+            .preferredColorScheme(desk.colorScheme ?? DeskSystemScheme.shared.scheme)
+            .onChange(of: scenePhase) { _, _ in DeskSystemScheme.shared.refresh() }
+            // While Match system is open on screen, it keeps listening, so the phone turning
+            // dark at sunset lands at once (nightly review, 2026-11-15).
+            .task(id: desk == .system && scenePhase == .active) {
+                guard desk == .system, scenePhase == .active else { return }
+                await DeskSystemScheme.shared.follow()
+            }
     }
 }
 
 /// The phone's own light or dark setting, read from the screen rather than from a view, whose
 /// traits already carry whatever the app forced.
-enum DeskSystemScheme {
-    @MainActor static var current: ColorScheme {
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        return scene?.screen.traitCollection.userInterfaceStyle == .light ? .light : .dark
+///
+/// Nothing tells the app when it changes: SwiftUI's `preferredColorScheme` overrides the window
+/// scene's traits (`traitOverrides`), so a scene trait-change registration never fires, and the
+/// screen, which does carry the phone's setting, can't register for changes. So it's re-read
+/// every two seconds while Match system is on screen; reading one trait costs nothing.
+@MainActor @Observable
+final class DeskSystemScheme {
+    static let shared = DeskSystemScheme()
+    private(set) var scheme: ColorScheme = DeskSystemScheme.read()
+
+    static var current: ColorScheme { shared.refresh(); return shared.scheme }
+
+    func refresh() {
+        let now = Self.read()
+        if now != scheme { scheme = now }
+    }
+
+    /// Re-reads until cancelled (the caller's `.task` ends with Match system or the app's focus).
+    func follow() async {
+        refresh()
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(2))
+            refresh()
+        }
+    }
+
+    private static func read() -> ColorScheme {
+        let screen = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen
+        return screen?.traitCollection.userInterfaceStyle == .light ? .light : .dark
     }
 }
 

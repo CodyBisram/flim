@@ -18,6 +18,13 @@ struct DarkroomYearMonth: Hashable {
         year = comps.year ?? 0
         month = comps.month ?? 0
     }
+
+    /// The month of the NIGHT a shot was taken: 02:00 on the 1st is still the last night of the
+    /// month before, as `FeedUnit.dayKey`, the Darkroom's grouping and the server's month summary
+    /// all count it. For a raw `takenAt`; a `dayKey` is already a night and goes to `init(date:)`.
+    init(night takenAt: Date, calendar: Calendar = .current) {
+        self.init(date: FeedUnit.dayKey(for: takenAt, calendar: calendar), calendar: calendar)
+    }
 }
 
 /// Chronological ordering, purely `(year, month)`: what the closing row's "next OLDER month"

@@ -302,8 +302,13 @@ struct UserPageView: View {
     /// be gated on "the read came back empty": for a page you do not follow it keeps only the
     /// posts you are tagged in (still yours to see, as before) and otherwise shows the follow
     /// prompt. The shelf above it is where a stranger sees the chosen frames.
+    /// Whether this page's posts are yours to see: a follow on 1.6, friends both ways on 1.7.
+    /// A request not yet returned sees only what it's tagged in, like a stranger (nightly
+    /// review, 2026-11-15: a pending page showed its Spotlight frame in the grid as if open).
+    private var seesTheirPosts: Bool { AppInfo.is17 ? (isFollowing && followsMe) : isFollowing }
+
     private var gridPosts: [Post] {
-        guard !isSelf, !isFollowing else { return posts }
+        guard !isSelf, !seesTheirPosts else { return posts }
         return posts.filter { taggedInPostIds.contains($0.id) }
     }
     /// Which of a not-followed page's posts the viewer is tagged in; read in `load()`.
@@ -1176,7 +1181,7 @@ struct UserPageView: View {
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            if !isSelf && (AppInfo.is17 ? !(isFollowing && followsMe) : !isFollowing) {
+            if !isSelf && !seesTheirPosts {
                 // Posts are readable by followers (2026-09-13), by friends only in 1.7. The server
                 // returns nothing here until then, so say what it takes rather than "No posts yet".
                 Image(systemName: "eye.slash")
@@ -1312,7 +1317,7 @@ struct UserPageView: View {
         if let fetchedPosts = await ps {
             // Not following: the only grid posts left are the ones you are tagged in, and
             // those are known before the grid is shown so a chosen frame never flashes in it.
-            if !isSelf, !isFollowing, let uid = auth.currentUser?.id {
+            if !isSelf, !seesTheirPosts, let uid = auth.currentUser?.id {
                 taggedInPostIds = await feed.postIdsTagging(uid, in: fetchedPosts.map(\.id))
             }
             posts = fetchedPosts

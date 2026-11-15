@@ -17,6 +17,10 @@ struct ChapterRecapView: View {
     @Environment(ChapterService.self) private var chapters
     @Environment(AuthService.self) private var auth
     @Environment(\.displayScale) private var displayScale
+    /// How wide the screening has to play in, measured where it plays.
+    @State private var screeningWidth: CGFloat = 0
+    /// Bumped when a number on the open Duo's split opens a frame, so the pager rebuilds there.
+    @State private var pagerJump = 0
     /// The month box cover's subject, found on device (`PhotoFocus`).
     @State private var coverFocus: PhotoFocus.Subject?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -66,8 +70,20 @@ struct ChapterRecapView: View {
     @State private var profileRoute: ProfileRoute?
     /// 1.7's box edit (Blend 4, 12b): the sheet, the box's chosen cover by photo, and whether the
     /// box is showing itself as friends see it (put-away shots left out).
-    @State private var showBoxEdit = false
     @State private var boxCoverPhotoId: UUID?
+    /// Whether this box's put-away shots and chosen cover have been read. Edit waits for it: a
+    /// sheet opened on a half-read box saved its empty guess and brought put-away shots back
+    /// (nightly review, 2026-11-15).
+    @State private var boxEditReady = false
+    /// Edit, open: what it opened on, so Done saves only what changed from what the sheet showed.
+    /// Presented by item, never a flag plus a separate value: a `sheet(isPresented:)` closure read
+    /// the value from before the tap and opened with no cover.
+    @State private var boxEdit: BoxEditSession?
+    private struct BoxEditSession: Identifiable {
+        let id = UUID()
+        let putAway: Set<UUID>
+        let cover: UUID?
+    }
     @State private var asFriendsSee = false
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL],
@@ -100,7 +116,13 @@ struct ChapterRecapView: View {
         }
     }
 
-    /// Slate for what plays: the screening and the closing card, whatever the desk.
+    /// What a month plays on: Slate with its grain on 1.7 (the board's screening, 3e), so the
+    /// photographs read true whatever the desk; black on 1.6.
+    @ViewBuilder private var screeningGround: some View {
+        if AppInfo.is17 { DeskGround() } else { Color.black.ignoresSafeArea() }
+    }
+
+    /// Slate for what plays, whatever the desk (on 1.6, the closing card too).
     private struct Screening: ViewModifier {
         func body(content: Content) -> some View {
             content.environment(\.colorScheme, .dark)
@@ -116,9 +138,10 @@ struct ChapterRecapView: View {
                 .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
                 .fullScreenCover(isPresented: $isPlayerPresented) {
                     ZStack {
-                        Color.black.ignoresSafeArea()
+                        screeningGround
                         player
                     }
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screeningWidth = $0 }
                     .statusBarHidden()
                     .modifier(DeskAlwaysSlate())
                 }
@@ -133,14 +156,17 @@ struct ChapterRecapView: View {
 
     private var content: some View {
         ZStack {
-            if AppInfo.is17 && phase == .opening {
+            if AppInfo.is17 {
+                // The box and the month in numbers both sit on your desk, with its grain
+                // (owner, 2026-11-15: the numbers were on plain black).
                 DeskGround()
             } else {
                 Color.black.ignoresSafeArea()
             }
             switch phase {
             case .opening: openingCard
-            case .closing: closingCard.modifier(Screening())
+            case .closing:
+                if AppInfo.is17 { closingCard } else { closingCard.modifier(Screening()) }
             }
             // Inline, not a `.fullScreenCover` (changed 2026-09-10). The recap is already a cover
             // over the profile; the player was a second cover over that, and the viewer's export
@@ -151,9 +177,10 @@ struct ChapterRecapView: View {
             // the cover was buying (see `player`'s doc).
             if isPlayerPresented, !docked {
                 ZStack {
-                    Color.black.ignoresSafeArea()
+                    screeningGround
                     player
                 }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screeningWidth = $0 }
                 .modifier(Screening())
                 .transition(.opacity)
                 .zIndex(1)
@@ -168,7 +195,8 @@ struct ChapterRecapView: View {
             // Flip to the closing card the moment the pager starts to go, not after it has gone:
             // the cover's dismissal animation reveals whatever `phase` shows underneath, and a
             // flip made only in `onDismiss` left the opening card visible for that frame or two.
-            if !presented, viewModel.hasClosingCard { phase = .closing }
+            // On the open Duo the numbers were beside the photographs all along: back to the box.
+            if !presented, viewModel.hasClosingCard, !splitsScreening { phase = .closing }
             viewModel.setPlayerMounted(presented)
             if !presented { handlePlayerDismissed() }
         }
@@ -223,6 +251,11 @@ struct ChapterRecapView: View {
         return grouped.keys.sorted(by: >).map { (day: $0, photos: grouped[$0] ?? []) }
     }
 
+    /// This month's put-away posts, as last read.
+    private var currentPutAway: Set<UUID> {
+        Set(viewModel.monthPhotos.compactMap(\.postId).filter { chapters.putAwayPostIds.contains($0) })
+    }
+
     private func isPutAway(_ photo: ChapterPhoto) -> Bool {
         photo.postId.map { chapters.putAwayPostIds.contains($0) } ?? false
     }
@@ -255,14 +288,15 @@ struct ChapterRecapView: View {
 
     /// Saves what Edit changed: each shot put away or brought back, then the cover. Shown at once;
     /// anything that didn't land is put back and said.
-    private func applyBoxEdit(cover: UUID?, putAway: Set<UUID>) {
+    private func applyBoxEdit(cover: UUID?, putAway: Set<UUID>, from session: BoxEditSession) {
         guard let uid = auth.currentUser?.id else { return }
-        let before = Set(viewModel.monthPhotos.compactMap(\.postId).filter { chapters.putAwayPostIds.contains($0) })
+        // Against what the sheet opened on, never a set that changed under it.
+        let before = session.putAway
         let toAway = putAway.subtracting(before)
         let toBack = before.subtracting(putAway)
         let previousCover = boxCoverPhotoId
-        // Written only when it changed from what the box showed, chosen or default.
-        let changedCover = cover.flatMap { $0 == (boxCoverPhotoId ?? defaultCoverPhotoId) ? nil : $0 }
+        // Written only when it changed from what the sheet showed, chosen or default.
+        let changedCover = cover.flatMap { $0 == session.cover ? nil : $0 }
         if let changedCover { boxCoverPhotoId = changedCover }
         let coverPhoto = changedCover.flatMap { id in viewModel.monthPhotos.first { $0.id == id } }
         let service = chapters
@@ -336,7 +370,11 @@ struct ChapterRecapView: View {
                 .accessibilityLabel(docked ? "Close" : (isOwnRecap ? "Back to your page" : "Back"))
                 Spacer()
                 if isOwnRecap, !viewModel.monthPhotos.isEmpty {
-                    Button { Haptics.tap(); asFriendsSee = false; showBoxEdit = true } label: {
+                    Button {
+                        Haptics.tap()
+                        asFriendsSee = false
+                        boxEdit = BoxEditSession(putAway: currentPutAway, cover: boxCoverPhotoId ?? defaultCoverPhotoId)
+                    } label: {
                         Text("Edit")
                             .flimFont(17, weight: .medium, relativeTo: .body)
                             .foregroundStyle(FlimTheme.textPrimary)
@@ -344,6 +382,8 @@ struct ChapterRecapView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!boxEditReady)
+                    .opacity(boxEditReady ? 1 : 0.4)
                     .accessibilityHint("Choose the cover and put shots away")
                 }
             }
@@ -483,21 +523,25 @@ struct ChapterRecapView: View {
             await viewModel.signMonthThumbs(feed: feed)
             // Your own box: which shots are put away, and the cover you chose (12b).
             if isOwnRecap, !viewModel.monthPhotos.isEmpty, let uid = auth.currentUser?.id {
-                await chapters.loadPutAway(postIds: viewModel.monthPhotos.compactMap(\.postId))
-                if boxCoverPhotoId == nil {
-                    boxCoverPhotoId = await chapters.monthCoverPhotoId(userId: uid, monthStart: viewModel.chapter.monthStart)
+                let readPutAway = await chapters.loadPutAway(postIds: viewModel.monthPhotos.compactMap(\.postId))
+                var readCover = boxCoverPhotoId != nil
+                if !readCover, let read = await chapters.monthCoverPhotoId(userId: uid, monthStart: viewModel.chapter.monthStart) {
+                    boxCoverPhotoId = read
+                    readCover = true
                 }
+                // Both read (a month with no chosen cover reads as `.some(nil)`): Edit can open.
+                boxEditReady = readPutAway && readCover
             }
         }
-        .sheet(isPresented: $showBoxEdit) {
+        .sheet(item: $boxEdit) { session in
             MonthBoxEditView(
                 monthName: viewModel.chapter.monthName(),
                 photos: viewModel.monthPhotos.filter { !$0.isDeadFrame },
                 urls: viewModel.urls,
-                cover: boxCoverPhotoId ?? defaultCoverPhotoId,
-                putAway: Set(viewModel.monthPhotos.compactMap(\.postId).filter { chapters.putAwayPostIds.contains($0) }),
+                cover: session.cover,
+                putAway: session.putAway,
                 onDone: { cover, putAway, preview in
-                    applyBoxEdit(cover: cover, putAway: putAway)
+                    applyBoxEdit(cover: cover, putAway: putAway, from: session)
                     withAnimation(.snappy) { asFriendsSee = preview }
                 })
         }
@@ -878,7 +922,54 @@ struct ChapterRecapView: View {
                 Spacer(minLength: 0)
             }
             .transition(.opacity)
+        } else if splitsScreening {
+            // The open Duo (Blend 2): the photographs on the left of the fold, the month in
+            // numbers on the right, so a wide screen isn't a narrow print in the middle.
+            HStack(spacing: 0) {
+                monthPager
+                    .id(pagerJump)
+                    .frame(maxWidth: .infinity)
+                    .padding(.trailing, 14)
+                splitNumbers
+                    .frame(maxWidth: .infinity)
+                    .padding(.leading, 14)
+            }
+            .transition(.opacity)
         } else {
+            monthPager
+        }
+    }
+
+    /// Plays the month beside its numbers: the open Duo, with numbers to show. Measured from the
+    /// screening's own width rather than the desk layout, which a full-screen cover can disagree
+    /// with; 700pt is past any phone and inside the open Duo (890pt).
+    private var splitsScreening: Bool {
+        AppInfo.is17 && screeningWidth >= 700 && viewModel.hasClosingCard
+    }
+
+    /// The numbers beside the photographs on the open Duo: a frame opens in the pager, and its
+    /// Back and X end the screening.
+    private var splitNumbers: some View {
+        ChapterClosingCardView(
+            monthName: viewModel.chapter.monthName(),
+            lines: viewModel.closingLines,
+            thumbURLs: viewModel.urls,
+            onSelectPhoto: { line in
+                guard let photoId = line.photoId, let idx = viewModel.deckIndex(ofPhoto: photoId) else { return }
+                selection = idx
+                pagerJump += 1
+            },
+            onSelectProfile: { userId in
+                isPlayerPresented = false
+                profileRoute = ProfileRoute(id: userId)
+            },
+            onPlayAgain: { selection = 0; pagerJump += 1 },
+            onClose: { withAnimation(.easeInOut(duration: 0.2)) { isPlayerPresented = false } },
+            showsClose: false
+        )
+    }
+
+    private var monthPager: some View {
             PhotoPagerView(
                 photos: viewModel.pagerPhotos,
                 startIndex: selection,
@@ -904,7 +995,6 @@ struct ChapterRecapView: View {
                 onClose: { withAnimation(.easeInOut(duration: 0.2)) { isPlayerPresented = false } }
             )
             .transition(.opacity)
-        }
     }
 
     @ViewBuilder
@@ -1016,6 +1106,7 @@ struct MonthBoxEditView: View {
     @State private var putAway: Set<UUID>
     /// Set by a hold, so the tap that ends it doesn't also make the shot the cover.
     @State private var heldId: UUID?
+    @State private var heldAt: Date?
 
     init(monthName: String, photos: [ChapterPhoto], urls: [String: URL], cover: UUID?, putAway: Set<UUID>,
          onDone: @escaping (UUID?, Set<UUID>, Bool) -> Void) {
@@ -1131,7 +1222,10 @@ struct MonthBoxEditView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                if heldId == photo.id { heldId = nil; return }
+                // The tap that ends a hold, not a later one: a hold that ended in a scroll left
+                // `heldId` set and ate the next real tap (nightly review, 2026-11-15).
+                if heldId == photo.id, let at = heldAt, Date.now.timeIntervalSince(at) < 1.5 { heldId = nil; return }
+                heldId = nil
                 // A put-away shot can't be the cover; bring it back first.
                 guard !away else { Haptics.warning(); return }
                 Haptics.tap()
@@ -1141,6 +1235,7 @@ struct MonthBoxEditView: View {
             // trap as the camera's zoom chips).
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
                 heldId = photo.id
+                heldAt = .now
                 toggleAway(photo)
             })
             .accessibilityElement()

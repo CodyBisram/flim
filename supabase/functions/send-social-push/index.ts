@@ -1542,12 +1542,19 @@ Deno.serve(async (req: Request) => {
   //      is the single door that enforces blocks.
   const { data: follows } = await supabase
     .from("follows")
-    .select("follower_id, following_id")
+    .select("follower_id, following_id, created_at")
     .eq("push_sent", false);
 
   for (const f of follows ?? []) {
     const name = await handle(f.follower_id);
-    const followKey = `follow:${f.follower_id}:${f.following_id}`;
+    // Keyed on this follow row, not the pair: a request cancelled and made again weeks later is
+    // a new request and is pushed again. Keyed on the pair, the first one's delivered ledger row
+    // silently swallowed every later one (nightly review, 2026-11-15). A row with no created_at
+    // keeps the old pair key.
+    const followAt = f.created_at ? new Date(f.created_at).getTime() : null;
+    const followKey = followAt === null
+      ? `follow:${f.follower_id}:${f.following_id}`
+      : `follow:${f.follower_id}:${f.following_id}:${followAt}`;
     // The new account's own follow of whoever invited it, made the moment it picks a username,
     // says so, and offers the follow back in one press while the inviter isn't following yet
     // (owner, 2026-10-13). New accounts that never paired with anyone were the leak, and the
@@ -1574,10 +1581,23 @@ Deno.serve(async (req: Request) => {
     // v2: a follow is a friend request, unless it answers one (then you are friends now).
     let followTitle = `${name} started following you`;
     if (IS_V2) {
-      const { data: back, error: backErr } = await supabase.from("follows").select("follower_id")
+      const { data: back, error: backErr } = await supabase.from("follows").select("follower_id, created_at")
         .eq("follower_id", f.following_id).eq("following_id", f.follower_id).maybeSingle();
       if (backErr) { pendingRetry.add(followKey); continue; }   // unreadable: ask again next run
-      followTitle = back ? `${name} added you back` : `${name} asked to be friends`;
+      // "Added you back" only when their follow came first. One the recipient made AFTER this
+      // follow means this one was the request, whatever the graph says by the time it's sent
+      // (nightly review, 2026-11-15: the one who added back was told they'd been added back).
+      const backAt = back?.created_at ? new Date(back.created_at).getTime() : null;
+      const answersOne = back !== null && (backAt === null || followAt === null || backAt <= followAt);
+      followTitle = answersOne ? `${name} added you back` : `${name} asked to be friends`;
+      // A request carries Add them back on the banner, as the invite-join push does.
+      if (!answersOne) {
+        sent += await notify(f.following_id, f.follower_id, followTitle, undefined,
+          { t: "profile", id: f.follower_id }, followKey, SOUND_SOCIAL, FOLLOW_BACK_CATEGORY);
+        if (settled(followKey)) await supabase.from("follows").update({ push_sent: true })
+          .eq("follower_id", f.follower_id).eq("following_id", f.following_id);
+        continue;
+      }
     }
     sent += await notify(f.following_id, f.follower_id, followTitle, undefined, {
       t: "profile",

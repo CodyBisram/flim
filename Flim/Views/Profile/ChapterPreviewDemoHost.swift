@@ -80,7 +80,29 @@ struct ChapterPreviewDemoHost: View {
                     .environment(auth)
                     .environment(feed)
                     .environment(chapters)
+                    .modifier(DebugCoverFrame())
             }
+        }
+    }
+}
+
+/// `-deskFrame WxH` for a cover the page's own frame doesn't reach: the recap and its screening
+/// drawn at the Duo's full size (a cover spans both halves), scaled to fit the phone.
+private struct DebugCoverFrame: ViewModifier {
+    func body(content: Content) -> some View {
+        if let size = DeskDebugFrame.size {
+            GeometryReader { screen in
+                let scale = min(screen.size.width / size.width, screen.size.height / size.height)
+                content
+                    .environment(\.deskLayout, DeskLayout.resolve(horizontalSizeClass: .compact, size: size))
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .scaleEffect(scale)
+                    .frame(width: screen.size.width, height: screen.size.height)
+            }
+            .background(Color.black.ignoresSafeArea())
+        } else {
+            content
         }
     }
 }

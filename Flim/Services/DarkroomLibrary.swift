@@ -170,7 +170,7 @@ final class DarkroomLibrary {
             guard let page = try? await photoService.fetchDarkroomPage(userId: uid, limit: Self.pageSize, before: at) else {
                 return nil
             }
-            let inMonth = page.photos.filter { DarkroomYearMonth(date: $0.takenAt) == month }
+            let inMonth = page.photos.filter { DarkroomYearMonth(night: $0.takenAt) == month }
             rows += inMonth
             // Done once a page runs past the month's start, or the library ends.
             if inMonth.count < page.photos.count || page.photos.count < Self.pageSize { break }
@@ -181,7 +181,7 @@ final class DarkroomLibrary {
 
     /// Makes sure a month is in the library (a jump from Year or All time during the backfill).
     func ensureMonth(_ month: DarkroomYearMonth, photoService: PhotoService) async {
-        guard let uid = userId, !photos.contains(where: { DarkroomYearMonth(date: $0.takenAt) == month }) else { return }
+        guard let uid = userId, !photos.contains(where: { DarkroomYearMonth(night: $0.takenAt) == month }) else { return }
         guard let rows = await fetchMonth(month, userId: uid, photoService: photoService), userId == uid else { return }
         photos = DarkroomLibraryMerge.replacingMonth(photos, month: month, with: rows)
         scheduleSave()
@@ -297,7 +297,7 @@ enum DarkroomLibraryMerge {
 
     /// One month's rows, replaced wholesale with what the server has for it now.
     static func replacingMonth(_ saved: [Photo], month: DarkroomYearMonth, with rows: [Photo]) -> [Photo] {
-        let kept = saved.filter { DarkroomYearMonth(date: $0.takenAt) != month }
+        let kept = saved.filter { DarkroomYearMonth(night: $0.takenAt) != month }
         let incoming = Set(rows.map(\.id))
         return ordered(kept.filter { !incoming.contains($0.id) } + rows)
     }
@@ -306,7 +306,7 @@ enum DarkroomLibraryMerge {
     /// including months only one side has.
     static func monthsToRefetch(local: [Photo], server: [DarkroomMonthSummaryV2]) -> [DarkroomYearMonth] {
         var localCounts: [DarkroomYearMonth: Int] = [:]
-        for photo in local { localCounts[DarkroomYearMonth(date: photo.takenAt), default: 0] += 1 }
+        for photo in local { localCounts[DarkroomYearMonth(night: photo.takenAt), default: 0] += 1 }
         var serverCounts: [DarkroomYearMonth: Int] = [:]
         for row in server { serverCounts[row.yearMonth] = row.shotCount }
         let months = Set(localCounts.keys).union(serverCounts.keys)

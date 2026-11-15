@@ -92,16 +92,23 @@ final class ChapterService {
     static func monthKey(_ monthStart: Date) -> String { dateOnly.string(from: monthStart) }
 
     /// Reads which of these posts of yours are put away. Leaves the set as it was on a failure.
-    func loadPutAway(postIds: [UUID]) async {
-        guard AppInfo.is17, !postIds.isEmpty else { return }
+    /// Whether it read: false on a failed read, which keeps what it had.
+    @discardableResult
+    func loadPutAway(postIds: [UUID]) async -> Bool {
+        guard AppInfo.is17 else { return false }
+        guard !postIds.isEmpty else { return true }
+        #if DEBUG
+        if usesDemoFixture { return true }
+        #endif
         let epoch = AccountEpoch.current
         struct Row: Decodable { let id: UUID }
         guard let rows: [Row] = try? await supabase.from("posts").select("id")
             .in("id", values: postIds.map(\.uuidString)).eq("put_away", value: true)
             .execute().value,
-              AccountEpoch.isCurrent(epoch) else { return }
+              AccountEpoch.isCurrent(epoch) else { return false }
         putAwayPostIds.subtract(postIds)
         putAwayPostIds.formUnion(rows.map(\.id))
+        return true
     }
 
     /// Puts one of your posts away, or brings it back. Updates the set only once it landed.
@@ -135,13 +142,17 @@ final class ChapterService {
     }
 
     /// Your box's chosen cover for a month, by photo; nil when there is none or the read failed.
-    func monthCoverPhotoId(userId: UUID, monthStart: Date) async -> UUID? {
+    /// The cover you chose for a month: `.some(nil)` when you chose none, nil when the read failed.
+    func monthCoverPhotoId(userId: UUID, monthStart: Date) async -> UUID?? {
         guard AppInfo.is17 else { return nil }
+        #if DEBUG
+        if usesDemoFixture { return .some(nil) }
+        #endif
         struct Row: Decodable { let cover_photo_id: UUID? }
-        let rows: [Row]? = try? await supabase.from("month_boxes").select("cover_photo_id")
+        guard let rows: [Row] = try? await supabase.from("month_boxes").select("cover_photo_id")
             .eq("user_id", value: userId.uuidString).eq("month_start", value: Self.monthKey(monthStart))
-            .limit(1).execute().value
-        return rows?.first?.cover_photo_id ?? nil
+            .limit(1).execute().value else { return nil }
+        return .some(rows.first?.cover_photo_id ?? nil)
     }
 
     /// Reads the chosen covers on someone's shelf (yours included). Keeps what it had on failure.

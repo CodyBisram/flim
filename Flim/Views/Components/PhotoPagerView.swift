@@ -463,7 +463,9 @@ struct PhotoPagerView: View {
 
     private var pagerBody: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // 1.7: Slate with its grain (always Slate here, `DeskAlwaysSlate`), as the board's
+            // screening and viewer are drawn; black on 1.6.
+            if AppInfo.is17 { DeskGround() } else { Color.black.ignoresSafeArea() }
 
             if showsNightRack {
                 // Header pinned directly under the top safe area; the photo+rack+status group

@@ -409,6 +409,26 @@ final class Desk17UITests: XCTestCase {
         }
     }
 
+    /// Playing a month on the open Duo puts the month in numbers beside the photographs; a phone
+    /// plays the photographs alone (2026-11-15).
+    func testOpenDuoPlaysAMonthBesideItsNumbers() {
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-openChapterRecap", "-autoPlayChapter", "-deskFrame", "890x626", "-desk", "slate"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["The month in numbers"].firstMatch.waitForExistence(timeout: 15),
+                      "the open Duo played the month without its numbers")
+        XCTAssertTrue(app.buttons["Back to November"].firstMatch.exists || app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Back to '")).firstMatch.exists)
+        shot("open_month_screening")
+
+        app.terminate()
+        app.launchArguments = ["-chaptersPreviewDemo", "-openChapterRecap", "-autoPlayChapter", "-desk", "slate"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Close"].firstMatch.waitForExistence(timeout: 15), "the month did not play")
+        sleep(2)
+        XCTAssertFalse(app.staticTexts["The month in numbers"].firstMatch.exists, "a phone split the screening")
+        shot("phone_month_screening")
+    }
+
     /// Your page's header sits just under the bar's glyphs, and chosen seals are outlined in
     /// their own shapes (owner, 2026-11-14), on Slate as the owner's phone runs it.
     func testPageHeaderAndChosenSeals() {

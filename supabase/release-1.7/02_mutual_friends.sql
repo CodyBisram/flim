@@ -8,6 +8,9 @@
 -- set to '1.7' so every 1.6 install must update, THEN this. 1.6 would show a Follow button that
 -- no longer shows anyone's posts. Never before the minimum version is raised.
 -- Already on FLIM Dev as section 1 of supabase/migrations-v2/2026-10-30.
+-- THE SAME DAY IT IS APPLIED: append this file to supabase/schema.sql and move it into
+-- supabase/migrations/ with the date, or a fresh bootstrap keeps the one-way can_see_posts_of
+-- while production is mutual (nightly review, 2026-11-15).
 
 CREATE OR REPLACE FUNCTION public.can_see_posts_of(p_viewer UUID, p_author UUID)
 RETURNS BOOLEAN

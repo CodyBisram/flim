@@ -156,6 +156,25 @@ final class DarkroomLibraryMergeTests: XCTestCase {
         XCTAssertEqual(stale, [oldMonth])
     }
 
+    /// 02:00 on the 1st is the last night of the month before, here as everywhere else in the
+    /// app and on the server (nightly review, 2026-11-15: it counted as the new month, so the
+    /// counts never matched and replacing October dropped rows the server still had).
+    func testAShotAfterMidnightOnTheFirstBelongsToTheMonthBefore() throws {
+        let cal = Calendar.current
+        let lateNight = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 2)))
+        let shot = Photo(id: UUID(), userId: UUID(), rollId: nil, storagePath: "u/late.jpg", thumbPath: nil,
+                         feedPath: nil, takenAt: lateNight, developsAt: lateNight, isDeveloped: true,
+                         caption: nil, isSorted: true)
+        let october = DarkroomYearMonth(year: 2026, month: 10), november = DarkroomYearMonth(year: 2026, month: 11)
+        XCTAssertEqual(DarkroomYearMonth(night: lateNight), october)
+        let octStart = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 10, day: 1)))
+        let summary = DarkroomMonthSummaryV2(monthStart: octStart, shotCount: 1, nightCount: 1, developingCount: 0,
+                                             coverPaths: [], topCoverPath: nil)
+        XCTAssertEqual(DarkroomLibraryMerge.monthsToRefetch(local: [shot], server: [summary]), [])
+        XCTAssertTrue(DarkroomLibraryMerge.replacingMonth([shot], month: november, with: []).contains { $0.id == shot.id })
+        XCTAssertFalse(DarkroomLibraryMerge.replacingMonth([shot], month: october, with: []).contains { $0.id == shot.id })
+    }
+
     // MARK: - A month box cover keeps its subject in (PhotoFocus.windowTop)
 
     func testNoSubjectCropsTheMiddleAsBefore() {
