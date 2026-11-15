@@ -195,12 +195,18 @@ struct UserPageView: View {
         }
     }
 
-    /// Your page's two glyphs, set exactly like the Feed header's Find and Activity: 19pt
-    /// regular in ink, 44pt targets, 20pt apart.
+    /// Your page's three glyphs (Invite, Edit page, Settings), set like the Feed header's Find and
+    /// Activity: 19pt regular in ink, 44pt targets.
     private var deskSelfButtons: some View {
-        HStack(spacing: 20) {
+        // Three glyphs, so their 44pt targets touch rather than sit 20pt apart: at 20 the row
+        // read as three loose marks (owner, 2026-11-15).
+        HStack(spacing: 0) {
             Button { showInvite = true } label: { deskGlyph("person.badge.plus") }
                 .accessibilityLabel("Invite a friend")
+            // Edit page lives up here with the page's other two controls; Friends and Seals open
+            // from the header itself (owner, 2026-11-15).
+            Button { showEditProfile = true } label: { deskGlyph("pencil") }
+                .accessibilityLabel("Edit page")
             Button { showSettings = true } label: { deskGlyph("gearshape") }
                 .accessibilityLabel("Settings")
         }
@@ -587,8 +593,9 @@ struct UserPageView: View {
     }
 
     /// 1.7's page header (Blend 1, 4a and 4b; Blend 4, 12d): avatar left, the name in Caslon,
-    /// the handle and friends under it, the one chosen seal on the right. Your page: Edit page,
-    /// Friends, Seals. Someone else's: Add friend, Requested or Friends.
+    /// the handle and friends under it, the one chosen seal on the right. Your page: the friend count
+    /// opens Friends, the seal opens Seals, Edit page is the bar's pencil. Someone else's: Add
+    /// friend or Requested over their photos, Friends by the handle.
     private func deskPageHeader(topInset: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             // The page scrolls under the bar, so this clears it; the name row then sits just
@@ -620,11 +627,33 @@ struct UserPageView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                     HStack(spacing: 0) {
-                        Text([profile?.handle ?? (isSelf ? auth.currentUser?.username.map { "@\($0)" } : nil) ?? "@ ", deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" }]
-                                .compactMap { $0 }.joined(separator: " · "))
+                        Text(profile?.handle ?? (isSelf ? auth.currentUser?.username.map { "@\($0)" } : nil) ?? "@ ")
                             .flimFont(14, relativeTo: .subheadline)
                             .foregroundStyle(FlimTheme.textSecondary)
                             .lineLimit(1)
+                        // Your friends open from their count (owner, 2026-11-15: the Friends
+                        // button said the same thing twice).
+                        if isSelf {
+                            Text(" · ")
+                                .flimFont(14, relativeTo: .subheadline)
+                                .foregroundStyle(FlimTheme.textSecondary)
+                            Button { Haptics.tap(); showDeskFriends = true } label: {
+                                HStack(spacing: 2) {
+                                    Text(deskFriendCount.map { "\($0) friend\($0 == 1 ? "" : "s")" } ?? "Friends")
+                                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                                }
+                                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                                .foregroundStyle(FlimTheme.textPrimary)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, -13)
+                            .accessibilityLabel("Friends")
+                            .accessibilityValue(deskFriendCount.map { "\($0)" } ?? "")
+                        }
                         // Friends, said quietly beside the handle rather than as a big button in
                         // the middle of the page (owner, 2026-11-14). A tap offers Remove friend,
                         // so it can't be undone by accident.
@@ -651,7 +680,30 @@ struct UserPageView: View {
                     }
                 }
                 Spacer(minLength: 8)
-                if let seal = displayedBadges.first, !isBlocked {
+                if isSelf {
+                    // Your seal opens Seals, with the red dot when one is new (owner, 2026-11-15:
+                    // the Seals button was the seal said twice). No seal yet, an empty one.
+                    Button { Haptics.tap(); showBadgePicker = true } label: {
+                        Group {
+                            if let seal = displayedBadges.first {
+                                DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, scale: 1.15)
+                            } else {
+                                Image(systemName: "seal")
+                                    .font(.system(size: 30, weight: .light))
+                                    .foregroundStyle(FlimTheme.textTertiary)
+                                    .frame(width: 44, height: 44)
+                            }
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if unseenBadgeCount > 0 {
+                                Circle().fill(FlimTheme.newRed).frame(width: 9, height: 9).offset(x: 2, y: -2)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Seals")
+                    .accessibilityValue(unseenBadgeCount > 0 ? "New seal to see" : "")
+                } else if let seal = displayedBadges.first, !isBlocked {
                     // The leading seal, pressed into the page (Blend 1, 4a); a tap explains it.
                     Button { badgeTapped(seal) } label: {
                         DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, scale: 1.15)
@@ -671,10 +723,6 @@ struct UserPageView: View {
                     .foregroundStyle(FlimTheme.textSecondary)
             }
             if isSelf {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { deskPageButtons }
-                    VStack(spacing: 8) { deskPageButtons }
-                }
                 FirstVisitLine(surface: .profile)
             } else if !isBlocked, !(isFollowing && followsMe), !gridPosts.isEmpty {
                 // Add friend or Requested: an action, so a button. Friends lives by the handle.
@@ -691,32 +739,6 @@ struct UserPageView: View {
             }
         }
         .padding(.horizontal, 24)
-    }
-
-    @ViewBuilder
-    private var deskPageButtons: some View {
-        deskBoxButton("Edit page") { showEditProfile = true }
-        deskBoxButton("Friends") { showDeskFriends = true }
-        deskBoxButton("Seals") { showBadgePicker = true }
-            .overlay(alignment: .topTrailing) {
-                if unseenBadgeCount > 0 {
-                    Circle().fill(FlimTheme.newRed).frame(width: 8, height: 8).offset(x: -6, y: 4)
-                }
-            }
-    }
-
-    private func deskBoxButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(FlimTheme.textPrimary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(FlimTheme.surface, in: Capsule())
-        }
-        .buttonStyle(.plain)
     }
 
     private func v1PageHeader(topInset: CGFloat) -> some View {

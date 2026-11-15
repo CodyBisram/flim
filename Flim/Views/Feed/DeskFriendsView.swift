@@ -79,7 +79,6 @@ struct DeskFriendsView: View {
                     }
                 }
             }
-            .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
             .overlay(alignment: .top) {
                 if let notice { FlimToast(notice, kind: .error).padding(.top, 8) }
             }
@@ -197,7 +196,10 @@ struct DeskFriendsView: View {
 
     private func row<Trailing: View>(_ person: UserProfile, detail: String?, @ViewBuilder trailing: () -> Trailing) -> some View {
         HStack(spacing: 12) {
-            NavigationLink(value: ProfileRoute(id: person.id)) {
+            // A view link, not a `ProfileRoute` value: pushed onto your page's stack, a value
+            // destination declared here clashed with the root's own and with this screen's
+            // `isPresented` push, re-pushing Friends and then a broken page (owner, 2026-11-15).
+            NavigationLink { UserPageView(userId: person.id) } label: {
                 HStack(spacing: 12) {
                     AvatarView(path: person.avatarPath, name: person.username, size: 42)
                     VStack(alignment: .leading, spacing: 2) {

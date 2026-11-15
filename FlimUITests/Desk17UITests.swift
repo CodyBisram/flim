@@ -416,6 +416,9 @@ final class Desk17UITests: XCTestCase {
         app.launchArguments = ["-chaptersPreviewDemo", "-desk", "slate"]
         app.launch()
         XCTAssertTrue(app.buttons["Friends"].firstMatch.waitForExistence(timeout: 15))
+        // Edit page is the bar's pencil and the seal opens Seals; no row of buttons (2026-11-15).
+        XCTAssertTrue(app.buttons["Edit page"].firstMatch.exists, "no Edit page in the bar")
+        XCTAssertTrue(app.buttons["Seals"].firstMatch.exists, "the seal doesn't open Seals")
         sleep(2)
         shot("page_header_slate")
 
@@ -734,6 +737,35 @@ final class Desk17LiveUITests: XCTestCase {
         sleep(2)
         shot("camera")
         XCTAssertTrue(app.buttons["Flip camera"].exists, "the camera has no flip button")
+    }
+
+    /// A friend opened from Friends on your page opens their page, and Back walks back through
+    /// Friends to yours (owner, 2026-11-15: it looped back to Friends, then a broken page).
+    func testAFriendOpensFromFriends() throws {
+        bar("You").tap()
+        let friends = app.buttons["Friends"].firstMatch
+        XCTAssertTrue(friends.waitForExistence(timeout: 15), "your page has no friend count")
+        friends.tap()
+        let title = app.staticTexts["Friends"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "Friends did not open")
+        sleep(3)
+        var person = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '@'")).firstMatch
+        if !person.exists {
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Requests'")).firstMatch.tap()
+            sleep(2)
+            person = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '@'")).firstMatch
+        }
+        guard person.exists else { throw XCTSkip("the tester has no friends or requests to open") }
+        let handle = String(person.label.split(separator: ",").first ?? "")
+        person.tap()
+        sleep(3)
+        shot("friend_page")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", handle)).firstMatch.waitForExistence(timeout: 10),
+                      "\(handle)'s page did not open:\n\(app.debugDescription)")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "Back from a friend's page did not land on Friends")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["Edit page"].firstMatch.waitForExistence(timeout: 5), "Back from Friends did not land on your page")
     }
 
     /// Putting a shot away in a month box and bringing it back, against FLIM Dev: the box says
