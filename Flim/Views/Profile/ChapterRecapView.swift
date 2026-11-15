@@ -17,6 +17,8 @@ struct ChapterRecapView: View {
     @Environment(ChapterService.self) private var chapters
     @Environment(AuthService.self) private var auth
     @Environment(\.displayScale) private var displayScale
+    /// The month box cover's subject, found on device (`PhotoFocus`).
+    @State private var coverFocus: PhotoFocus.Subject?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Accessibility text sizes stack the box's title row and its two buttons instead of
     /// squeezing them side by side.
@@ -525,9 +527,11 @@ struct ChapterRecapView: View {
                 .aspectRatio(3.0 / 2.0, contentMode: .fit)
                 .overlay {
                     if let path = boxCoverPath {
-                        CachedImage(url: chapterCoverURLs[path] ?? viewModel.urls[path], maxPixel: 900, cacheKey: path) {
-                            $0.resizable().scaledToFill()
-                        } placeholder: { FlimTheme.well }
+                        GeometryReader { geo in
+                            CachedImage(url: chapterCoverURLs[path] ?? viewModel.urls[path], maxPixel: 900, cacheKey: path) {
+                                focusedCover($0, in: geo.size)
+                            } placeholder: { FlimTheme.well }
+                        }
                     } else {
                         FlimTheme.well
                     }
@@ -536,11 +540,15 @@ struct ChapterRecapView: View {
                     LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .center, endPoint: .bottom)
                 }
                 .overlay {
+                    // Dark on the cream disc whatever the desk: the desk's ink turns cream on
+                    // Slate, which put a cream glyph on a cream disc (owner, 2026-11-14).
                     Image(systemName: "play.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(DeskColor.ink)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(DeskColor.rgb(0x2A2420))
+                        .offset(x: 2)
                         .frame(width: 60, height: 60)
-                        .background(DeskColor.rgb(0xFBF6F0).opacity(0.94), in: Circle())
+                        .background(DeskColor.rgb(0xFBF6F0).opacity(0.96), in: Circle())
+                        .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
                 }
                 .overlay(alignment: .bottomLeading) {
                     Text(monthStamp)
@@ -553,6 +561,41 @@ struct ChapterRecapView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Play \(viewModel.chapter.monthName())")
+        // Where the cover's subject is, so the crop keeps a face in rather than the middle.
+        .task(id: boxCoverPath) {
+            guard let path = boxCoverPath else { coverFocus = nil; return }
+            if let hit = PhotoFocus.cached(path) { coverFocus = hit; return }
+            coverFocus = nil
+            guard let url = chapterCoverURLs[path] ?? viewModel.urls[path],
+                  let image = await ImageLoader.fetch(url: url, maxPixel: 900, scale: displayScale, cacheKey: path)
+            else { return }
+            let found = await PhotoFocus.subject(of: image, key: path)
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { coverFocus = found }
+        }
+    }
+
+    /// The cover filled into the box with its subject kept in view (`PhotoFocus`): a 3:4 frame in
+    /// a 3:2 box shows half its height, and the middle half is where a standing person's face
+    /// isn't. A frame wider than the box fills it centred, as before.
+    private func focusedCover(_ image: Image, in size: CGSize) -> some View {
+        let aspect = coverFocus?.aspect ?? FlimTheme.frameAspect
+        let boxAspect = size.height > 0 ? size.width / size.height : 1.5
+        return Group {
+            if aspect < boxAspect, size.width > 0 {
+                let height = size.width / aspect
+                let top = PhotoFocus.windowTop(for: coverFocus, visible: size.height / height)
+                image.resizable().scaledToFill()
+                    .frame(width: size.width, height: height)
+                    .clipped()
+                    .offset(y: -top * height)
+                    .frame(width: size.width, height: size.height, alignment: .top)
+            } else {
+                image.resizable().scaledToFill()
+                    .frame(width: size.width, height: size.height)
+            }
+        }
+        .clipped()
     }
 
     private func boxThumb(_ photo: ChapterPhoto) -> some View {
@@ -853,6 +896,7 @@ struct ChapterRecapView: View {
                 // A recap is playback, not an editing surface: no roll name badge (see
                 // `pagerPhotos`'s own doc on why `rollId` is dropped too) and no delete.
                 rollName: { _ in nil },
+                screeningTitle: viewModel.chapter.monthName(),
                 showsDelete: false,
                 // A chapter photo IS a post; its reactions/comments live on the post tables, not
                 // the roll-photo ones. See `PhotoPagerView.posts`'s own doc.
@@ -863,7 +907,33 @@ struct ChapterRecapView: View {
         }
     }
 
+    @ViewBuilder
     private var playerHeader: some View {
+        if AppInfo.is17 {
+            // The screening's header (3e) while the month loads: its name in Caslon, the close
+            // on the right, where the pager's own header puts them.
+            HStack(spacing: 14) {
+                Text(viewModel.chapter.monthName())
+                    .font(DeskType.serif(24, relativeTo: .title2))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button { Haptics.tap(); isPlayerPresented = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                }
+                .accessibilityLabel("Close")
+                .expandTapTarget(by: 14)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+        } else {
+            v1PlayerHeader
+        }
+    }
+
+    private var v1PlayerHeader: some View {
         HStack(spacing: 12) {
             Button { Haptics.tap(); isPlayerPresented = false } label: {
                 Image(systemName: "xmark")

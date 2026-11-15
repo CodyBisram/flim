@@ -155,4 +155,39 @@ final class DarkroomLibraryMergeTests: XCTestCase {
         let stale = DarkroomLibraryMerge.monthsToRefetch(local: [a, b, old], server: [try row(thisMonth, 2), try row(oldMonth, 3)])
         XCTAssertEqual(stale, [oldMonth])
     }
+
+    // MARK: - A month box cover keeps its subject in (PhotoFocus.windowTop)
+
+    func testNoSubjectCropsTheMiddleAsBefore() {
+        XCTAssertEqual(PhotoFocus.windowTop(for: nil, visible: 0.5), 0.25, accuracy: 0.0001)
+        XCTAssertEqual(PhotoFocus.windowTop(for: nil, visible: 1), 0)
+    }
+
+    func testAFaceNearTheTopIsKeptWhole() {
+        // A standing person: face 8% to 18% down a 3:4 frame. The middle half (25% to 75%) cut
+        // it off; the window now starts above it.
+        let face = CGRect(x: 0.4, y: 0.08, width: 0.2, height: 0.1)
+        let subject = PhotoFocus.Subject(primary: face, group: face, kind: .face, aspect: 0.75)
+        let top = PhotoFocus.windowTop(for: subject, visible: 0.5)
+        XCTAssertLessThanOrEqual(top, face.minY)
+        XCTAssertGreaterThanOrEqual(top + 0.5, face.maxY)
+    }
+
+    func testTheWindowNeverLeavesThePhoto() {
+        let low = CGRect(x: 0.3, y: 0.9, width: 0.3, height: 0.08)
+        let subject = PhotoFocus.Subject(primary: low, group: low, kind: .person, aspect: 0.75)
+        XCTAssertEqual(PhotoFocus.windowTop(for: subject, visible: 0.5), 0.5, accuracy: 0.0001)
+        let high = CGRect(x: 0.3, y: 0, width: 0.3, height: 0.05)
+        XCTAssertEqual(PhotoFocus.windowTop(for: PhotoFocus.Subject(primary: high, group: high, kind: .face, aspect: 0.75),
+                                            visible: 0.5), 0)
+    }
+
+    func testAGroupTooTallForTheWindowFollowsTheLargestFace() {
+        let big = CGRect(x: 0.1, y: 0.6, width: 0.3, height: 0.2)
+        let group = CGRect(x: 0.1, y: 0.05, width: 0.8, height: 0.75)
+        let subject = PhotoFocus.Subject(primary: big, group: group, kind: .face, aspect: 0.75)
+        let top = PhotoFocus.windowTop(for: subject, visible: 0.5)
+        XCTAssertLessThanOrEqual(top, big.minY)
+        XCTAssertGreaterThanOrEqual(top + 0.5, big.maxY)
+    }
 }

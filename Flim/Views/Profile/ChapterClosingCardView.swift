@@ -30,6 +30,68 @@ struct ChapterClosingCardView: View {
     @State private var cardOffset: CGSize = .zero
 
     var body: some View {
+        if AppInfo.is17 { deskBody } else { v1Body }
+    }
+
+    /// 1.7 (Blend 1, 3f's language, on Slate like the screening): the month in mono, the title in
+    /// Caslon, each number as a mono label over a Caslon value, then Play again and the way back
+    /// to the box.
+    private var deskBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(monthName.uppercased())
+                    .font(DeskType.data(11))
+                    .tracking(1.5)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                Text("The month in numbers")
+                    .font(DeskType.serif(30, relativeTo: .title))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(lines) { line in
+                        lineRow(line)
+                    }
+                }
+                .padding(.top, 28)
+                Button { Haptics.tap(); onPlayAgain() } label: {
+                    DeskPill("Play again", systemImage: "play.fill", style: .box)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 30)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 64)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .overlay(alignment: .topTrailing) {
+            Button { Haptics.tap(); onClose() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.textPrimary)
+            }
+            .accessibilityLabel("Close")
+            .expandTapTarget(by: 14)
+            .padding(.top, 14)
+            .padding(.trailing, 20)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button { Haptics.tap(); onClose() } label: {
+                Text("Back to \(monthName)")
+                    .flimFont(15, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 12)
+        }
+        .transition(.opacity)
+    }
+
+    private var v1Body: some View {
         ZStack {
             radialWash
             VStack(spacing: 0) {
@@ -128,7 +190,45 @@ struct ChapterClosingCardView: View {
         }
     }
 
+    @ViewBuilder
     private func lineContent(_ line: ChapterStatLine) -> some View {
+        if AppInfo.is17 { deskLineContent(line) } else { v1LineContent(line) }
+    }
+
+    private func deskLineContent(_ line: ChapterStatLine) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            if let path = line.photoThumbPath {
+                CachedImage(url: thumbURLs[path], maxPixel: 200, cacheKey: path) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    FlimTheme.well
+                }
+                .frame(width: 46, height: 46 / FlimTheme.frameAspect)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(line.label.uppercased())
+                    .font(DeskType.data(11))
+                    .tracking(1.5)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                Text(line.value)
+                    .font(DeskType.serif(20, relativeTo: .title3))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if line.opensPhoto || line.userId != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(line.label), \(line.value)")
+    }
+
+    private func v1LineContent(_ line: ChapterStatLine) -> some View {
         HStack(alignment: .center, spacing: 14) {
             if let path = line.photoThumbPath {
                 CachedImage(url: thumbURLs[path], maxPixel: 200, cacheKey: path) { image in

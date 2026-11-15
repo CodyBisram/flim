@@ -189,6 +189,9 @@ struct PhotoPagerView: View {
     /// The roll name for a given photo's rollId (nil for a personal, non-roll shot), used only in
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
     var rollName: (UUID?) -> String? = { _ in nil }
+    /// 1.7: the screening's name in the roll-rack header when it isn't a roll's (a month box
+    /// plays its month, Blend 4 12a).
+    var screeningTitle: String? = nil
     var onDelete: () -> Void = {}
     /// Called once a block staged from the roll header has landed. The blocked person's frames
     /// are still in `photos`, which this view cannot edit, so the pager closes at the tap and
@@ -408,6 +411,7 @@ struct PhotoPagerView: View {
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
          showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
+         screeningTitle: String? = nil,
          onDelete: @escaping () -> Void = {}, onBlock: @escaping () -> Void = {},
          openCommentsOnAppear: Bool = false,
          showsDelete: Bool = true, posts: [UUID: Post] = [:], onClose: (() -> Void)? = nil,
@@ -423,6 +427,7 @@ struct PhotoPagerView: View {
         self.showsRollRack = showsRollRack
         self.memberNames = memberNames
         self.rollName = rollName
+        self.screeningTitle = screeningTitle
         self.onDelete = onDelete
         self.onBlock = onBlock
         self.openCommentsOnAppear = openCommentsOnAppear
@@ -906,6 +911,43 @@ struct PhotoPagerView: View {
     /// puts it, and two ways into the same sheet on one screen is one too many.
     @ViewBuilder
     private var rollRackHeader: some View {
+        if AppInfo.is17 { deskRollRackHeader } else { v1RollRackHeader }
+    }
+
+    /// 1.7 (Blend 1, 3e), the roll screening's header: the name in Caslon, where you are in mono,
+    /// the frame's actions as plain glyphs, and the close on the right.
+    @ViewBuilder
+    private var deskRollRackHeader: some View {
+        if let photo = current {
+            HStack(spacing: 14) {
+                Text(screeningTitle ?? rollName(photo.rollId) ?? "")
+                    .font(DeskType.serif(24, relativeTo: .title2))
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 8)
+                Text("\(selection + 1) / \(photos.count)")
+                    .font(DeskType.data(12))
+                    .monospacedDigit()
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .fixedSize()
+                    .accessibilityLabel("Frame \(selection + 1) of \(photos.count)")
+                rollRackActions(photo, tint: FlimTheme.textPrimary)
+                Button { close() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                }
+                .accessibilityLabel("Close")
+                .expandTapTarget(by: 14)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 60)
+        }
+    }
+
+    @ViewBuilder
+    private var v1RollRackHeader: some View {
         if let photo = current {
             HStack(spacing: 12) {
                 Button { close() } label: {
@@ -929,79 +971,10 @@ struct PhotoPagerView: View {
                 // photograph is open full screen. The glyphs keep a real hit area inside it:
                 // they shipped as bare `Image`s, whose tappable region is the glyph itself, about
                 // 15pt against Apple's 44pt minimum, so the menu could barely be pressed.
-                HStack(spacing: 18) {
-                    if PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) {
-                    Button { share(photo) } label: {
-                        Group {
-                            if preparingShare {
-                                ProgressView().tint(accent).controlSize(.small)
-                            } else {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 15, weight: .medium))
-                            }
-                        }
-                        .frame(width: 19, height: 19)
-                        .foregroundStyle(accent)
-                        .contentShape(Rectangle())
-                    }
-                    .disabled(preparingShare)
-                    .accessibilityLabel("Share")
-                    }
-
-                    let isOwn = photo.userId == auth.currentUser?.id
-                    Menu {
-                        if isOwn {
-                            Button {
-                                Haptics.tap()
-                                Task {
-                                    if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
-                                        Haptics.success()
-                                    } else {
-                                        Haptics.error()
-                                        flashError("Couldn't update your profile photo. Check your connection and try again.")
-                                    }
-                                }
-                            } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
-                            spotlightSection(for: photo)
-                            if showsDelete {
-                                Button(role: .destructive) {
-                                    requestDelete(photo)
-                                } label: { Label("Delete photo", systemImage: "trash") }
-                            }
-                        } else {
-                            let reported = reportedIds.contains(photo.id)
-                            Button(role: .destructive) { reportCurrent() } label: {
-                                Label(reported ? "Reported" : "Report photo",
-                                      systemImage: reported ? "flag.fill" : "flag")
-                            }
-                            .disabled(reported)
-                            // The person, not only the shot. A roll is the one place you meet
-                            // someone else's photographs full screen, and until now the only
-                            // way to report or block them from here was their profile. The
-                            // same two actions and strings as the profile page and the post
-                            // menu; the roll grid's credit row already opens the profile.
-                            let handle = memberNames[photo.userId].map { "@\($0)" }
-                            Button { reportPerson(photo) } label: {
-                                Label(handle.map { "Report \($0)" } ?? "Report person",
-                                      systemImage: "person.crop.circle.badge.exclamationmark")
-                            }
-                            Button(role: .destructive) { blockPerson(photo) } label: {
-                                Label(handle.map { "Block \($0)" } ?? "Block", systemImage: "hand.raised")
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(accent)
-                            .frame(width: 19, height: 19)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("More")
-                    .disabled(isDeleting)
-                }
-                .padding(.horizontal, 16)
-                .frame(height: GlassIconSize.regular.diameter)
-                .glassCapsule(interactive: true)
+                rollRackActions(photo, tint: accent)
+                    .padding(.horizontal, 16)
+                    .frame(height: GlassIconSize.regular.diameter)
+                    .glassCapsule(interactive: true)
             }
             .padding(.horizontal, 16)
             // 60, matching the other two headers in this file. `pagerBody` ignores the container
@@ -1009,6 +982,81 @@ struct PhotoPagerView: View {
             // header here has to put the inset back itself. At 12 the title sat in the Dynamic
             // Island's own gap.
             .padding(.top, 60)
+        }
+    }
+
+    /// Share and the frame's menu, for both roll-rack headers: in the accent capsule on 1.6, as
+    /// plain glyphs on 1.7's screening header.
+    private func rollRackActions(_ photo: Photo, tint: Color) -> some View {
+        HStack(spacing: 18) {
+            if PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) {
+            Button { share(photo) } label: {
+                Group {
+                    if preparingShare {
+                        ProgressView().tint(tint).controlSize(.small)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                }
+                .frame(width: 19, height: 19)
+                .foregroundStyle(tint)
+                .contentShape(Rectangle())
+            }
+            .disabled(preparingShare)
+            .accessibilityLabel("Share")
+            }
+
+            let isOwn = photo.userId == auth.currentUser?.id
+            Menu {
+                if isOwn {
+                    Button {
+                        Haptics.tap()
+                        Task {
+                            if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                                Haptics.success()
+                            } else {
+                                Haptics.error()
+                                flashError("Couldn't update your profile photo. Check your connection and try again.")
+                            }
+                        }
+                    } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                    spotlightSection(for: photo)
+                    if showsDelete {
+                        Button(role: .destructive) {
+                            requestDelete(photo)
+                        } label: { Label("Delete photo", systemImage: "trash") }
+                    }
+                } else {
+                    let reported = reportedIds.contains(photo.id)
+                    Button(role: .destructive) { reportCurrent() } label: {
+                        Label(reported ? "Reported" : "Report photo",
+                              systemImage: reported ? "flag.fill" : "flag")
+                    }
+                    .disabled(reported)
+                    // The person, not only the shot. A roll is the one place you meet
+                    // someone else's photographs full screen, and until now the only
+                    // way to report or block them from here was their profile. The
+                    // same two actions and strings as the profile page and the post
+                    // menu; the roll grid's credit row already opens the profile.
+                    let handle = memberNames[photo.userId].map { "@\($0)" }
+                    Button { reportPerson(photo) } label: {
+                        Label(handle.map { "Report \($0)" } ?? "Report person",
+                              systemImage: "person.crop.circle.badge.exclamationmark")
+                    }
+                    Button(role: .destructive) { blockPerson(photo) } label: {
+                        Label(handle.map { "Block \($0)" } ?? "Block", systemImage: "hand.raised")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: 19, height: 19)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More")
+            .disabled(isDeleting)
         }
     }
 
@@ -1035,9 +1083,16 @@ struct PhotoPagerView: View {
                         .disabled(memberNames[photo.userId] == nil)
                     }
 
-                    Text("\(selection + 1) of \(photos.count) · \(FrameCredit.timeLabel(for: photo.takenAt, index: selection, in: photos.map(\.takenAt)))")
-                        .flimFont(12.5, relativeTo: .footnote)
-                        .foregroundStyle(Color(white: 0.6))
+                    if AppInfo.is17 {
+                        // 1.7 (3e): when it was taken; the count sits in the header.
+                        Text(FrameCredit.timeLabel(for: photo.takenAt, index: selection, in: photos.map(\.takenAt)))
+                            .flimFont(14, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                    } else {
+                        Text("\(selection + 1) of \(photos.count) · \(FrameCredit.timeLabel(for: photo.takenAt, index: selection, in: photos.map(\.takenAt)))")
+                            .flimFont(12.5, relativeTo: .footnote)
+                            .foregroundStyle(Color(white: 0.6))
+                    }
                 }
                 .padding(.top, 12)
 
@@ -1391,6 +1446,18 @@ struct PhotoPagerView: View {
         .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil,
                                      aspect: showsRollRack ? 3.0 / 4.0 : nil,
                                      cornerRadius: showsAnyRack ? 12 : 0))
+        // 1.7: the date stamp in the frame's corner, as the screening draws every frame (3e).
+        .overlay(alignment: .bottomTrailing) {
+            if showsRollRack, AppInfo.is17 {
+                Text(DeskType.stamp(photo.takenAt))
+                    .font(DeskType.data(13))
+                    .foregroundStyle(accent)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+                    .padding(12)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     #if DEBUG
