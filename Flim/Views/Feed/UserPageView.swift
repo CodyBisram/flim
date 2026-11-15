@@ -297,7 +297,8 @@ struct UserPageView: View {
     /// posts you are tagged in (still yours to see, as before) and otherwise shows the follow
     /// prompt. The shelf above it is where a stranger sees the chosen frames.
     private var gridPosts: [Post] {
-        guard !isSelf, !isFollowing else { return posts }
+        let unlocked = AppInfo.is17 ? (isFollowing && followsMe) : isFollowing
+        guard !isSelf, !unlocked else { return posts }
         return posts.filter { taggedInPostIds.contains($0.id) }
     }
     /// Which of a not-followed page's posts the viewer is tagged in; read in `load()`.
@@ -1290,7 +1291,8 @@ struct UserPageView: View {
         if let fetchedPosts = await ps {
             // Not following: the only grid posts left are the ones you are tagged in, and
             // those are known before the grid is shown so a chosen frame never flashes in it.
-            if !isSelf, !isFollowing, let uid = auth.currentUser?.id {
+            let unlocked = AppInfo.is17 ? (isFollowing && followsMe) : isFollowing
+            if !isSelf, !unlocked, let uid = auth.currentUser?.id {
                 taggedInPostIds = await feed.postIdsTagging(uid, in: fetchedPosts.map(\.id))
             }
             posts = fetchedPosts
