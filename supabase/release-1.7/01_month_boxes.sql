@@ -1,4 +1,5 @@
 -- FLIM 1.7, production step 1 of 2: putting shots away and choosing a box's cover (Blend 4, 12b).
+-- APPLIED to production 2026-11-14 (now supabase/migrations/2026-11-14_17_month_boxes.sql).
 --
 -- ADDITIVE and safe for 1.6: a new column that defaults to false, a table only 1.7 writes, and
 -- post_visible_to taught to skip put-away posts (none exist until 1.7 puts one away). Apply any
