@@ -354,3 +354,13 @@ struct DeskSeal: View {
         }
     }
 }
+
+#if DEBUG
+extension View {
+    /// Debug-only controls (the seed buttons) stay out of screenshots taken with `-hideDebugChrome`.
+    @ViewBuilder
+    func debugChrome() -> some View {
+        if ProcessInfo.processInfo.arguments.contains("-hideDebugChrome") { EmptyView() } else { self }
+    }
+}
+#endif

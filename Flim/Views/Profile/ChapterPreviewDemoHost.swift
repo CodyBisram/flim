@@ -110,7 +110,9 @@ enum ChapterPreviewFixtures {
         let hues: [CGFloat] = [0.08, 0.55, 0.85, 0.33, 0.02, 0.68]
         let paths = hues.enumerated().map { index, hue -> String in
             let path = "chaptersDemo/p\(index).jpg"
-            if let image = makeImage(hue: hue, label: "\(index + 1)") { plant(image, path: path) }
+            // A real photo already planted under this path (scripts/plant_demo_images.py, for
+            // screenshots) wins over the placeholder.
+            if !DiskImageCache.hasRaw(path: path), let image = makeImage(hue: hue, label: "\(index + 1)") { plant(image, path: path) }
             return path
         }
 

@@ -14,7 +14,7 @@ struct DeskUpdateCard: View {
 
     private let lines: [(String, String)] = [
         ("Your page has its own tab.", "Tap You in the tab bar."),
-        ("Friends go both ways.", "If you followed each other, you're friends now. One-way follows became requests, waiting in Friends."),
+        ("Friends are mutual.", "If you followed each other, you're friends now. One-way follows became requests, waiting in Friends."),
         ("Months go on a shelf.", "On the 1st, last month moves to your page as a cover you can play."),
         ("Light or dark.", "Pick a desk below. You can change it in Appearance."),
     ]
@@ -28,7 +28,7 @@ struct DeskUpdateCard: View {
                     Text("\(AppInfo.appName.uppercased()) 1.7")
                         .font(DeskType.data(11))
                         .tracking(2)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .padding(.top, 40)
                     Text("Same tabs. A few things moved.")
                         .font(DeskType.serif(32, relativeTo: .largeTitle))
@@ -40,7 +40,7 @@ struct DeskUpdateCard: View {
                             HStack(alignment: .firstTextBaseline, spacing: 14) {
                                 Text(String(format: "%02d", i + 1))
                                     .font(DeskType.data(11))
-                                    .foregroundStyle(accent)
+                                    .foregroundStyle(FlimTheme.ink(accent))
                                 (Text(line.0 + " ").fontWeight(.semibold).foregroundColor(FlimTheme.textPrimary)
                                  + Text(line.1).foregroundColor(FlimTheme.textSecondary))
                                     .flimFont(15.5, relativeTo: .body)
@@ -69,6 +69,10 @@ struct DeskUpdateCard: View {
             .padding(.bottom, 16)
         }
         .background(DeskGround())
+        // The card is its own full-screen presentation, and a colour scheme only takes inside the
+        // presentation that sets it: without this, picking Paper changed nothing until Continue
+        // (owner, 2026-11-14). Now the card itself turns as the desk is picked.
+        .modifier(DeskEnvironment())
     }
 
     private func deskButton(_ choice: Desk) -> some View {

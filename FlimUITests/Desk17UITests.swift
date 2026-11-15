@@ -422,6 +422,35 @@ final class Desk17UITests: XCTestCase {
         XCTAssertFalse(seenLater.subtracting(seenAtTop).isEmpty, "scrolling down never reached an older month")
     }
 
+    /// The 1.7 update card turns as a desk is picked on it (owner, 2026-11-14: picking Paper did
+    /// nothing). Launched without `-desk`, which would pin the choice.
+    func testUpdateCardTurnsWithTheDeskPicked() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-deskUpdateCardSeen", "NO"]
+        app.launch()
+        let paper = app.buttons["Paper"].firstMatch
+        XCTAssertTrue(paper.waitForExistence(timeout: 15), "the update card did not open")
+        func groundBrightness() -> CGFloat {
+            // A point on the card's ground, clear of text and buttons: the left edge, low down.
+            let image = XCUIScreen.main.screenshot().image
+            guard let cg = image.cgImage,
+                  let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return -1 }
+            let x = 8, y = Int(Double(cg.height) * 0.75)
+            let offset = y * cg.bytesPerRow + x * (cg.bitsPerPixel / 8)
+            return (CGFloat(bytes[offset]) + CGFloat(bytes[offset + 1]) + CGFloat(bytes[offset + 2])) / (3 * 255)
+        }
+        paper.tap()
+        sleep(1)
+        shot("update_card_paper")
+        XCTAssertGreaterThan(groundBrightness(), 0.7, "picking Paper did not turn the card light")
+        app.buttons["Slate"].firstMatch.tap()
+        sleep(1)
+        shot("update_card_slate")
+        XCTAssertLessThan(groundBrightness(), 0.3, "picking Slate did not turn the card dark")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Friends are mutual'")).firstMatch.exists
+                      || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Friends are mutual'")).firstMatch.exists)
+    }
+
     /// The screens built this week on the Duo's closed display (466 x 678, rail on the trailing
     /// edge): the Rolls list, the sealed roll and the month box.
     func testClosedDuoNewScreens() {
@@ -728,3 +757,63 @@ final class Desk17LiveUITests: XCTestCase {
         shot("darkroom_live_relaunch")
     }
 }
+
+/// App Store screenshots: every 1.7 screen on the demo data, with the Bali frames planted in the
+/// simulator first (scratchpad tools/plant_bali.py). Skipped unless TEST_RUNNER_FLIM_APPSTORE=1;
+/// run on the 6.9" simulator with TEST_RUNNER_FLIM_SHOTS set.
+final class AppStoreScreenshotTests: XCTestCase {
+    private var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        guard ProcessInfo.processInfo.environment["FLIM_APPSTORE"] == "1" else { throw XCTSkip("FLIM_APPSTORE not set") }
+        continueAfterFailure = true
+        app = XCUIApplication()
+    }
+
+    private func shot(_ name: String) {
+        guard let dir = ProcessInfo.processInfo.environment["FLIM_SHOTS"] else { return }
+        let data = XCUIScreen.main.screenshot().pngRepresentation
+        try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("appstore_\(name).png"))
+    }
+
+    private func launch(_ args: [String], desk: String) {
+        app.terminate()
+        app.launchArguments = args + ["-desk", desk, "-fixtureRollName", "Bali week", "-deskUpdateCardSeen", "YES",
+                                       "-hideDebugChrome"]
+        app.launch()
+        // The camera's permission prompt, answered before any shot is taken.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow"]
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+    }
+
+    func testCaptureEveryScreen() {
+        for desk in ["slate", "paper"] {
+            launch(["-chromePreviewDemo", "-tabFeed"], desk: desk)
+            sleep(5); shot("feed_\(desk)")
+
+            launch(["-chromePreviewDemo", "-tabDarkroom", "-darkroomFixture"], desk: desk)
+            sleep(4); shot("darkroom_\(desk)")
+            app.swipeUp(velocity: .slow); sleep(2); shot("darkroom_scrolled_\(desk)")
+
+            launch(["-chromePreviewDemo", "-tabRolls", "-rollsFixture"], desk: desk)
+            sleep(4); shot("rolls_\(desk)")
+            let roll = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Bali week' AND label ENDSWITH 'Opens the roll.'")).firstMatch
+            if roll.waitForExistence(timeout: 5) { roll.tap(); sleep(3); shot("sealed_\(desk)") }
+
+            launch(["-chaptersPreviewDemo"], desk: desk)
+            sleep(4); shot("page_\(desk)")
+            let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
+            if box.waitForExistence(timeout: 5) { box.tap(); sleep(3); shot("month_box_\(desk)") }
+        }
+        // The screening and its closing card are always Slate.
+        launch(["-rollDetailDemo"], desk: "slate")
+        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play reveal'")).firstMatch
+        if play.waitForExistence(timeout: 15) {
+            play.tap(); sleep(1); app.tap(); sleep(3); shot("screening")
+            for _ in 0..<8 { app.swipeLeft(); usleep(400_000) }
+            app.buttons["Done"].firstMatch.tap(); sleep(2); shot("closing_card")
+        }
+    }
+}
+

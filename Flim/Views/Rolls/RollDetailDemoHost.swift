@@ -17,7 +17,9 @@ struct RollDetailDemoFixture {
         let created = Date.now.addingTimeInterval(developing ? -3600 : -86_400)
         let reveal = developing ? Date.now.addingTimeInterval(4 * 3600) : created.addingTimeInterval(12 * 3600)
         let roll = Roll(id: UUID(uuidString: "00000000-0000-0000-0000-000000009201") ?? UUID(),
-                        name: "Test, day 2", inviteCode: "DEMO42", createdBy: owner,
+                        // `-fixtureRollName "Bali week"` for screenshots; tests use the default.
+                        name: UserDefaults.standard.string(forKey: "fixtureRollName") ?? "Test, day 2",
+                        inviteCode: "BALI26", createdBy: owner,
                         createdAt: created, revealAt: reveal)
         var photos: [Photo] = []
         var urls: [UUID: URL] = [:]

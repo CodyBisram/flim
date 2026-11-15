@@ -605,6 +605,7 @@ struct FeedView: View {
                     .foregroundStyle(FlimTheme.textTertiary)
             }
             .accessibilityLabel("Seed demo feed")
+            .debugChrome()
             #endif
 
             Button { showDiscover = true } label: {
@@ -660,6 +661,7 @@ struct FeedView: View {
                     .foregroundStyle(FlimTheme.textTertiary)
             }
             .accessibilityLabel("Seed demo feed")
+            .debugChrome()
             #endif
 
             GlassGroup(spacing: 8) {

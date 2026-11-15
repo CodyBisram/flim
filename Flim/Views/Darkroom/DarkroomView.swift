@@ -421,6 +421,7 @@ struct DarkroomView: View {
                     Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
                 }
                 .accessibilityLabel("Seed unsorted (DEBUG)")
+                .debugChrome()
                 #endif
                 if !vm.photos.isEmpty, zoom == .month {
                     Button("Select") {
@@ -489,6 +490,7 @@ Text("Darkroom")
                 Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
             }
             .accessibilityLabel("Seed unsorted (DEBUG)")
+            .debugChrome()
             #endif
 
             // Select only exists at the deepest rung: there is nothing to select at the Year or

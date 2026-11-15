@@ -506,14 +506,13 @@ struct MainTabView: View {
         // (the photo pager's fullScreenCover) host their own copy; see `UndoCapsuleHost`.
         .undoCapsuleHost()
         // 1.7's update card, once, for an account that was already here (Blend 1, 5b). Always
-        // Slate when it opens; the desk it sets takes over after Continue.
+        // Opens on the desk already set (Slate unless someone picked otherwise, `Desk.fallback`)
+        // and turns as a desk is picked on it; the card applies the desk itself.
         .fullScreenCover(isPresented: Binding(get: { AppInfo.is17 && hasOnboarded && !deskUpdateCardSeen }, set: { _ in })) {
             DeskUpdateCard {
                 deskUpdateCardSeen = true
                 maybeShowNotifPrimer()
             }
-                .environment(\.colorScheme, .dark)
-                .preferredColorScheme(.dark)
         }
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
             #if FLIM_V2
