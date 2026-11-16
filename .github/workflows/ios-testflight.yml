@@ -49,14 +49,14 @@ jobs:
     # CI at all and a push to main went straight to TestFlight: a regression in
     # any covered pure function (reveal timing, auth rules, invite parsing, the
     # account-epoch guard) would ship with nothing to catch it.
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: latest-stable   # pin to e.g. '26.3' if a beta sneaks in
+          xcode-version: '27.1'   # iOS 27.1 SDK: older SDKs open letterboxed on iPhone Duo's inner display
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -131,7 +131,7 @@ jobs:
   concurrency-audit:
     name: Swift 6 readiness (advisory)
     if: github.event_name == 'pull_request'
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 30
     continue-on-error: true
     steps:
@@ -139,7 +139,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: latest-stable
+          xcode-version: '27.1'
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -192,14 +192,14 @@ jobs:
     # in this file, let alone passed its tests. It costs one build's wait before
     # each release, which is the point.
     needs: build
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: latest-stable
+          xcode-version: '27.1'
 
       - name: Set up Ruby + fastlane
         uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
