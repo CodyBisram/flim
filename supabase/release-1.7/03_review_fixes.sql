@@ -1,7 +1,8 @@
 -- FLIM 1.7, production step 1b: the nightly review's fixes to step 1 (2026-11-15). ADDITIVE and
 -- safe for 1.6: it only reads put_away, which nothing sets before 1.7, and narrows a cover read
 -- only 1.7 makes. Apply any time; step 1 (01_month_boxes.sql) is already on production.
--- Then append to supabase/schema.sql and move into supabase/migrations/ with the date applied.
+-- APPLIED to production 2026-11-15 (now supabase/migrations/2026-11-15_17_review_fixes.sql, and in
+-- supabase/schema.sql). FLIM Dev still to run it.
 
 -- 1. A put-away post leaves Spotlight too. "Put-away shots stay yours" held everywhere except the
 --    Spotlight read path: the posts and storage policies OR in spotlight_post_public, which never
