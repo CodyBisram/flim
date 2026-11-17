@@ -1764,6 +1764,7 @@ struct FollowListView: View {
                             }
                             .padding(.vertical, 8)
                         }
+                        .scrollDismissesKeyboard(.interactively)
                     }
                 }
             }

@@ -237,7 +237,11 @@ private struct FlimTopBarModifier<Bar: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
-            content.safeAreaBar(edge: .top, spacing: 0) { bar }
+            // Soft, as phones get it anyway: "automatic" turns hard at a regular width (the Duo's
+            // open display), a dark slab across a half-width column (Ricky's Duo, build 493).
+            content
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .safeAreaBar(edge: .top, spacing: 0) { bar }
         } else {
             VStack(spacing: 0) {
                 bar

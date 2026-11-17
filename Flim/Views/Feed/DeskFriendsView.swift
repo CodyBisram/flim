@@ -18,6 +18,7 @@ struct DeskFriendsView: View {
     @State private var hidden: Set<UUID> = []
     @State private var notice: String?
     @State private var showFind = false
+    @State private var query = ""
     /// Pushed onto your page's stack (1.7, owner 2026-11-14) rather than a sheet: no stack or
     /// Done of its own, and Find and a person's page push on the same stack, full screen.
     var pushed = false
@@ -34,6 +35,10 @@ struct DeskFriendsView: View {
     private var outgoing: [UserProfile] {
         following.filter { feed.isFollowing($0.id) && !feed.followsMe($0.id) }
     }
+
+    private var shownFriends: [UserProfile] { friends.filter { personMatches($0, query: query) } }
+    private var shownIncoming: [UserProfile] { incoming.filter { personMatches($0, query: query) } }
+    private var shownOutgoing: [UserProfile] { outgoing.filter { personMatches($0, query: query) } }
 
     var body: some View {
         if pushed {
@@ -53,6 +58,7 @@ struct DeskFriendsView: View {
                 tabs
                     .padding(.top, 10)
                 Rectangle().fill(FlimTheme.stroke).frame(height: 1)
+                PeopleSearchField(query: $query, prompt: "Search by name or username")
                 if !loaded {
                     Spacer()
                     ProgressView().tint(FlimTheme.textPrimary).frame(maxWidth: .infinity)
@@ -69,6 +75,7 @@ struct DeskFriendsView: View {
                         .padding(.bottom, 24)
                     }
                     .refreshableToCompletion { await load() }
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
             .background(DeskGround())
@@ -129,8 +136,10 @@ struct DeskFriendsView: View {
                 Button { showFind = true } label: { DeskPill("Find friends", style: .solid) }
             }
             .padding(.top, 80)
+        } else if shownFriends.isEmpty {
+            noSearchResults
         } else {
-            ForEach(friends) { person in
+            ForEach(shownFriends) { person in
                 row(person, detail: person.name) {
                     FollowButton(userId: person.id) { showNotice($0) }
                 }
@@ -144,10 +153,12 @@ struct DeskFriendsView: View {
             DeskEmptyState(title: "No requests.",
                            message: "When someone asks to be friends, it waits here.")
                 .padding(.top, 80)
+        } else if shownIncoming.isEmpty && shownOutgoing.isEmpty {
+            noSearchResults
         } else {
-            if !incoming.isEmpty {
+            if !shownIncoming.isEmpty {
                 label("WANT TO BE FRIENDS")
-                ForEach(incoming) { person in
+                ForEach(shownIncoming) { person in
                     row(person, detail: person.name) {
                         HStack(spacing: 6) {
                             Button("Not now") { hide(person) }
@@ -160,9 +171,9 @@ struct DeskFriendsView: View {
                     }
                 }
             }
-            if !outgoing.isEmpty {
+            if !shownOutgoing.isEmpty {
                 label("YOU ASKED")
-                ForEach(outgoing) { person in
+                ForEach(shownOutgoing) { person in
                     row(person, detail: "Requested") {
                         Button("Cancel") { cancel(person) }
                             .flimFont(14, weight: .semibold, relativeTo: .subheadline)
@@ -171,7 +182,7 @@ struct DeskFriendsView: View {
                     }
                 }
             }
-            if !incoming.isEmpty {
+            if !shownIncoming.isEmpty {
                 Text("Not now hides the request without telling them. You can still add them later from their page.")
                     .flimFont(14, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textSecondary)
@@ -192,6 +203,13 @@ struct DeskFriendsView: View {
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 4)
+    }
+
+    private var noSearchResults: some View {
+        DeskEmptyState(title: "No matches.", message: "Try a different name or username.") {
+            Button { query = "" } label: { DeskPill("Clear search", style: .outline) }
+        }
+        .padding(.top, 32)
     }
 
     private func row<Trailing: View>(_ person: UserProfile, detail: String?, @ViewBuilder trailing: () -> Trailing) -> some View {

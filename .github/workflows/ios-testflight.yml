@@ -23,10 +23,9 @@ on:
       - ".github/workflows/nightly-numbers.yml"
       - ".github/workflows/r2-tripwire.yml"
       # v2 is left out of this app's Release build (project.yml), so a v2-only push changes
-      # nothing here; FLIM Beta's own workflow ships it.
-      # v2 and the fonts are left out of the App Store build, so changing only them changes nothing.
+      # nothing here; FLIM Beta's own workflow ships it. The fonts are NOT ignored: 1.7's desk
+      # type (Caslon) ships in the App Store build.
       - "Flim/V2/**"
-      - "Flim/Resources/Fonts/**"
       - ".github/workflows/ios-beta-testflight.yml"
   pull_request:
   workflow_dispatch:

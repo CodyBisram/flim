@@ -174,6 +174,11 @@ enum DarkroomZoomChrome {
         }
     }
 
+    /// The sub line on a line of its own, under the crumb: the dot that joined it to the crumb goes.
+    static func stacked(_ sub: String) -> String {
+        sub.hasPrefix("· ") ? String(sub.dropFirst(2)) : sub
+    }
+
     /// "· N shots · N nights" (month), "· N shots · N nights" (year, summed), "· N years ·
     /// N nights" (all time, summed). `nil` when the relevant summary row(s) aren't available,
     /// never a partial or guessed line.

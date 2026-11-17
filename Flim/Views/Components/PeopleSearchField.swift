@@ -36,6 +36,7 @@ struct PeopleSearchField: View {
                 .foregroundStyle(FlimTheme.textPrimary).tint(accent)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .accessibilityLabel(prompt)
             if !query.isEmpty {
                 Button {
                     Haptics.tap()
@@ -44,13 +45,16 @@ struct PeopleSearchField: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 17))
                         .foregroundStyle(FlimTheme.textTertiary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Clear search")
                 .transition(.scale.combined(with: .opacity))
             }
         }
         .animation(.snappy(duration: 0.2), value: query.isEmpty)
-        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(minHeight: 44)
+        .padding(.horizontal, 14)
         .background(FlimTheme.bgElevated, in: Capsule())
         .padding(.horizontal, AppInfo.is17 ? 24 : 16)
         // Enough to clear the grabber with real space under it, and close enough to the 12 + 16
@@ -67,7 +71,11 @@ struct PeopleSearchField: View {
 /// two names they happen to remember, so both have to match, and an empty query matches
 /// everything rather than nothing.
 func personMatches(_ profile: UserProfile, query: String) -> Bool {
+    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return true }
-    return (profile.username ?? "").localizedCaseInsensitiveContains(query)
-        || (profile.displayName ?? "").localizedCaseInsensitiveContains(query)
+    let handleQuery = query.hasPrefix("@") ? String(query.dropFirst()) : query
+    if handleQuery.isEmpty { return true }
+    let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+    return (profile.username ?? "").range(of: handleQuery, options: options, locale: .current) != nil
+        || (profile.displayName ?? "").range(of: query, options: options, locale: .current) != nil
 }

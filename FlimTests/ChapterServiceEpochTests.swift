@@ -14,6 +14,32 @@ import Foundation
 @MainActor
 struct ChapterServiceEpochTests {
 
+    @Test("closing a box does not permit another save; only its own completion unlocks it")
+    func boxSaveCannotBeOvertaken() throws {
+        let service = ChapterService()
+        let key = ChapterService.ChapterKey(profileId: UUID(), monthStart: .distantPast)
+        let token = try #require(service.beginBoxSave(key))
+        #expect(service.isSavingBox(key))
+        #expect(service.beginBoxSave(key) == nil)
+        service.finishBoxSave(key, token: UUID())
+        #expect(service.isSavingBox(key))
+        service.finishBoxSave(key, token: token)
+        #expect(service.beginBoxSave(key) != nil)
+    }
+
+    @Test("an old account's completion cannot unlock a newer box save")
+    func staleBoxCompletionDoesNotUnlockNewSave() throws {
+        let service = ChapterService()
+        let key = ChapterService.ChapterKey(profileId: UUID(), monthStart: .distantPast)
+        let old = try #require(service.beginBoxSave(key))
+        service.resetForAccountChange()
+        let current = try #require(service.beginBoxSave(key))
+        service.finishBoxSave(key, token: old)
+        #expect(service.isSavingBox(key))
+        service.finishBoxSave(key, token: current)
+        #expect(!service.isSavingBox(key))
+    }
+
     @Test("a chaptersByProfile write guarded after the round trip is skipped once the account changes")
     func fetchChaptersStaleWriteIsDiscarded() {
         let service = ChapterService()

@@ -8,6 +8,18 @@ import os
 @MainActor
 @Observable
 final class FeedService {
+    private var commentDrafts: [UUID: PostCommentDraft] = [:]
+
+    func commentDraft(for postID: UUID) -> PostCommentDraft {
+        if let draft = commentDrafts[postID] { return draft }
+        let draft = PostCommentDraft()
+        commentDrafts[postID] = draft
+        return draft
+    }
+
+    func hasCommentDraft(for postID: UUID) -> Bool {
+        commentDrafts[postID]?.hasPendingWork == true
+    }
     private static let log = Logger(subsystem: "com.flim.app", category: "feed")
 
     var feed: [FeedItem] = []
@@ -1060,6 +1072,7 @@ final class FeedService {
     var spotlightShelfGenerations: [UUID: Int] = [:]
 
     func resetForAccountChange() {
+        commentDrafts = [:]
         profileStatsCache = [:]
         profilePostsCache = [:]
         feed = []

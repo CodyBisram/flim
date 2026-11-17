@@ -35,6 +35,23 @@ final class ChapterService {
         let monthStart: Date
     }
 
+    // Shared by every presentation of a box, so closing/reopening cannot bypass the save lock.
+    private var boxSaves: [ChapterKey: UUID] = [:]
+
+    func isSavingBox(_ key: ChapterKey) -> Bool { boxSaves[key] != nil }
+
+    func beginBoxSave(_ key: ChapterKey) -> UUID? {
+        guard boxSaves[key] == nil else { return nil }
+        let token = UUID()
+        boxSaves[key] = token
+        return token
+    }
+
+    func finishBoxSave(_ key: ChapterKey, token: UUID) {
+        guard boxSaves[key] == token else { return }
+        boxSaves[key] = nil
+    }
+
     #if DEBUG
     /// Set by `installDemoFixture`, so `fetchChapters`/`photos(for:monthStart:)` stop calling the
     /// (not-yet-real) RPCs and leave the fixture's data alone rather than overwriting it with an
@@ -43,6 +60,7 @@ final class ChapterService {
     #endif
 
     func resetForAccountChange() {
+        boxSaves = [:]
         chaptersByProfile = [:]
         photosByChapter = [:]
         statsByChapter = [:]
@@ -105,7 +123,7 @@ final class ChapterService {
         guard let rows: [Row] = try? await supabase.from("posts").select("id")
             .in("id", values: postIds.map(\.uuidString)).eq("put_away", value: true)
             .execute().value,
-              AccountEpoch.isCurrent(epoch) else { return false }
+              AccountEpoch.isCurrent(epoch), !Task.isCancelled else { return false }
         putAwayPostIds.subtract(postIds)
         putAwayPostIds.formUnion(rows.map(\.id))
         return true
@@ -114,10 +132,12 @@ final class ChapterService {
     /// Puts one of your posts away, or brings it back. Updates the set only once it landed.
     func setPutAway(_ putAway: Bool, postId: UUID) async -> Bool {
         guard AppInfo.is17 else { return false }
+        let epoch = AccountEpoch.current
         struct Update: Encodable { let put_away: Bool }
         do {
             try await supabase.from("posts").update(Update(put_away: putAway), returning: .minimal)
                 .eq("id", value: postId.uuidString).execute()
+            guard AccountEpoch.isCurrent(epoch) else { return false }
             if putAway { putAwayPostIds.insert(postId) } else { putAwayPostIds.remove(postId) }
             return true
         } catch {
@@ -128,12 +148,14 @@ final class ChapterService {
     /// Makes a shot your box's cover. `coverPath` is what the shelf and box draw for it.
     func setMonthCover(photoId: UUID, coverPath: String, userId: UUID, monthStart: Date) async -> Bool {
         guard AppInfo.is17 else { return false }
+        let epoch = AccountEpoch.current
         struct Row: Encodable { let user_id: UUID; let month_start: String; let cover_photo_id: UUID }
         do {
             try await supabase.from("month_boxes")
                 .upsert(Row(user_id: userId, month_start: Self.monthKey(monthStart), cover_photo_id: photoId),
                         returning: .minimal)
                 .execute()
+            guard AccountEpoch.isCurrent(epoch) else { return false }
             boxCoversByProfile[userId, default: [:]][Self.monthKey(monthStart)] = coverPath
             return true
         } catch {

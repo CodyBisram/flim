@@ -24,7 +24,7 @@ final class Desk17Tests: XCTestCase {
 }
 
 final class DeskLayoutTests: XCTestCase {
-    func testPhonesKeepTheBarAndTheDuoGetsARail() {
+    func testOnlyTheOpenDuoGetsARail() {
         // iPhone 17 Pro, the Duo closed and open, as the board draws them.
         XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 402, height: 874)), .phone)
         XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 375, height: 667)), .phone)
@@ -32,8 +32,9 @@ final class DeskLayoutTests: XCTestCase {
         XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .regular, size: CGSize(width: 890, height: 626)), .open)
         XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .compact, size: CGSize(width: 890, height: 626)), .open)
         XCTAssertFalse(DeskLayout.phone.usesRail)
-        XCTAssertEqual(DeskLayout.closed.railEdge, .trailing)
-        XCTAssertEqual(DeskLayout.open.railEdge, .leading)
+        // Closed, the system's own column holds the trailing edge, so the bar stays at the bottom.
+        XCTAssertFalse(DeskLayout.closed.usesRail)
+        XCTAssertTrue(DeskLayout.open.usesRail)
     }
 }
 

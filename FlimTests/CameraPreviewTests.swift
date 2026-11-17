@@ -1,6 +1,23 @@
 import XCTest
 @testable import Flim
 
+final class CaptureDeliveryTests: XCTestCase {
+    @MainActor func testLateCapturesKeepTheirOwnDeliveryAndAreConsumedOnce() {
+        let model = CameraViewModel()
+        let firstRoll = UUID(), secondRoll = UUID()
+        var delivered: [(UUID, Data)] = []
+        model.rememberCaptureDelivery({ delivered.append((firstRoll, $0)) }, forSettingsID: 10)
+        model.rememberCaptureDelivery({ delivered.append((secondRoll, $0)) }, forSettingsID: 11)
+        model.onPhotoCapture = { _ in XCTFail("must not use a replacement global callback") }
+        model.takeCaptureDelivery(forSettingsID: 11)?(Data([2]))
+        model.takeCaptureDelivery(forSettingsID: 10)?(Data([1]))
+        XCTAssertEqual(delivered.map(\.0), [secondRoll, firstRoll])
+        XCTAssertEqual(delivered.map(\.1), [Data([2]), Data([1])])
+        XCTAssertNil(model.takeCaptureDelivery(forSettingsID: 10))
+        XCTAssertNil(model.takeCaptureDelivery(forSettingsID: 999))
+    }
+}
+
 /// `faceRectsAreSettled`, the gate on how often the viewfinder's face rectangles redraw.
 ///
 /// Face metadata arrives at the video frame rate and jitters even on a still subject, so

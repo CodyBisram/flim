@@ -48,6 +48,14 @@ final class CameraViewModel: NSObject {
     /// by `CameraPreview`, the only place that owns the preview layer needed to do it.
     var faceRects: [CGRect] = []
 
+    /// The viewfinder's layer, handed over by `CameraPreview`, so the preview can turn with the
+    /// interface. FLIM is portrait-only on a phone, but the Duo's open display ignores that and
+    /// turns the interface anyway; with the connection left at its default angle, the open Duo held
+    /// upright showed the scene on its side (Ricky's Duo, build 493).
+    @ObservationIgnored private weak var previewLayer: AVCaptureVideoPreviewLayer?
+    @ObservationIgnored private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    @ObservationIgnored private var rotationObservation: NSKeyValueObservation?
+
     var flashOpacity: Double = 0
     var isCapturing = false
     /// The last capture's own bytes, exactly as `AVCapturePhotoOutput` delivered them. Uncropped
@@ -55,6 +63,17 @@ final class CameraViewModel: NSObject {
     /// where the decoded frame also feeds the grade and the classifier.
     var capturedData: Data?
     var onPhotoCapture: ((Data) -> Void)?
+    // A completion belongs to the shutter request, not whichever screen/roll is current when
+    // AVFoundation eventually returns. Retained across watchdog recovery for late captures.
+    @ObservationIgnored private var captureDeliveries: [Int64: (Data) -> Void] = [:]
+
+    func rememberCaptureDelivery(_ delivery: @escaping (Data) -> Void, forSettingsID id: Int64) {
+        captureDeliveries[id] = delivery
+    }
+
+    func takeCaptureDelivery(forSettingsID id: Int64) -> ((Data) -> Void)? {
+        captureDeliveries.removeValue(forKey: id)
+    }
 
     /// Bumped at the start of every `capturePhoto()` call so the watchdog Task it starts can
     /// tell whether it's still describing the current capture by the time it wakes up, see
@@ -262,6 +281,45 @@ final class CameraViewModel: NSObject {
         addVideoInput()
         session.commitConfiguration()
         enableFaceMetadata()
+        followInterfaceRotation()
+    }
+
+    /// Called by `CameraPreview` once its layer exists, which can be before or after `configure`.
+    func attachPreview(_ layer: AVCaptureVideoPreviewLayer) {
+        previewLayer = layer
+        followInterfaceRotation()
+    }
+
+    /// Keeps the viewfinder level with the interface for the current lens, and rebuilt whenever the
+    /// lens changes (a coordinator belongs to one device). On a phone the interface is always
+    /// portrait, so the angle stays where it always was; only a turned interface (the open Duo)
+    /// moves it.
+    private func followInterfaceRotation() {
+        rotationObservation = nil
+        rotationCoordinator = nil
+        guard let device = currentDevice, let layer = previewLayer else { return }
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: layer)
+        rotationCoordinator = coordinator
+        applyPreviewRotation(coordinator.videoRotationAngleForHorizonLevelPreview)
+        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.new]) { [weak self] coordinator, _ in
+            let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+            Task { @MainActor in self?.applyPreviewRotation(angle) }
+        }
+    }
+
+    private func applyPreviewRotation(_ angle: CGFloat) {
+        guard let connection = previewLayer?.connection, connection.isVideoRotationAngleSupported(angle) else { return }
+        connection.videoRotationAngle = angle
+    }
+
+    /// The saved photo takes the viewfinder's angle, not the horizon's: what the frame showed is
+    /// the photo, so a shot from the open Duo held upright comes out as it looked, and a phone,
+    /// whose viewfinder never turns, keeps exactly the angle it always had.
+    private func matchCaptureToPreview() {
+        guard let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelPreview,
+              let connection = output.connection(with: .video),
+              connection.isVideoRotationAngleSupported(angle) else { return }
+        connection.videoRotationAngle = angle
     }
 
     /// Requests face metadata for the viewfinder's focus rectangles.
@@ -544,6 +602,7 @@ final class CameraViewModel: NSObject {
         // Faces belong to the lens we just swapped away from; the new one reports its own.
         faceRects = []
         enableFaceMetadata()   // swapping the input can clear the requested types
+        followInterfaceRotation()   // a rotation coordinator belongs to one lens
     }
 
     // MARK: - Focus & zoom
@@ -712,7 +771,7 @@ final class CameraViewModel: NSObject {
     // MARK: - Capture
 
     @MainActor
-    func capturePhoto() {
+    func capturePhoto(delivery: ((Data) -> Void)? = nil) {
         guard !isCapturing else { return }
         // Never fire the output at a session that is not running. The self-timer's countdown runs
         // in a Task that outlives the view: leaving the Camera tab mid-countdown calls stopRunning
@@ -749,6 +808,7 @@ final class CameraViewModel: NSObject {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = isFront
         }
+        matchCaptureToPreview()
 
         // Front camera has no hardware LED, but on-device measurement (dark room, front camera,
         // flash on) showed `output.supportedFlashModes` DOES include `.on` here, `flashMode = .on`
@@ -774,6 +834,9 @@ final class CameraViewModel: NSObject {
             Self.log.notice("shutter tapped, front flash path")
         }
         rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
+        if let delivery = delivery ?? onPhotoCapture {
+            rememberCaptureDelivery(delivery, forSettingsID: settings.uniqueID)
+        }
         output.capturePhoto(with: settings, delegate: self)
         if isFront && flashMode == .on {
             Self.log.notice("capturePhoto called \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
@@ -1051,6 +1114,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // delivered either way. `nil` (the ID was never recorded, which `capturePhoto()` always
         // does before triggering a capture) fails open, as before.
         let expectedGeneration = takeCaptureGeneration(forSettingsID: photo.resolvedSettings.uniqueID)
+        let settingsID = photo.resolvedSettings.uniqueID
 
         // The capture's own bytes, and nothing else done to them here.
         //
@@ -1064,6 +1128,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // is already passed to `enqueueCapture` by `CameraView`, and it is read there now.
         let data = photo.fileDataRepresentation()
         Task { @MainActor in
+            let delivery = self.takeCaptureDelivery(forSettingsID: settingsID)
             let outcome = Self.captureCallbackOutcome(expectedGeneration: expectedGeneration,
                                                       currentGeneration: self.captureGeneration,
                                                       hasData: data != nil)
@@ -1079,7 +1144,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
             }
             guard outcome.deliversPhoto, let data else { return }
             self.capturedData = data
-            self.onPhotoCapture?(data)
+            delivery?(data)
         }
     }
 }

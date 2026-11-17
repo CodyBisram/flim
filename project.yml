@@ -123,7 +123,7 @@ targets:
       # configs leave it off, so 1.6.x ships unchanged from the same code until 1.7 launches.
       # v2 ("Print", Flim/V2) is on the back burner: still compiled into Debug and the beta
       # configs so its tests and the -v2Demo host keep building, but nothing switches it on.
-      # Release leaves every v2 file and the fonts out of the build.
+      # Release leaves every v2 file out of the build; the fonts ship (1.7's desk type).
       configs:
         Debug:
           APS_ENVIRONMENT: development

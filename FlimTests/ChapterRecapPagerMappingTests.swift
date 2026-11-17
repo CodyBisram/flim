@@ -7,6 +7,18 @@ import Foundation
 /// the curated ids, in the deck's own (chronological) order, never the whole month, and that the
 /// mapping never leaks a `rollId` or a stale `developsAt` the pager could misread.
 struct ChapterRecapPagerMappingTests {
+    @Test("put-away preview removes the same private photo from grid, pager and post mapping")
+    func putAwayPreviewFiltersEveryMapping() {
+        let hiddenPost = UUID()
+        let hidden = photo(UUID(), takenAt: .now, postId: hiddenPost)
+        let visible = photo(UUID(), takenAt: .now, postId: UUID())
+        let filtered = ChapterRecapViewModel.excludingPutAway([hidden, visible], postIds: [hiddenPost])
+        #expect(filtered.map(\.id) == [visible.id])
+        #expect(ChapterRecapViewModel.pagerPhotos(from: filtered, profileId: UUID()).map(\.id) == [visible.id])
+        #expect(ChapterRecapViewModel.pagerPosts(from: filtered, profileId: UUID())[hidden.id] == nil)
+        #expect(ChapterRecapViewModel.excludingPutAway([hidden], postIds: [hiddenPost]).isEmpty)
+        #expect(ChapterRecapViewModel.excludingPutAway([hidden, visible], postIds: []).count == 2)
+    }
     private func photo(_ id: UUID, takenAt: Date, thumbPath: String? = "thumb", feedPath: String? = "feed",
                         storagePath: String = "storage", rollId: UUID? = nil, postId: UUID? = nil) -> ChapterPhoto {
         ChapterPhoto(id: id, takenAt: takenAt, thumbPath: thumbPath, feedPath: feedPath,

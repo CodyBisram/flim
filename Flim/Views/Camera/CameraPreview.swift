@@ -38,6 +38,7 @@ struct CameraPreview: UIViewRepresentable {
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         context.coordinator.view = view
+        camera.attachPreview(view.previewLayer)
 
         // Push the preview's REAL on-screen bounds up to the view model every layout pass,
         // so a captured photo can later be cropped to match what this boxed (3:4, see

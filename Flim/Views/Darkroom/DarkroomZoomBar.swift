@@ -17,15 +17,16 @@ struct DarkroomZoomBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text(crumb)
-                        .flimFont(12, weight: .semibold)
-                        .tracking(1.1)
-                        .foregroundStyle(FlimTheme.textSecondary)
-                    if let sub {
-                        Text(sub)
-                            .flimFont(11.5)
-                            .foregroundStyle(FlimTheme.textTertiary)
+                // One line where it fits; in a narrow column (the open Duo's half) the figures drop
+                // under the crumb whole, without their leading dot, instead of wrapping mid-line.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        crumbText
+                        if let sub { subText(sub) }
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        crumbText
+                        if let sub { subText(DarkroomZoomChrome.stacked(sub)) }
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -40,6 +41,21 @@ struct DarkroomZoomBar: View {
 
             DarkroomHeaderRule()
         }
+    }
+
+    private var crumbText: some View {
+        Text(crumb)
+            .flimFont(12, weight: .semibold)
+            .tracking(1.1)
+            .foregroundStyle(FlimTheme.textSecondary)
+            .fixedSize()
+    }
+
+    private func subText(_ sub: String) -> some View {
+        Text(sub)
+            .flimFont(11.5)
+            .foregroundStyle(FlimTheme.textTertiary)
+            .fixedSize()
     }
 
     private var zoomControl: some View {

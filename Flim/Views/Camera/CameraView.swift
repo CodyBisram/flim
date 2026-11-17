@@ -806,7 +806,6 @@ struct CameraView: View {
         // Warm the Taptic Engine while the camera spins up, so the shutter's haptic fires with
         // the press instead of trailing it the first time.
         Haptics.prepare()
-        bindCapture()
         Task { await refreshUnsorted() }
         Task {
             await camera.start()
@@ -834,7 +833,8 @@ struct CameraView: View {
         // No app shutter sound, AVCapturePhotoOutput plays the system camera-shutter sound itself
         // at the actual capture (correctly timed, and after the flash fires). Playing our own too
         // caused a double shutter noise with flash on.
-        camera.capturePhoto()
+        guard let userId = auth.currentUser?.id else { return }
+        camera.capturePhoto(delivery: captureDelivery(userId: userId))
         // Feeds VolumeShutterTip's "has taken a few shots" rule.
     }
 
@@ -1258,21 +1258,35 @@ struct CameraView: View {
 
     // MARK: - Wire capture → film filter → upload
 
-    private func bindCapture() {
-        camera.onPhotoCapture = { data in
-            guard let userId = auth.currentUser?.id else { return }
-            // Read the current roll + film selection at capture time.
-            let rollId = selectedRoll?.id
-            let rollName = selectedRoll?.name
-            // The already-loaded reveal instant for this roll, used only if the fresh fetch
-            // `enqueueCapture` makes for it fails outright (see `PhotoService.developDate`).
-            let knownRevealAt = selectedRoll?.revealAt
-            let stock = selectedStock
+    private func captureDelivery(userId: UUID) -> (Data) -> Void {
+        // Snapshot at the shutter, before flash metering, processing or a fold can change it.
+        let epoch = AccountEpoch.current
+        let capturedAt = Date.now
+        let photoId = UUID()
+        let previewAspect = camera.previewAspectRatio
+        let rollId = selectedRoll?.id
+        let rollName = selectedRoll?.name
+        // The already-loaded reveal instant for this roll, used only if the fresh fetch
+        // `enqueueCapture` makes for it fails outright (see `PhotoService.developDate`).
+        let knownRevealAt = selectedRoll?.revealAt
+        let stock = selectedStock
+        let queueStore = photos.captureQueueStore
+        return { data in
+            guard AccountEpoch.isCurrent(epoch), auth.currentUser?.id == userId else {
+                // Keep a late shot for its original account's replay; never upload it using the
+                // next account's session, or put it in that account's retry UI.
+                let pending = PendingCapture(id: photoId, userId: userId, rollId: rollId,
+                                             capturedAt: capturedAt, stockId: stock.id,
+                                             knownRevealAt: knownRevealAt, previewAspect: previewAspect)
+                Task { _ = await queueStore.save(pending, raw: data) }
+                return
+            }
             // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
             // rapid burst can't race and fail. Fires a local develop reminder on success.
             photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId,
                                   knownRevealAt: knownRevealAt,
-                                  previewAspect: camera.previewAspectRatio) { photo in
+                                  previewAspect: previewAspect, capturedAt: capturedAt,
+                                  photoId: photoId) { photo in
                 await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
                 // Gated on the PHOTO's own rollId, not the roll selected at capture time: a roll

@@ -403,35 +403,18 @@ struct DarkroomView: View {
     /// under it as an italic line.
     private var deskHeaderRow: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Darkroom")
-                    .font(DeskType.serif(30, relativeTo: .largeTitle))
-                    .foregroundStyle(FlimTheme.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                #if DEBUG
-                Button {
-                    Task {
-                        if let uid = auth.currentUser?.id {
-                            await photoService.seedUnsortedPhotos(userId: uid)
-                            await reload()
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    deskHeaderTitle.fixedSize()
+                    Spacer(minLength: 8)
+                    deskHeaderActions.fixedSize()
                 }
-                .accessibilityLabel("Seed unsorted (DEBUG)")
-                .debugChrome()
-                #endif
-                if !vm.photos.isEmpty, zoom == .month {
-                    Button("Select") {
-                        isSelecting = true
-                        selectedIDs = []
+                VStack(alignment: .leading, spacing: 2) {
+                    deskHeaderTitle
+                    HStack {
+                        Spacer(minLength: 0)
+                        deskHeaderActions
                     }
-                    .flimFont(15, weight: .semibold)
-                    .foregroundStyle(FlimTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .padding(.leading, 12)
                 }
             }
             // Server-counted, never the loaded page count.
@@ -446,6 +429,42 @@ struct DarkroomView: View {
         .padding(.top, 4)
         .padding(.bottom, 6)
         .padding(.horizontal, 24)
+    }
+
+    private var deskHeaderTitle: some View {
+        Text("Darkroom")
+            .font(DeskType.serif(30, relativeTo: .largeTitle))
+            .foregroundStyle(FlimTheme.textPrimary)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var deskHeaderActions: some View {
+        HStack(spacing: 8) {
+            #if DEBUG
+            Button {
+                Task {
+                    if let uid = auth.currentUser?.id {
+                        await photoService.seedUnsortedPhotos(userId: uid)
+                        await reload()
+                    }
+                }
+            } label: {
+                Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
+            }
+            .accessibilityLabel("Seed unsorted (DEBUG)")
+            .debugChrome()
+            #endif
+            if !vm.photos.isEmpty, zoom == .month {
+                Button("Select") {
+                    isSelecting = true
+                    selectedIDs = []
+                }
+                .flimFont(15, weight: .semibold)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .frame(minHeight: 44)
+                .padding(.leading, 12)
+            }
+        }
     }
 
     private var v1HeaderRow: some View {
@@ -630,7 +649,13 @@ Text("Darkroom")
     private var bodyContent: some View {
         bodyLayout
             // Folding the Duo shut must not throw the docked shot up as a full-screen viewer.
-            .onChange(of: docksViewer) { _, _ in selectedPhoto = nil; viewingID = nil }
+            .onChange(of: docksViewer) { wasDocked, _ in
+                // Remember the frame actually reached by swiping, not just the one first tapped.
+                // Keep it as the next docked start without presenting a cover on the outer screen.
+                dockedDefaultID = (wasDocked ? viewingID : selectedPhoto?.id) ?? dockedDefaultID
+                selectedPhoto = nil
+                viewingID = nil
+            }
             // 1.7: the Select bar takes the tab bar's place (Blend 3, 9a).
             .onChange(of: isSelecting, initial: true) { _, now in
                 if AppInfo.is17 { DeskChrome.shared.selecting = now }

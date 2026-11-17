@@ -183,8 +183,8 @@ enum DeskType {
 }
 
 /// Where 1.7 is being drawn: a regular iPhone, or the iPhone Duo closed or open (Blend 2, part 6).
-/// The phone keeps the bar at the bottom; the Duo stands it up as a rail, on the trailing edge
-/// closed and the leading edge open, and the open display lays the big tabs out in two columns.
+/// The phone and closed Duo keep the bar at the bottom; the open Duo uses a leading rail
+/// and lays the big tabs out in two columns.
 ///
 /// Decided by size class and the screen's shape, never by device name or a fixed size (the same
 /// rule v2 used): a phone in portrait is over twice as tall as it is wide, the Duo's outer
@@ -210,10 +210,11 @@ enum DeskLayout: Equatable {
     /// Between the Duo's outer display (about 1.45) and the shortest current iPhone (about 2.1).
     static let shortAspectThreshold: CGFloat = 1.75
 
-    /// The tab bar stands up as a rail on the Duo.
-    var usesRail: Bool { self != .phone }
-    /// Which edge the rail sits on.
-    var railEdge: HorizontalEdge { self == .open ? .leading : .trailing }
+    /// The tab bar stands up as a rail, on the leading edge, only on the Duo's open display. Closed,
+    /// the outer display keeps the phone's bottom bar: the system draws its own column (island,
+    /// clock, signal) down the trailing edge and reserves it as safe area, and a rail beside it
+    /// left the camera under 300pt wide (Ricky's Duo, build 493).
+    var usesRail: Bool { self == .open }
 }
 
 private struct DeskLayoutKey: EnvironmentKey {

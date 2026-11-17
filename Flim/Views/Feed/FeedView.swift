@@ -270,16 +270,16 @@ struct FeedView: View {
                 }
 
             if docksComments {
-                // Board 6g: the feed keeps the left half, the comments stand right of the fold
-                // with the same margins as the Darkroom's docked viewer (6h).
+                // The rail has already taken space from the left half. Let the feed reach the
+                // fold; its card inset provides the gutter, rather than paying for both.
                 GeometryReader { proxy in
                     let fold = max(0, (proxy.size.width - DeskTabBar.railSpace) / 2)
                     HStack(spacing: 0) {
                         feedColumn
-                            .frame(width: max(0, fold - 14))
+                            .frame(width: fold)
                             .environment(\.dockedComments, dockedComments)
                         dockedCommentsPanel
-                            .padding(.leading, 30)
+                            .padding(.leading, 16)
                             .padding(.trailing, 20)
                     }
                 }
@@ -291,6 +291,7 @@ struct FeedView: View {
         // Every post, not just every unit: deleting one shot of a day keeps the day's unit (and
         // its id) but must still take the column off the deleted post.
         .onChange(of: units.flatMap { $0.items.map(\.post.id) }) { _, _ in syncDockedComments() }
+        .onChange(of: dockedComments.onScreen) { _, _ in syncDockedComments() }
         .navigationDestination(item: $dockedProfile) { UserPageView(userId: $0.id) }
         // `cachedUnits`'s safety net for `feed.feed` changing outside this
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
@@ -529,11 +530,22 @@ struct FeedView: View {
         }
     }
 
-    /// Keeps the docked column on a card that is still in the feed: the top card's newest shot
-    /// until one is tapped, and again when the shown one leaves (a delete, a block). Folding the
-    /// Duo shut lets it go, so the next open starts from the top again.
+    /// Keeps the docked column on a card that is still in the feed and on screen: the top card's
+    /// newest shot until one is tapped, the tapped one while it stays in view, and the topmost card
+    /// on screen once the shown one scrolls away or leaves (a delete, a block). Not while you are
+    /// typing, so a scroll never takes a half-written comment away. Folding keeps the target;
+    /// reopening reconciles it against the current feed rather than always jumping to the top.
     private func syncDockedComments() {
-        guard docksComments else { dockedComments.clear(); return }
+        guard docksComments else { return }
+        if let target = dockedComments.target, feed.hasCommentDraft(for: target.post.id),
+           units.contains(where: { $0.items.contains { $0.post.id == target.post.id } }) { return }
+        let onScreen = dockedComments.onScreen
+        if let target = dockedComments.target, !onScreen.isEmpty, !onScreen.contains(target.unitId),
+           !DeskChrome.shared.keyboardUp,
+           let top = units.first(where: { onScreen.contains($0.id) }), let item = top.items.first {
+            dockedComments.show(post: item.post, unitId: top.id, authorHandle: top.author.handle)
+            return
+        }
         if let target = dockedComments.target,
            units.contains(where: { $0.id == target.unitId && $0.items.contains { $0.post.id == target.post.id } }) { return }
         // The post went but its day stayed: hand the column to that card, which moves it on to
@@ -582,7 +594,7 @@ struct FeedView: View {
     /// 1.7's header (Blend 1, 2a): the title in Caslon, then Find and Activity as plain glyphs,
     /// no circles. Adding friends lives in Find; your page has its own tab.
     private var deskHeader: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 12) {
             Text("Feed")
                 .font(DeskType.serif(30, relativeTo: .largeTitle))
                 .foregroundStyle(FlimTheme.textPrimary)

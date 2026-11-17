@@ -10,6 +10,38 @@ import XCTest
 final class Desk17UITests: XCTestCase {
     private var app: XCUIApplication!
 
+    func testDuoFeedPolishOnBothDesks() {
+        for desk in ["paper", "slate"] {
+            for frame in ["466x678", "890x626"] {
+                app.terminate()
+                app.launchArguments = ["-chromePreviewDemo", "-tabFeed", "-desk", desk,
+                                       "-deskFrame", frame, "-deskFrameFit", "380"]
+                app.launch()
+                XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 15))
+                XCTAssertTrue(app.buttons["Find"].isHittable)
+                XCTAssertTrue(app.buttons["Activity"].isHittable)
+                for label in ["Darkroom", "Rolls", "Camera", "Feed", "You"] {
+                    XCTAssertTrue(bar(label).isHittable, "\(label) unreachable in \(desk) \(frame)")
+                }
+                if frame == "890x626" {
+                    XCTAssertTrue(app.staticTexts["Comments"].firstMatch.exists)
+                } else {
+                    XCTAssertFalse(app.staticTexts["Comments"].firstMatch.exists)
+                    // Reach the response controls beneath the tall photograph, above the bar.
+                    app.swipeUp()
+                    let comment = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View all' OR label == 'Add a comment'")).firstMatch
+                    XCTAssertTrue(comment.waitForExistence(timeout: 5))
+                    XCTAssertTrue(comment.isHittable, "response control obscured by bottom navigation")
+                }
+                let capture = XCTAttachment(screenshot: app.screenshot())
+                capture.name = "duo-feed-\(desk)-\(frame)"
+                capture.lifetime = .keepAlways
+                add(capture)
+                shot("polish_\(desk)_\(frame)")
+            }
+        }
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
@@ -183,9 +215,19 @@ final class Desk17UITests: XCTestCase {
         friends.tap()
         let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Requests'")).firstMatch
         XCTAssertTrue(requests.waitForExistence(timeout: 10), "Friends has no Requests tab")
+        let search = app.textFields["Search by name or username"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("@mira")
         shot("friends")
         requests.tap()
-        sleep(1)
+        XCTAssertEqual(search.value as? String, "@mira", "switching tabs should keep the query")
+        let searchCapture = XCTAttachment(screenshot: app.screenshot())
+        searchCapture.name = "friends-request-search"
+        searchCapture.lifetime = .keepAlways
+        add(searchCapture)
+        app.buttons["Clear search"].firstMatch.tap()
+        XCTAssertFalse(app.buttons["Clear search"].firstMatch.exists)
         shot("friends_requests")
     }
 

@@ -69,7 +69,7 @@ struct ChapterRecapView: View {
     /// tapped mid-reveal pushes with a back button instead of presenting with no way out).
     @State private var profileRoute: ProfileRoute?
     /// 1.7's box edit (Blend 4, 12b): the sheet, the box's chosen cover by photo, and whether the
-    /// box is showing itself as friends see it (put-away shots left out).
+    /// box is previewing its posted shots with put-away shots left out.
     @State private var boxCoverPhotoId: UUID?
     /// Whether this box's put-away shots and chosen cover have been read. Edit waits for it: a
     /// sheet opened on a half-read box saved its empty guess and brought put-away shots back
@@ -85,6 +85,20 @@ struct ChapterRecapView: View {
         let cover: UUID?
     }
     @State private var asFriendsSee = false
+    /// Freeze the preview's input when Play is tapped; an asynchronous read must not move a pager.
+    @State private var previewPlayback: [ChapterPhoto]?
+
+    private var visibleBoxPhotos: [ChapterPhoto] {
+        ChapterRecapViewModel.excludingPutAway(viewModel.monthPhotos,
+                                              postIds: asFriendsSee ? chapters.putAwayPostIds : [])
+    }
+
+    private var playableDeck: [ChapterPhoto] {
+        ChapterRecapViewModel.excludingPutAway(viewModel.deck,
+                                              postIds: asFriendsSee ? chapters.putAwayPostIds : [])
+    }
+
+    private var playbackDeck: [ChapterPhoto] { previewPlayback ?? viewModel.deck }
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL],
          docked: Bool = false, onClose: @escaping () -> Void = {}) {
@@ -100,6 +114,10 @@ struct ChapterRecapView: View {
     /// second, and signing back in as the first must not show it again either.
     private func firstChapterSeenKey(userId: UUID) -> String { "firstChapterSeen.\(userId.uuidString)" }
     private var isOwnRecap: Bool { auth.currentUser?.id == profileId }
+    private var boxKey: ChapterService.ChapterKey {
+        .init(profileId: profileId, monthStart: viewModel.chapter.monthStart)
+    }
+    private var savingBox: Bool { chapters.isSavingBox(boxKey) }
 
     /// Ends the recap: the cover goes, or the docked box hands the column back.
     private func close() {
@@ -196,7 +214,7 @@ struct ChapterRecapView: View {
             // the cover's dismissal animation reveals whatever `phase` shows underneath, and a
             // flip made only in `onDismiss` left the opening card visible for that frame or two.
             // On the open Duo the numbers were beside the photographs all along: back to the box.
-            if !presented, viewModel.hasClosingCard, !splitsScreening { phase = .closing }
+            if !presented, !asFriendsSee, viewModel.hasClosingCard, !splitsScreening { phase = .closing }
             viewModel.setPlayerMounted(presented)
             if !presented { handlePlayerDismissed() }
         }
@@ -246,7 +264,7 @@ struct ChapterRecapView: View {
 
     /// The month, posted shots by day, newest day first, for the box's grid.
     private var boxDays: [(day: Date, photos: [ChapterPhoto])] {
-        let live = viewModel.monthPhotos.filter { !$0.isDeadFrame && !(asFriendsSee && isPutAway($0)) }
+        let live = visibleBoxPhotos
         let grouped = Dictionary(grouping: live) { FeedUnit.dayKey(for: $0.takenAt) }
         return grouped.keys.sorted(by: >).map { (day: $0, photos: grouped[$0] ?? []) }
     }
@@ -280,6 +298,12 @@ struct ChapterRecapView: View {
     /// The box's cover path: the shot chosen in Edit, else the box's stored cover, else the
     /// month's own first.
     private var boxCoverPath: String? {
+        if asFriendsSee {
+            let preferred = boxCoverPhotoId.flatMap { id in visibleBoxPhotos.first { $0.id == id } }
+            let storedPath = chapters.coverPath(for: viewModel.chapter, profileId: profileId)
+            let stored = visibleBoxPhotos.first { $0.displayPath == storedPath }
+            return (preferred ?? stored ?? visibleBoxPhotos.first)?.displayPath
+        }
         if let id = boxCoverPhotoId, let photo = viewModel.monthPhotos.first(where: { $0.id == id }) {
             return photo.displayPath
         }
@@ -289,7 +313,10 @@ struct ChapterRecapView: View {
     /// Saves what Edit changed: each shot put away or brought back, then the cover. Shown at once;
     /// anything that didn't land is put back and said.
     private func applyBoxEdit(cover: UUID?, putAway: Set<UUID>, from session: BoxEditSession) {
-        guard let uid = auth.currentUser?.id else { return }
+        guard let uid = auth.currentUser?.id, uid == profileId,
+              let saveToken = chapters.beginBoxSave(boxKey) else { return }
+        let key = boxKey
+        let epoch = AccountEpoch.current
         // Against what the sheet opened on, never a set that changed under it.
         let before = session.putAway
         let toAway = putAway.subtracting(before)
@@ -305,16 +332,25 @@ struct ChapterRecapView: View {
         service.putAwayPostIds.formUnion(toAway)
         service.putAwayPostIds.subtract(toBack)
         Task {
+            defer { service.finishBoxSave(key, token: saveToken) }
             var failed = 0
-            for id in toAway where !(await service.setPutAway(true, postId: id)) {
-                service.putAwayPostIds.remove(id); failed += 1
+            for id in toAway {
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                let saved = await service.setPutAway(true, postId: id)
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                if !saved { service.putAwayPostIds.remove(id); failed += 1 }
             }
-            for id in toBack where !(await service.setPutAway(false, postId: id)) {
-                service.putAwayPostIds.insert(id); failed += 1
+            for id in toBack {
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                let saved = await service.setPutAway(false, postId: id)
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                if !saved { service.putAwayPostIds.insert(id); failed += 1 }
             }
+            guard AccountEpoch.isCurrent(epoch) else { return }
             if let coverPhoto,
                !(await service.setMonthCover(photoId: coverPhoto.id, coverPath: coverPhoto.displayPath,
                                              userId: uid, monthStart: monthStart)) {
+                guard AccountEpoch.isCurrent(epoch) else { return }
                 boxCoverPhotoId = previousCover
                 failed += 1
             }
@@ -342,6 +378,7 @@ struct ChapterRecapView: View {
     }
 
     private func play(from index: Int = 0) {
+        previewPlayback = asFriendsSee ? playableDeck : nil
         Haptics.tap()
         selection = index
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isPlayerPresented = true }
@@ -371,19 +408,20 @@ struct ChapterRecapView: View {
                 Spacer()
                 if isOwnRecap, !viewModel.monthPhotos.isEmpty {
                     Button {
+                        guard boxEditReady, !savingBox else { return }
                         Haptics.tap()
                         asFriendsSee = false
                         boxEdit = BoxEditSession(putAway: currentPutAway, cover: boxCoverPhotoId ?? defaultCoverPhotoId)
                     } label: {
-                        Text("Edit")
+                        Text(savingBox ? "Saving…" : "Edit")
                             .flimFont(17, weight: .medium, relativeTo: .body)
                             .foregroundStyle(FlimTheme.textPrimary)
                             .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(!boxEditReady)
-                    .opacity(boxEditReady ? 1 : 0.4)
+                    .disabled(!boxEditReady || savingBox)
+                    .opacity(boxEditReady && !savingBox ? 1 : 0.4)
                     .accessibilityHint("Choose the cover and put shots away")
                 }
             }
@@ -397,7 +435,7 @@ struct ChapterRecapView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 8) }
-                        Text(viewModel.chapter.statsLine)
+                        Text(asFriendsSee ? (visibleBoxPhotos.count == 1 ? "1 visible shot" : "\(visibleBoxPhotos.count) visible shots") : viewModel.chapter.statsLine)
                             .flimFont(14, relativeTo: .subheadline)
                             .foregroundStyle(FlimTheme.textSecondary)
                             .lineLimit(1)
@@ -421,7 +459,7 @@ struct ChapterRecapView: View {
                         }
                         .buttonStyle(.plain)
                         // A chapter is one person's month, so the sheet is theirs to share.
-                        if isOwnRecap {
+                        if isOwnRecap, !asFriendsSee {
                             Button {
                                 guard !viewModel.isBuildingContactSheet, !viewModel.isLoadingDeck else { return }
                                 Task { await viewModel.buildContactSheet() }
@@ -450,13 +488,13 @@ struct ChapterRecapView: View {
                     }
                     .padding(.top, 14)
 
-                    if let note = viewModel.contactSheetNote {
+                    if !asFriendsSee, let note = viewModel.contactSheetNote {
                         Text(note)
                             .flimFont(13, relativeTo: .footnote)
                             .foregroundStyle(FlimTheme.textSecondary)
                             .padding(.top, 8)
                     }
-                    if let error = viewModel.contactSheetError {
+                    if !asFriendsSee, let error = viewModel.contactSheetError {
                         HStack(spacing: 10) {
                             Text(error)
                                 .flimFont(13, relativeTo: .footnote)
@@ -478,7 +516,7 @@ struct ChapterRecapView: View {
                     }
                     if asFriendsSee {
                         HStack {
-                            Text("AS FRIENDS SEE IT")
+                            Text("PUT-AWAY PREVIEW")
                                 .font(DeskType.data(11))
                                 .tracking(1.4)
                                 .foregroundStyle(FlimTheme.textSecondary)
@@ -489,6 +527,9 @@ struct ChapterRecapView: View {
                                 .frame(minHeight: 44)
                         }
                         .padding(.top, 8)
+                        Text("Put-away shots are excluded. Other audience rules still apply.")
+                            .flimFont(13, relativeTo: .footnote)
+                            .foregroundStyle(FlimTheme.textSecondary)
                     }
                     if showFirstRunLine {
                         Text("Built from what you posted this month. Anyone who can see your page sees this too.")
@@ -519,17 +560,21 @@ struct ChapterRecapView: View {
             .scrollIndicators(.hidden)
         }
         // Keyed on the month's list: the load lands after the box first appears.
-        .task(id: viewModel.monthPhotos.count) {
+        .task(id: "\(viewModel.monthPhotos.count)-\(savingBox)") {
+            guard !savingBox else { boxEditReady = false; return }
             await viewModel.signMonthThumbs(feed: feed)
             // Your own box: which shots are put away, and the cover you chose (12b).
             if isOwnRecap, !viewModel.monthPhotos.isEmpty, let uid = auth.currentUser?.id {
                 let readPutAway = await chapters.loadPutAway(postIds: viewModel.monthPhotos.compactMap(\.postId))
+                guard !Task.isCancelled, !savingBox else { return }
                 var readCover = boxCoverPhotoId != nil
                 if !readCover, let read = await chapters.monthCoverPhotoId(userId: uid, monthStart: viewModel.chapter.monthStart) {
+                    guard !Task.isCancelled, !savingBox else { return }
                     boxCoverPhotoId = read
                     readCover = true
                 }
                 // Both read (a month with no chosen cover reads as `.some(nil)`): Edit can open.
+                guard !Task.isCancelled, !savingBox else { return }
                 boxEditReady = readPutAway && readCover
             }
         }
@@ -545,7 +590,8 @@ struct ChapterRecapView: View {
                     withAnimation(.snappy) { asFriendsSee = preview }
                 })
         }
-        .sheet(isPresented: Binding(get: { viewModel.showContactSheetShare },
+        .onChange(of: asFriendsSee) { _, _ in viewModel.showContactSheetShare = false }
+        .sheet(isPresented: Binding(get: { !asFriendsSee && viewModel.showContactSheetShare },
                                     set: { viewModel.showContactSheetShare = $0 })) {
             if let file = viewModel.contactSheetFile {
                 ActivityView(items: [file])
@@ -645,7 +691,7 @@ struct ChapterRecapView: View {
     private func boxThumb(_ photo: ChapterPhoto) -> some View {
         Button {
             // A shot the screening plays opens there; one curation left out opens at the start.
-            play(from: viewModel.deckIndex(ofPhoto: photo.id) ?? 0)
+            play(from: playableDeck.firstIndex { $0.id == photo.id } ?? 0)
         } label: {
             Color.clear
                 .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
@@ -914,7 +960,7 @@ struct ChapterRecapView: View {
                 Spacer(minLength: 0)
             }
             .transition(.opacity)
-        } else if viewModel.isEmpty {
+        } else if playbackDeck.isEmpty {
             VStack(spacing: 0) {
                 playerHeader
                 Spacer(minLength: 0)
@@ -944,7 +990,7 @@ struct ChapterRecapView: View {
     /// screening's own width rather than the desk layout, which a full-screen cover can disagree
     /// with; 700pt is past any phone and inside the open Duo (890pt).
     private var splitsScreening: Bool {
-        AppInfo.is17 && screeningWidth >= 700 && viewModel.hasClosingCard
+        AppInfo.is17 && !asFriendsSee && screeningWidth >= 700 && viewModel.hasClosingCard
     }
 
     /// The numbers beside the photographs on the open Duo: a frame opens in the pager, and its
@@ -971,9 +1017,9 @@ struct ChapterRecapView: View {
 
     private var monthPager: some View {
             PhotoPagerView(
-                photos: viewModel.pagerPhotos,
+                photos: ChapterRecapViewModel.pagerPhotos(from: playbackDeck, profileId: profileId),
                 startIndex: selection,
-                signedURLs: viewModel.pagerSignedURLs,
+                signedURLs: ChapterRecapViewModel.pagerSignedURLs(from: playbackDeck, urls: viewModel.urls),
                 // These are posts (chapters are posted-only), so the reactions/comments the
                 // viewer already resolves by photo id apply exactly as they do anywhere else a
                 // post's photo is shown full screen.
@@ -991,7 +1037,7 @@ struct ChapterRecapView: View {
                 showsDelete: false,
                 // A chapter photo IS a post; its reactions/comments live on the post tables, not
                 // the roll-photo ones. See `PhotoPagerView.posts`'s own doc.
-                posts: viewModel.pagerPosts,
+                posts: ChapterRecapViewModel.pagerPosts(from: playbackDeck, profileId: profileId),
                 onClose: { withAnimation(.easeInOut(duration: 0.2)) { isPlayerPresented = false } }
             )
             .transition(.opacity)
@@ -1167,7 +1213,7 @@ struct MonthBoxEditView: View {
                     .foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 Button { onDone(cover, putAway, true); dismiss() } label: {
-                    Text("See it as friends do")
+                    Text("Preview without put-away shots")
                         .flimFont(15, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(FlimTheme.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 46)

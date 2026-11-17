@@ -5,6 +5,31 @@ import XCTest
 /// Written 2026-09-15 for v2 batch 2 ("comments remember where they were opened from"), on the
 /// feed demo host (no account, no network; images may be absent, the frame labels are not).
 final class FeedCommentsReturnUITests: XCTestCase {
+    func testDockedDraftSurvivesPhotoSwipes() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-chromePreviewDemo", "-tabFeed", "-deskFrame", "890x626", "-deskFrameFit", "380"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Comments"].firstMatch.waitForExistence(timeout: 15))
+        let field = app.textViews.firstMatch.waitForExistence(timeout: 2)
+            ? app.textViews.firstMatch : app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "no comment composer")
+        field.tap()
+        field.typeText("Keep this draft on its photograph")
+        let pager = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH 'Photo ' AND label CONTAINS ' of 14 by @mira'")).firstMatch
+        XCTAssertTrue(pager.waitForExistence(timeout: 5))
+        let original = pager.label
+        pager.swipeRight()
+        let moved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", original), object: pager)
+        XCTAssertEqual(XCTWaiter.wait(for: [moved], timeout: 5), .completed,
+                       "must really change photos to exercise replacement")
+        pager.swipeLeft()
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", original), object: pager)
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
+        let restored = NSPredicate(format: "value == %@", "Keep this draft on its photograph")
+        expectation(for: restored, evaluatedWith: field)
+        waitForExpectations(timeout: 5)
+    }
+
     func testClosingTheThreadReturnsToTheSameFrame() {
         let app = XCUIApplication()
         app.launchArguments = ["-feedPreviewDemo"]

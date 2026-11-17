@@ -28,7 +28,7 @@ struct ChapterPreviewDemoHost: View {
                 let layout = DeskLayout.resolve(horizontalSizeClass: .compact, size: size)
                 page
                     .environment(\.deskLayout, layout)
-                    .padding(layout.railEdge == .leading ? .leading : .trailing, DeskTabBar.railSpace)
+                    .padding(.leading, layout.usesRail ? DeskTabBar.railSpace : 0)
                     .background(DeskGround())
                     .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: 24))

@@ -15,6 +15,7 @@ struct FeedUnitCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
@@ -168,8 +169,8 @@ struct FeedUnitCard: View {
     private var current: FeedItem { unit.items[min(selection, unit.items.count - 1)] }
     private var post: Post { current.post }
     private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
-    /// The card's side margin: 16 in 1.6, the desk's 24 in 1.7 (Blend 2a).
-    private var margin: CGFloat { AppInfo.is17 ? 24 : 16 }
+    /// Narrow Duo columns keep the photograph generous; wider pages keep the desk's margin.
+    private var margin: CGFloat { AppInfo.is17 && width >= 400 ? 24 : 16 }
     private var photoWidth: CGFloat { max(1, width - margin * 2) }
     private var photoHeight: CGFloat { photoWidth * 4 / 3 }
 
@@ -249,6 +250,7 @@ struct FeedUnitCard: View {
         // reader ever scrolled to them.
         .onScrollVisibilityChange(threshold: 0.4) { visible in
             isVisible = visible
+            dockedComments?.setOnScreen(unit.id, visible)
             if visible {
                 if lookStartedAt == nil { lookStartedAt = .now }
                 // Set from a visibility event only, never from the gate closing on a card
@@ -400,24 +402,34 @@ struct FeedUnitCard: View {
                             Text(unit.author.handle)
                                 .flimFont(16, weight: .semibold, relativeTo: .body)
                                 .foregroundStyle(FlimTheme.textPrimary)
+                                .lineLimit(1)
                         } else {
                             Text(unit.author.handle)
                                 .flimFont(17, weight: .light, relativeTo: .body)
                                 .tracking(0.4)
                                 .foregroundStyle(FlimTheme.textPrimary)
                         }
-                        // Derived metadata never wraps: one wrap adds a line box and pushes
-                        // the unit past the fold. Generated text, so truncation is safe.
-                        Text(unit.metaLine)
-                            .flimFont(12.5, relativeTo: .footnote)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                            .lineLimit(1)
+                        // A complete shot count is more useful than half a timestamp range.
+                        ViewThatFits(in: .horizontal) {
+                            Text(unit.metaLine).fixedSize()
+                            Text(unit.items.count == 1 ? "1 shot" : "\(unit.items.count) shots")
+                        }
+                        .flimFont(12.5, relativeTo: .footnote)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .lineLimit(1)
+                        .accessibilityLabel(unit.metaLine)
+                        if typeSize.isAccessibilitySize, unseenRemaining > 0 {
+                            Text("\(unseenRemaining) new")
+                                .flimFont(12, weight: .semibold, relativeTo: .caption2)
+                                .foregroundStyle(FlimTheme.newRed)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
             .buttonStyle(.plain)
             Spacer(minLength: 8)
-            if unseenRemaining > 0 {
+            if unseenRemaining > 0, !typeSize.isAccessibilitySize {
                 if AppInfo.is17 {
                     // Red, like every "something new" mark (Blend 2a).
                     Text("\(unseenRemaining) new")

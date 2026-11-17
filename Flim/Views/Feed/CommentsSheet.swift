@@ -1,6 +1,48 @@
 import SwiftUI
 import UIKit
 
+/// Account-scoped by FeedService and keyed by post, independent of a sheet's lifetime.
+@MainActor @Observable
+final class PostCommentDraft {
+    var text = ""
+    var replyTarget: String?
+    var replyParentId: UUID?
+    private(set) var sending = false
+    var sendFailed = false
+    private var inFlight: UUID?
+
+    struct Submission {
+        let id = UUID()
+        let text: String
+        let replyTarget: String?
+        let replyParentId: UUID?
+    }
+
+    var hasPendingWork: Bool { sending || !text.isEmpty || replyParentId != nil }
+
+    func beginSend() -> Submission? {
+        guard !sending, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let submission = Submission(text: text, replyTarget: replyTarget, replyParentId: replyParentId)
+        inFlight = submission.id
+        sending = true
+        sendFailed = false
+        return submission
+    }
+
+    func finishSend(_ submission: Submission, succeeded: Bool) {
+        guard inFlight == submission.id else { return }
+        inFlight = nil
+        sending = false
+        sendFailed = !succeeded
+        if succeeded, text == submission.text, replyTarget == submission.replyTarget,
+           replyParentId == submission.replyParentId {
+            text = ""
+            replyTarget = nil
+            replyParentId = nil
+        }
+    }
+}
+
 /// Instagram-style comments sheet: a scrollable list of everyone's comments (no avatars, compact
 /// "15m / 3h / 5w" timestamps), a composer, and per-comment likes. Presented from the feed's
 /// "View all comments". Reads + writes the shared FeedService cache so the feed card stays in sync.
@@ -36,18 +78,8 @@ struct CommentsSheet: View {
     /// closes to make room for it.
     var onOpenProfile: (UUID) -> Void
 
-    @State private var draft = ""
-    /// Who `draft` is replying to, if anyone. Owned here, not inferred from `draft`'s text, so
-    /// `CommentComposer` can show an explicit "Replying to…" banner instead of leaving it
-    /// ambiguous whether the leading `@handle` was tapped or typed.
-    @State private var replyTarget: String?
-    /// The thread `draft` replies into, set with `replyTarget` and cleared with it.
-    @State private var replyParentId: UUID?
-    /// Threads opened past their first replies with "View N more replies".
+    @State private var composition = PostCommentDraft()
     @State private var expandedThreads: Set<UUID> = []
-    @State private var sending = false
-    /// The last send didn't land: the draft is back in the field, and the composer says why.
-    @State private var sendFailed = false
     @State private var loaded = false
     /// The last load failed. Only shown when nothing is cached for this post: a cached thread
     /// (even an empty one, which is an answer) stays on screen instead.
@@ -77,7 +109,6 @@ struct CommentsSheet: View {
     }
     /// Conversations in the order they began, each reply under the comment it answers.
     private var threads: [CommentThread<CommentInfo>] { CommentThreads.build(comments) }
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         if docked {
@@ -107,30 +138,46 @@ struct CommentsSheet: View {
 
     /// The docked column's title line (6g): "Comments" in Caslon, whose shot it is on the right.
     private var dockedHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("Comments")
-                .font(DeskType.serif(22, relativeTo: .title2))
-                .foregroundStyle(FlimTheme.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 8)
-            Text([authorHandle, post.createdAt.formatted(date: .omitted, time: .shortened)]
-                    .compactMap { $0 }.joined(separator: " · "))
-                .flimFont(13, relativeTo: .footnote)
-                .foregroundStyle(FlimTheme.textSecondary)
-                .lineLimit(1)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                dockedTitle.fixedSize()
+                Spacer(minLength: 8)
+                dockedContext.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                dockedTitle
+                dockedContext
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, inset)
         .padding(.top, 18)
         .padding(.bottom, 4)
     }
 
+    private var dockedTitle: some View {
+        Text("Comments")
+            .font(DeskType.serif(22, relativeTo: .title2))
+            .foregroundStyle(FlimTheme.textPrimary)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var dockedContext: some View {
+        Text([authorHandle, post.createdAt.formatted(date: .omitted, time: .shortened)]
+            .compactMap { $0 }.joined(separator: " · "))
+            .flimFont(13, relativeTo: .footnote)
+            .foregroundStyle(FlimTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// Armed BEFORE the reload's round trip, so the composer is focused and prefilled the moment
     /// the thread is up rather than after comments land.
     private func armAndLoad() async {
-        if let handle = initialReplyHandle, draft.isEmpty {
-            draft = prefillingReply(to: handle, in: draft)
-            replyTarget = handle
-            replyParentId = initialReplyParentId
+        composition = feed.commentDraft(for: post.id)
+        if let handle = initialReplyHandle, composition.text.isEmpty {
+            composition.text = prefillingReply(to: handle, in: composition.text)
+            composition.replyTarget = handle
+            composition.replyParentId = initialReplyParentId
             focused = true
         }
         await reload()
@@ -179,7 +226,8 @@ struct CommentsSheet: View {
                         // this: iOS already disambiguates the two, the same way Messages does.
                         .scrollDismissesKeyboard(.interactively)
                     }
-                    MentionSuggestions(draft: $draft)
+                    MentionSuggestions(draft: $composition.text)
+                        .disabled(composition.sending)
                     composer
                 }
             }
@@ -296,21 +344,22 @@ struct CommentsSheet: View {
     private var composer: some View {
         // Suggestions are placed by the body above, outside the bar, so they aren't
         // requested here.
-        CommentComposer(draft: $draft, style: .surface, isSending: sending,
-                        showsMentionSuggestions: false, replyTarget: $replyTarget,
-                        failureText: sendFailed ? CommentComposer.sendFailedText : nil,
+        CommentComposer(draft: $composition.text, style: .surface, isSending: composition.sending,
+                        showsMentionSuggestions: false, replyTarget: $composition.replyTarget,
+                        failureText: composition.sendFailed ? CommentComposer.sendFailedText : nil,
                         focus: $focused) { send() }
+            .disabled(composition.sending)
             .padding(.horizontal, inset).padding(.top, 10).padding(.bottom, docked ? 22 : 10)
             // Opaque, one step up from the sheet: what reads as the bar sitting on the keyboard.
             // Material here would be glass on glass on iOS 26, where the sheet is already glass.
             // Docked, it sits straight on the desk like the rest of the column.
             .background(docked ? Color.clear : FlimTheme.sheetTile)
-            .onChange(of: draft) { _, new in
-                if new.isEmpty { sendFailed = false }
+            .onChange(of: composition.text) { _, new in
+                if new.isEmpty { composition.sendFailed = false }
             }
             // The banner's X cancels the reply, and with it the thread it was going into.
-            .onChange(of: replyTarget) { _, new in
-                if new == nil { replyParentId = nil }
+            .onChange(of: composition.replyTarget) { _, new in
+                if new == nil { composition.replyParentId = nil }
             }
     }
 
@@ -409,27 +458,18 @@ struct CommentsSheet: View {
     }
 
     private func send() {
-        guard let uid = auth.currentUser?.id, canSend else { return }
-        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let target = replyTarget
-        let parent = replyParentId
-        draft = ""
-        replyTarget = nil
-        replyParentId = nil
-        sendFailed = false
+        guard let uid = auth.currentUser?.id,
+              let submission = composition.beginSend() else { return }
+        let retainedDraft = composition
+        let commenter = auth.currentUser
         Haptics.tap()
         Task {
-            sending = true
-            let ok = await feed.commentOnPost(post.id, body: body, userId: uid, authorId: post.userId,
-                                              commenter: auth.currentUser, parentId: parent)   // updates the shared cache
-            sending = false
-            // A reply lands at the end of its thread, so the thread opens to show it.
-            if ok, let parent { expandedThreads.insert(parent) }
+            let ok = await feed.commentOnPost(post.id, body: submission.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                              userId: uid, authorId: post.userId,
+                                              commenter: commenter, parentId: submission.replyParentId)
+            retainedDraft.finishSend(submission, succeeded: ok)
+            if ok, let parent = submission.replyParentId { expandedThreads.insert(parent) }
             if !ok {
-                draft = body   // don't lose what they typed, restore and let them retry
-                replyTarget = target
-                replyParentId = parent
-                sendFailed = true
                 Haptics.error()
                 ReviewPrompt.noteVisibleFailure()
                 AccessibilityNotification.Announcement(CommentComposer.sendFailedText).post()
@@ -441,10 +481,11 @@ struct CommentsSheet: View {
     /// arms the banner naming who it's for. The reply goes into the comment's thread: its own, or
     /// the one it already sits in.
     private func reply(to info: CommentInfo) {
+        guard !composition.sending else { return }
         Haptics.tap()
-        draft = prefillingReply(to: info.handle, in: draft)
-        replyTarget = info.handle
-        replyParentId = info.comment.parentId ?? info.id
+        composition.text = prefillingReply(to: info.handle, in: composition.text)
+        composition.replyTarget = info.handle
+        composition.replyParentId = info.comment.parentId ?? info.id
         focused = true
     }
 
@@ -544,6 +585,15 @@ final class DockedComments {
     }
 
     private(set) var target: Target?
+    /// The cards on screen now (`FeedUnit.id`), reported by the cards themselves. The column always
+    /// belongs to a card you can see: the one you tapped while it stays in view, otherwise the
+    /// topmost (Ricky's Duo, build 493: the column kept the first card's comments after it had
+    /// scrolled away, under a different card).
+    private(set) var onScreen: Set<String> = []
+
+    func setOnScreen(_ unitId: String, _ visible: Bool) {
+        if visible { onScreen.insert(unitId) } else { onScreen.remove(unitId) }
+    }
 
     func show(post: Post, unitId: String, authorHandle: String?, replyHandle: String? = nil, replyParentId: UUID? = nil) {
         target = Target(post: post, unitId: unitId, authorHandle: authorHandle, replyHandle: replyHandle,

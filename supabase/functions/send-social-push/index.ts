@@ -1545,6 +1545,17 @@ Deno.serve(async (req: Request) => {
     .select("follower_id, following_id, created_at")
     .eq("push_sent", false);
 
+  // Marks THIS follow row sent, never just the pair. The key (follower_id, following_id) is
+  // shared by every request between the two, so a request cancelled and made again while this
+  // run was sending the old one would otherwise be marked sent and never pushed. created_at pins
+  // the row the push was about; a row without one keeps the old pair match.
+  async function markFollowSent(f: { follower_id: string; following_id: string; created_at: string | null }) {
+    let q = supabase.from("follows").update({ push_sent: true })
+      .eq("follower_id", f.follower_id).eq("following_id", f.following_id);
+    if (f.created_at) q = q.eq("created_at", f.created_at);
+    await q;
+  }
+
   for (const f of follows ?? []) {
     const name = await handle(f.follower_id);
     // Keyed on this follow row, not the pair: a request cancelled and made again weeks later is
@@ -1567,8 +1578,7 @@ Deno.serve(async (req: Request) => {
           : (IS_V2 ? "Add them back so you see each other's shots." : "Follow back so you see each other's shots."),
         { t: "profile", id: f.follower_id }, followKey, SOUND_SOCIAL,
         join.followsBack ? undefined : FOLLOW_BACK_CATEGORY);
-      if (settled(followKey)) await supabase.from("follows").update({ push_sent: true })
-        .eq("follower_id", f.follower_id).eq("following_id", f.following_id);
+      if (settled(followKey)) await markFollowSent(f);
       continue;
     }
     // Title-only: matches the house shape every other push in this file uses, the actor's name +
@@ -1594,8 +1604,7 @@ Deno.serve(async (req: Request) => {
       if (!answersOne) {
         sent += await notify(f.following_id, f.follower_id, followTitle, undefined,
           { t: "profile", id: f.follower_id }, followKey, SOUND_SOCIAL, FOLLOW_BACK_CATEGORY);
-        if (settled(followKey)) await supabase.from("follows").update({ push_sent: true })
-          .eq("follower_id", f.follower_id).eq("following_id", f.following_id);
+        if (settled(followKey)) await markFollowSent(f);
         continue;
       }
     }
@@ -1603,13 +1612,7 @@ Deno.serve(async (req: Request) => {
       t: "profile",
       id: f.follower_id,
     }, followKey);
-    // Composite primary key (follower_id, following_id): both halves are needed to address
-    // the row, and there is no surrogate id to use instead.
-    if (settled(followKey)) await supabase
-      .from("follows")
-      .update({ push_sent: true })
-      .eq("follower_id", f.follower_id)
-      .eq("following_id", f.following_id);
+    if (settled(followKey)) await markFollowSent(f);
   }
 
   // ---- Content reports → notify the app OWNER (Guideline 1.2, act within 24h).

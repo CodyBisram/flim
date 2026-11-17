@@ -124,6 +124,13 @@ final class ChapterRecapViewModel {
     /// them for a post opened this way.
     var pagerPosts: [UUID: Post] { Self.pagerPosts(from: deck, profileId: profileId) }
 
+    /// Apply the same put-away rule before mapping either grid, cover, or playback content.
+    nonisolated static func excludingPutAway(_ photos: [ChapterPhoto], postIds: Set<UUID>) -> [ChapterPhoto] {
+        photos.filter { photo in
+            !photo.isDeadFrame && !(photo.postId.map { postIds.contains($0) } ?? false)
+        }
+    }
+
     // `nonisolated`: pure functions of their arguments, no instance state touched, so tests can
     // call them directly without hopping to the main actor for what is otherwise ordinary data
     // reshaping.

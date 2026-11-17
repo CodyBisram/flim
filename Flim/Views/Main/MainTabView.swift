@@ -323,19 +323,16 @@ struct MainTabView: View {
         GeometryReader { proxy in
             let layout = DeskLayout.resolve(horizontalSizeClass: horizontalSizeClass, proxy: proxy)
             // One TabView in one place whatever the layout, so folding or unfolding the Duo never
-            // rebuilds the tabs and loses where you were. On the Duo the bar stands up as a rail
-            // beside the tabs, trailing closed and leading open (Blend 2, part 6): beside, not
-            // over, so the tabs get the narrower frame outright and nothing lays out under it. On
-            // the phone it floats over the tabs, and each tab reserves its height (`deskTabRoot`),
-            // because a TabView does not pass an inset set on it down into its tabs.
+            // rebuilds the tabs and loses where you were. On the Duo's open display the bar stands
+            // up as a rail on the leading edge (Blend 2, part 6): beside, not over, so the tabs get
+            // the narrower frame outright and nothing lays out under it. On the phone and the
+            // Duo's outer display it floats over the tabs, and each tab reserves its height
+            // (`deskTabRoot`), because a TabView does not pass an inset set on it down into its tabs.
             HStack(spacing: 0) {
-                if layout.usesRail, layout.railEdge == .leading {
+                if layout.usesRail {
                     deskBar(layout).padding(.leading, DeskTabBar.railGap)
                 }
                 deskTabView(layout)
-                if layout.usesRail, layout.railEdge == .trailing {
-                    deskBar(layout).padding(.trailing, DeskTabBar.railGap)
-                }
             }
             .overlay(alignment: .bottom) {
                 if !layout.usesRail, !DeskChrome.shared.hidesBar {
@@ -1117,7 +1114,7 @@ private struct DeskTabBarSpace: View {
 
     var body: some View {
         Color.clear
-            .frame(height: DeskChrome.shared.hidesBar ? 0 : DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap)
+            .frame(height: DeskChrome.shared.hidesBar ? 0 : DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap + 8)
             .allowsHitTesting(false)
     }
 }
