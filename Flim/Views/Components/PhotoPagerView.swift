@@ -480,7 +480,10 @@ struct PhotoPagerView: View {
                 // hugging the bottom instead of splitting the leftover space evenly.
                 VStack(spacing: 0) {
                     header
-                    Spacer(minLength: 0)
+                    // Docked on the Duo the group sits right under the header and the spare room
+                    // goes below: centred, a width-bound photo floated halfway down the column,
+                    // well below the grid's first row beside it (Ricky's Duo, build 494).
+                    Spacer(minLength: 0).frame(maxHeight: docked ? 4 : .infinity)
                     VStack(spacing: 0) {
                         pager.padding(.vertical, 8)
                         rackSection
@@ -901,7 +904,7 @@ struct PhotoPagerView: View {
             .glassGroup(spacing: 8)
             .padding(.leading, 20)
             .padding(.trailing, 20)
-            .padding(.top, docked ? 14 : 60)
+            .padding(.top, docked ? 0 : 60)
         }
     }
 

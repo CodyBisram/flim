@@ -120,9 +120,11 @@ struct CameraView: View {
             // app keeps 1.6's black camera.
             if AppInfo.is17 {
                 // Decided from the camera's own space as well as the tabs' layout: a landscape
-                // space is the Duo's open display however the value arrived.
+                // space is the Duo's open display however the value arrived. Held upright open
+                // too: the phone's full-width viewfinder there is taller than the display allows
+                // and pushes the shutter row off its bottom edge.
                 GeometryReader { proxy in
-                    if deskLayout == .open || proxy.size.width > proxy.size.height {
+                    if deskLayout.usesRail || proxy.size.width > proxy.size.height {
                         deskOpenLayer
                     } else {
                         deskLayer
@@ -443,6 +445,9 @@ struct CameraView: View {
                         .frame(width: 96)
                     }
                 }
+                // Clear of the rail on the leading side as on the trailing one: flush, the
+                // viewfinder's corner sat against the rail (open Duo, 2026-11-18).
+                .padding(.leading, 20)
                 .padding(.trailing, 20)
                 .padding(.bottom, 12)
             }
@@ -1260,7 +1265,6 @@ struct CameraView: View {
 
     private func captureDelivery(userId: UUID) -> (Data) -> Void {
         // Snapshot at the shutter, before flash metering, processing or a fold can change it.
-        let epoch = AccountEpoch.current
         let capturedAt = Date.now
         let photoId = UUID()
         let previewAspect = camera.previewAspectRatio
@@ -1270,15 +1274,16 @@ struct CameraView: View {
         // `enqueueCapture` makes for it fails outright (see `PhotoService.developDate`).
         let knownRevealAt = selectedRoll?.revealAt
         let stock = selectedStock
-        let queueStore = photos.captureQueueStore
         return { data in
-            guard AccountEpoch.isCurrent(epoch), auth.currentUser?.id == userId else {
+            guard CaptureDeliveryRoute.uploadsNow(capturedFor: userId, signedIn: auth.currentUser?.id) else {
                 // Keep a late shot for its original account's replay; never upload it using the
                 // next account's session, or put it in that account's retry UI.
                 let pending = PendingCapture(id: photoId, userId: userId, rollId: rollId,
                                              capturedAt: capturedAt, stockId: stock.id,
                                              knownRevealAt: knownRevealAt, previewAspect: previewAspect)
-                Task { _ = await queueStore.save(pending, raw: data) }
+                // Through PhotoService, so the write is marked in flight and a recovery pass
+                // for that account coming back can't prune it half-written.
+                Task { await photos.keepForReplay(pending, raw: data) }
                 return
             }
             // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
@@ -1656,5 +1661,16 @@ struct DeskLightLeak: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// Where a shot's bytes go when they arrive, decided by who is signed in THEN against who pressed
+/// the shutter. The same account uploads now, even if its session dropped and came back in
+/// between (an expired token refreshed): that shot used to be set aside for a replay that only
+/// ran at the next launch or sign-in (review 2026-11-17). Anyone else, or nobody, and it is kept
+/// on disk for its own account's replay, never uploaded under another account's session.
+enum CaptureDeliveryRoute {
+    static func uploadsNow(capturedFor owner: UUID, signedIn current: UUID?) -> Bool {
+        current == owner
     }
 }

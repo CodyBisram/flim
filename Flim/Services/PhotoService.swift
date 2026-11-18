@@ -174,6 +174,19 @@ final class PhotoService {
         inFlightCaptureCounts[id] = count > 1 ? count - 1 : nil
     }
 
+    /// Writes a shot whose account went away between the shutter and its bytes arriving, for that
+    /// account's replay (`restorePendingCaptures`), without uploading it. Marked in flight for the
+    /// length of the write like every other queue writer: recovery running at the same moment (the
+    /// same account's session coming straight back) would otherwise read the half-written entry
+    /// as empty and prune it from under the write, losing the shot with nothing in the retry list
+    /// (review 2026-11-17).
+    func keepForReplay(_ meta: PendingCapture, raw: Data) async {
+        beginInFlight(meta.id)
+        defer { endInFlight(meta.id) }
+        let queueStore = captureQueueStore
+        _ = await Task.detached(priority: .userInitiated) { await queueStore.save(meta, raw: raw) }.value
+    }
+
     /// Drops everything cached for the previous account. Called on `flimAccountDidChange`.
     /// Clears memory only. The pending files stay on disk under their own account's folder, so
     /// signing back in returns your unsent captures instead of finding them deleted.

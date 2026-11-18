@@ -329,7 +329,14 @@ struct MainTabView: View {
 
     private var deskTabsBody: some View {
         GeometryReader { proxy in
-            let layout = DeskLayout.resolve(horizontalSizeClass: horizontalSizeClass, proxy: proxy)
+            #if DEBUG
+            // `-deskRegular` with `-deskFrame`: the open Duo held upright is taller than wide, so
+            // only its regular width makes it `.open`, which a simulator frame can't fake.
+            let sizeClass = DeskDebugFrame.regular ? .regular : horizontalSizeClass
+            #else
+            let sizeClass = horizontalSizeClass
+            #endif
+            let layout = DeskLayout.resolve(horizontalSizeClass: sizeClass, proxy: proxy)
             // One TabView in one place whatever the layout, so folding or unfolding the Duo never
             // rebuilds the tabs and loses where you were. On the Duo's open display the bar stands
             // up as a rail on the leading edge (Blend 2, part 6): beside, not over, so the tabs get
@@ -1137,7 +1144,9 @@ private struct DeskStackBarRoom: ViewModifier {
     func body(content: Content) -> some View {
         let room: CGFloat = !AppInfo.is17 || layout.usesRail || DeskChrome.shared.hidesBar
             ? 0 : DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap + 8
-        content.background { NavigationBarRoom(tab: tab, bottom: room).frame(width: 0, height: 0) }
+        content.background {
+            NavigationBarRoom(tab: tab, bottom: room, minTop: AppInfo.is17 ? 16 : 0).frame(width: 0, height: 0)
+        }
     }
 }
 
@@ -1145,18 +1154,30 @@ private struct DeskStackBarRoom: ViewModifier {
 private struct NavigationBarRoom: UIViewControllerRepresentable {
     var tab: Int
     var bottom: CGFloat
+    /// The least room above a tab's content. The Duo held sideways open has no status bar along
+    /// the top (its clock runs down the side), so the top safe area is zero and titles sat on the
+    /// display's edge (Ricky's Duo, build 494). Wherever a status bar already gives more, nothing
+    /// is added.
+    var minTop: CGFloat = 0
 
     func makeUIViewController(context: Context) -> Setter { Setter() }
 
     func updateUIViewController(_ setter: Setter, context: Context) {
         setter.deskTab = tab
         setter.bottom = bottom
+        setter.minTop = minTop
         setter.apply()
     }
 
     final class Setter: UIViewController {
         var deskTab = -1
         var bottom: CGFloat = 0
+        var minTop: CGFloat = 0
+
+        override func viewSafeAreaInsetsDidChange() {
+            super.viewSafeAreaInsetsDidChange()
+            apply()
+        }
 
         override func didMove(toParent parent: UIViewController?) {
             super.didMove(toParent: parent)
@@ -1172,6 +1193,11 @@ private struct NavigationBarRoom: UIViewControllerRepresentable {
             guard let nav = navigationController else { return }
             DeskStackRegistry.register(nav, tab: deskTab)
             if nav.additionalSafeAreaInsets.bottom != bottom { nav.additionalSafeAreaInsets.bottom = bottom }
+            // What the stack inherits from above, without what this adds: stable, so setting the
+            // top here never feeds back into the next read.
+            let inheritedTop = nav.view.safeAreaInsets.top - nav.additionalSafeAreaInsets.top
+            let top = max(0, minTop - inheritedTop)
+            if nav.additionalSafeAreaInsets.top != top { nav.additionalSafeAreaInsets.top = top }
         }
     }
 }
@@ -1219,6 +1245,8 @@ enum DeskDebugFrame {
         guard parts.count == 2 else { return nil }
         return CGSize(width: parts[0], height: parts[1])
     }()
+
+    static let regular = ProcessInfo.processInfo.arguments.contains("-deskRegular")
 
     static let fitWidth: CGFloat? = {
         let args = ProcessInfo.processInfo.arguments

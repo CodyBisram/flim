@@ -221,4 +221,12 @@ struct AccountEpochTests {
         feed.ownSpotlightEntry = nil
         #expect(!feed.ownSpotlightEntryIsCurrent)
     }
+
+    @Test("a shot uploads now only for the account that took it, session bounce or not")
+    func captureDeliveryRoute() {
+        let owner = UUID()
+        #expect(CaptureDeliveryRoute.uploadsNow(capturedFor: owner, signedIn: owner))
+        #expect(!CaptureDeliveryRoute.uploadsNow(capturedFor: owner, signedIn: UUID()))
+        #expect(!CaptureDeliveryRoute.uploadsNow(capturedFor: owner, signedIn: nil))
+    }
 }

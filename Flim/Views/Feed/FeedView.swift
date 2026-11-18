@@ -287,7 +287,10 @@ struct FeedView: View {
                 feedColumn
             }
         }
-        .onChange(of: docksComments, initial: true) { _, _ in syncDockedComments() }
+        .onChange(of: docksComments, initial: true) { _, docks in
+            if !docks { dockedComments.resetOnScreen() }
+            syncDockedComments()
+        }
         // Every post, not just every unit: deleting one shot of a day keeps the day's unit (and
         // its id) but must still take the column off the deleted post.
         .onChange(of: units.flatMap { $0.items.map(\.post.id) }) { _, _ in syncDockedComments() }

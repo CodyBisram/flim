@@ -190,10 +190,15 @@ enum DeskType {
 /// rule v2 used): a phone in portrait is over twice as tall as it is wide, the Duo's outer
 /// display is under one and a half, and the open display is regular width.
 enum DeskLayout: Equatable {
-    case phone, closed, open
+    /// `openUpright`: the Duo open and held upright. The inner display ignores the portrait lock
+    /// and turns, still regular width but only about 626pt across: the rail stays, but there is no
+    /// room for two columns, so every screen lays out as one, like the phone (owner, 2026-11-18:
+    /// Feed and Rolls split there broke "Feed" and "Rolls" over lines). `open` is the wide display
+    /// that splits.
+    case phone, closed, open, openUpright
 
     static func resolve(horizontalSizeClass: UserInterfaceSizeClass?, size: CGSize) -> DeskLayout {
-        if horizontalSizeClass == .regular { return .open }
+        if horizontalSizeClass == .regular { return size.width >= splitWidth ? .open : .openUpright }
         guard size.width > 0 else { return .phone }
         if size.width > size.height { return .open }
         return size.height / size.width < shortAspectThreshold ? .closed : .phone
@@ -210,11 +215,14 @@ enum DeskLayout: Equatable {
     /// Between the Duo's outer display (about 1.45) and the shortest current iPhone (about 2.1).
     static let shortAspectThreshold: CGFloat = 1.75
 
+    /// The least width that takes two columns, the same line your page's month split uses.
+    static let splitWidth: CGFloat = 700
+
     /// The tab bar stands up as a rail, on the leading edge, only on the Duo's open display. Closed,
     /// the outer display keeps the phone's bottom bar: the system draws its own column (island,
     /// clock, signal) down the trailing edge and reserves it as safe area, and a rail beside it
     /// left the camera under 300pt wide (Ricky's Duo, build 493).
-    var usesRail: Bool { self == .open }
+    var usesRail: Bool { self == .open || self == .openUpright }
 }
 
 private struct DeskLayoutKey: EnvironmentKey {

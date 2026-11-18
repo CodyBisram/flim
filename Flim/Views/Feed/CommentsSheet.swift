@@ -595,6 +595,13 @@ final class DockedComments {
         if visible { onScreen.insert(unitId) } else { onScreen.remove(unitId) }
     }
 
+    /// Forgets what was on screen. Called when the Duo folds: the folded feed's cards don't
+    /// report here (no column to feed), so the set would otherwise freeze on the cards showing
+    /// at the fold and, after scrolling folded, keep the column on a card long gone once it
+    /// opens again (review 2026-11-17). Unfolding rebuilds the feed, whose visible cards report
+    /// themselves afresh.
+    func resetOnScreen() { onScreen = [] }
+
     func show(post: Post, unitId: String, authorHandle: String?, replyHandle: String? = nil, replyParentId: UUID? = nil) {
         target = Target(post: post, unitId: unitId, authorHandle: authorHandle, replyHandle: replyHandle,
                         replyParentId: replyParentId, generation: (target?.generation ?? 0) + 1)

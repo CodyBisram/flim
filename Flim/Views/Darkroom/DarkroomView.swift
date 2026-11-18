@@ -403,37 +403,62 @@ struct DarkroomView: View {
     /// under it as an italic line.
     private var deskHeaderRow: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ViewThatFits(in: .horizontal) {
+            if headerIsNarrow {
+                // A narrow column (the Duo open and upright, 206pt inside): a 26pt title leaves
+                // Select room beside it (about 126 + 8 + 57), rather than Select dropping to a
+                // line of its own (Ricky's Duo, build 494). The count line stays whole below.
                 HStack(alignment: .firstTextBaseline) {
-                    deskHeaderTitle.fixedSize()
+                    deskHeaderTitle(size: 26).fixedSize()
                     Spacer(minLength: 8)
                     deskHeaderActions.fixedSize()
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    deskHeaderTitle
-                    HStack {
-                        Spacer(minLength: 0)
-                        deskHeaderActions
+                deskHeaderLedger
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        deskHeaderTitle.fixedSize()
+                        Spacer(minLength: 8)
+                        deskHeaderActions.fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        deskHeaderTitle
+                        HStack {
+                            Spacer(minLength: 0)
+                            deskHeaderActions
+                        }
                     }
                 }
-            }
-            // Server-counted, never the loaded page count.
-            if let total = vm.totalCount, total > 0 {
-                Text("\(total) shot\(total == 1 ? "" : "s") in your Darkroom.")
-                    .font(DeskType.serif(14, italic: true, relativeTo: .subheadline))
-                    // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
-                    .tracking(0.2)
-                    .foregroundStyle(FlimTheme.textSecondary)
+                deskHeaderLedger
             }
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
         .padding(.horizontal, 24)
+        .onGeometryChange(for: Bool.self, of: { $0.size.width < Self.narrowHeaderWidth }) { headerIsNarrow = $0 }
     }
 
-    private var deskHeaderTitle: some View {
+    /// Under this the title and Select don't sit side by side (the open Duo's upright column).
+    private static let narrowHeaderWidth: CGFloat = 280
+
+    /// Server-counted, never the loaded page count.
+    @ViewBuilder
+    private var deskHeaderLedger: some View {
+        if let total = vm.totalCount, total > 0 {
+            Text("\(total) shot\(total == 1 ? "" : "s") in your Darkroom.")
+                .font(DeskType.serif(14, italic: true, relativeTo: .subheadline))
+                // Any tracking turns off Caslon italic's old "st" ligature, which read as "moſt".
+                .tracking(0.2)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+    }
+
+    private var deskHeaderTitle: some View { deskHeaderTitle(size: 30) }
+
+    private func deskHeaderTitle(size: CGFloat) -> some View {
         Text("Darkroom")
-            .font(DeskType.serif(30, relativeTo: .largeTitle))
+            .font(DeskType.serif(size, relativeTo: .largeTitle))
             .foregroundStyle(FlimTheme.textPrimary)
             .accessibilityAddTraits(.isHeader)
     }
@@ -571,6 +596,9 @@ Text("Darkroom")
             }
     }
 
+    /// The header row's width is under `narrowHeaderWidth` (see `deskHeaderRow`).
+    @State private var headerIsNarrow = false
+
     private var docksViewer: Bool { AppInfo.is17 && deskLayout == .open }
 
     /// The shot the docked viewer opens on: the one tapped (or asked for by a widget or a push,
@@ -632,11 +660,11 @@ Text("Darkroom")
                 HStack(spacing: 0) {
                     bodyStack
                         .frame(width: max(0, fold - 14))
+                    // Top 0: the viewer's header then sits level with the Darkroom title beside it.
                     deskDockedViewer
-                        .frame(height: max(0, proxy.size.height - 24))
+                        .frame(height: max(0, proxy.size.height - 18))
                         .padding(.leading, 30)
                         .padding(.trailing, 20)
-                        .padding(.top, 6)
                         .padding(.bottom, 18)
                 }
             }
@@ -965,6 +993,10 @@ Text("Darkroom")
                 .font(DeskType.data(13))
                 .tracking(2.4)
                 .foregroundStyle(FlimTheme.textSecondary)
+                // One line always: the rule gives way, never the name (the open Duo's narrow
+                // column broke "OCTOBER / 2026" over two lines).
+                .lineLimit(1)
+                .fixedSize()
             Rectangle().fill(FlimTheme.stroke).frame(height: 1)
         }
         .padding(.horizontal, 16)
@@ -2262,6 +2294,8 @@ Text("Darkroom")
                 } else {
                     vm.photos = fixture.photos
                 }
+                // The header's count line, as a real account shows it.
+                vm.totalCount = usesLibrary ? library.photos.count : vm.photos.count
             }
             return
         }

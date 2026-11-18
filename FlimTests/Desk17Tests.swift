@@ -36,6 +36,16 @@ final class DeskLayoutTests: XCTestCase {
         XCTAssertFalse(DeskLayout.closed.usesRail)
         XCTAssertTrue(DeskLayout.open.usesRail)
     }
+
+    func testTheOpenDuoHeldUprightKeepsTheRailInOneColumn() {
+        // The inner display turns with the Duo held upright: still regular width, 626pt across.
+        let upright = DeskLayout.resolve(horizontalSizeClass: .regular, size: CGSize(width: 626, height: 890))
+        XCTAssertEqual(upright, .openUpright)
+        XCTAssertTrue(upright.usesRail)
+        // Every two-column screen asks for `.open` alone, so this one gets the single column.
+        XCTAssertNotEqual(upright, .open)
+        XCTAssertEqual(DeskLayout.resolve(horizontalSizeClass: .regular, size: CGSize(width: 700, height: 900)), .open)
+    }
 }
 
 final class SpotlightStampTests: XCTestCase {
