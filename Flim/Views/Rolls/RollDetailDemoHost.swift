@@ -89,7 +89,6 @@ struct RollDetailDemoHost: View {
             Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) { Color.black }
         }
         .tint(accent)
-        .preferredColorScheme(.dark)
         .task {
             guard path.isEmpty else { return }
             rolls.memberCounts[fixture.roll.id] = 1

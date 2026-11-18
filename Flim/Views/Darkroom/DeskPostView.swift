@@ -1,8 +1,8 @@
 import SwiftUI
 import Photos
 
-/// 1.7's Post (Blend 3, 9b and 9c): one screen for one shot or a selection, always on Slate so
-/// the photographs read true. Each shot keeps its own caption; the strip moves between them.
+/// 1.7's Post (Blend 3, 9b and 9c): one screen for one shot or a selection, on the
+/// chosen desk. Each shot keeps its own caption; the strip moves between them.
 /// Tags apply to the whole group. "Send to Spotlight too" puts the shot on screen up for this
 /// week's Spotlight once it's posted (1.6's rules: private, the team picks).
 struct DeskPostView: View {
@@ -55,10 +55,7 @@ struct DeskPostView: View {
             postButton
         }
         .background(DeskGround())
-        // The Post screen is always Slate (the board), whatever the desk: the colours, and the
-        // status bar and keyboard with them.
-        .environment(\.colorScheme, .dark)
-        .preferredColorScheme(.dark)
+        // Follows the desk (owner, 2026-11-18); it was always Slate.
         .sheet(isPresented: $showTags) {
             AddPeopleSheet(tags: $tags)
         }

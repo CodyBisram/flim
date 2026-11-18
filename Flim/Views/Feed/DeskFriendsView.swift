@@ -58,25 +58,14 @@ struct DeskFriendsView: View {
                 tabs
                     .padding(.top, 10)
                 Rectangle().fill(FlimTheme.stroke).frame(height: 1)
-                PeopleSearchField(query: $query, prompt: "Search by name or username")
-                if !loaded {
-                    Spacer()
-                    ProgressView().tint(FlimTheme.textPrimary).frame(maxWidth: .infinity)
-                    Spacer()
-                } else if failed {
-                    Spacer()
-                    DeskFailedState(title: "Couldn't load your friends.", message: DeskFailedState.standardMessage) { await load() }
-                    Spacer(); Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            if tab == .friends { friendsList } else { requestsList }
-                        }
-                        .padding(.bottom, 24)
+                list
+                    // The field rides over the list's top edge, so rows scroll under it with the
+                    // system's soft edge rather than being cut off at its bottom (owner, 2026-11-18).
+                    .flimTopBar {
+                        // 16 above, under the rule; 8 below, plus each row's own 8.
+                        PeopleSearchField(query: $query, prompt: "Search by name or username",
+                                          topPadding: 16, bottomPadding: 8)
                     }
-                    .refreshableToCompletion { await load() }
-                    .scrollDismissesKeyboard(.interactively)
-                }
             }
             .background(DeskGround())
             .toolbar {
@@ -101,12 +90,39 @@ struct DeskFriendsView: View {
             }
     }
 
+    @ViewBuilder
+    private var list: some View {
+        if !loaded {
+            VStack {
+                Spacer()
+                ProgressView().tint(FlimTheme.textPrimary).frame(maxWidth: .infinity)
+                Spacer()
+            }
+        } else if failed {
+            VStack {
+                Spacer()
+                DeskFailedState(title: "Couldn't load your friends.", message: DeskFailedState.standardMessage) { await load() }
+                Spacer(); Spacer()
+            }
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if tab == .friends { friendsList } else { requestsList }
+                }
+                .padding(.bottom, 24)
+            }
+            .refreshableToCompletion { await load() }
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
     private var tabs: some View {
         HStack(spacing: 24) {
-            tabButton(.friends, "Friends \(friends.count)")
+            // No number until it's known (cached or read): never a 0 that turns into 87.
+            tabButton(.friends, loaded ? "Friends \(friends.count)" : "Friends")
             // Both directions, the same rows the tab lists, so the count never reads 0 over
             // requests you sent (nightly review, 2026-11-10).
-            tabButton(.requests, "Requests \(incoming.count + outgoing.count)")
+            tabButton(.requests, loaded ? "Requests \(incoming.count + outgoing.count)" : "Requests")
             Spacer()
         }
         .padding(.horizontal, 24)
@@ -248,14 +264,27 @@ struct DeskFriendsView: View {
     private func load() async {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
         hidden = Set((UserDefaults.standard.stringArray(forKey: Self.hiddenKey(uid)) ?? []).compactMap(UUID.init))
+        // The last lists this phone saw go on screen first, counts and all, and the reads below
+        // quietly correct them (owner, 2026-11-18: "Friends 0" and a spinner every time).
+        if !loaded, followers.isEmpty, following.isEmpty, let cached = feed.friendsLists {
+            followers = cached.followers
+            following = cached.following
+            loaded = true
+        }
         await feed.loadFollowing(userId: uid)
         await feed.loadFollowers(userId: uid)
         await feed.loadBlocked(userId: uid)
         async let a = feed.fetchFollowers(of: uid)
         async let b = feed.fetchFollowingProfiles(of: uid)
-        followers = await a
-        following = await b
+        let fetchedFollowers = await a
+        let fetchedFollowing = await b
+        // Both reads read a failure as empty, so nobody at all never wipes lists on screen.
+        if !(fetchedFollowers.isEmpty && fetchedFollowing.isEmpty) || (followers.isEmpty && following.isEmpty) {
+            followers = fetchedFollowers
+            following = fetchedFollowing
+        }
         loaded = true
+        feed.cacheFriendsLists(userId: uid, followers: followers, following: following)
     }
 
     private func hide(_ person: UserProfile) {

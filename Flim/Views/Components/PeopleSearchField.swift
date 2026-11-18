@@ -27,6 +27,10 @@ struct PeopleSearchField: View {
     /// device screenshot of the emoji picker, which is the only host with this problem — the other
     /// three all sit under a navigation bar, where 8 is right and anything more looks adrift.
     var underSheetGrabber = false
+    /// Space above and below the field, for a host that sets it apart differently (Friends sits it
+    /// under a full-width rule, owner 2026-11-18).
+    var topPadding: CGFloat?
+    var bottomPadding: CGFloat = 12
 
     var body: some View {
         HStack(spacing: 8) {
@@ -59,8 +63,8 @@ struct PeopleSearchField: View {
         .padding(.horizontal, AppInfo.is17 ? 24 : 16)
         // Enough to clear the grabber with real space under it, and close enough to the 12 + 16
         // that separates this from whatever follows that the field doesn't sit lopsided.
-        .padding(.top, underSheetGrabber ? 22 : 8)
-        .padding(.bottom, 12)
+        .padding(.top, topPadding ?? (underSheetGrabber ? 22 : 8))
+        .padding(.bottom, bottomPadding)
     }
 }
 

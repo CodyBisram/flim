@@ -593,7 +593,9 @@ struct UserPageView: View {
 
     /// Mutual follows: 1.7's friends. Known for your own page only (your follow sets are loaded).
     private var deskFriendCount: Int? {
-        guard isSelf, deskFollowSetsLoaded else { return nil }
+        // The last known graph counts too (`SocialGraphCache`), so a launch shows the number
+        // straight away rather than "Friends" until both reads land.
+        guard isSelf, deskFollowSetsLoaded || feed.followSetsKnown else { return nil }
         return feed.followingIds.intersection(feed.followerIds).count
     }
 

@@ -18,6 +18,9 @@ enum RollSnapshotStore {
     struct Snapshot: Codable, Equatable {
         var rolls: [Roll]
         var coverPaths: [UUID: String]
+        /// "13 members" on the first frame (owner, 2026-11-18). Optional so snapshots written
+        /// before it still decode.
+        var memberCounts: [UUID: Int]? = nil
     }
 
     /// Injectable so tests use a temp directory instead of the real Application Support, and so a

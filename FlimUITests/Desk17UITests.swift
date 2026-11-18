@@ -20,7 +20,7 @@ final class Desk17UITests: XCTestCase {
                 XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 15))
                 XCTAssertTrue(app.buttons["Find"].isHittable)
                 XCTAssertTrue(app.buttons["Activity"].isHittable)
-                for label in ["Darkroom", "Rolls", "Camera", "Feed", "You"] {
+                for label in ["Feed", "Rolls", "Camera", "Darkroom", "You"] {
                     XCTAssertTrue(bar(label).isHittable, "\(label) unreachable in \(desk) \(frame)")
                 }
                 if frame == "890x626" {
@@ -142,6 +142,28 @@ final class Desk17UITests: XCTestCase {
             assertNoSystemTabBar()
             shot("pushed")
         }
+    }
+
+    /// A tap on the tab you're in goes back to its first screen (owner, 2026-11-18), and what was
+    /// pushed opens again afterwards: SwiftUI's own record of the push follows UIKit's pop.
+    func testTappingTheTabYoureInGoesBackToItsFirstScreen() {
+        app.terminate()
+        app.launchArguments = ["-chromePreviewDemo", "-tabFeed", "-desk", "paper"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 15))
+        for round in 1...2 {
+            for screen in ["Activity", "Find"] {
+                app.buttons[screen].firstMatch.tap()
+                XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 5),
+                              "\(screen) did not open (round \(round))")
+                sleep(1)
+                bar("Feed").tap()
+                XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5), "Feed did not return from \(screen)")
+                sleep(1)
+                XCTAssertTrue(app.buttons["Find"].isHittable, "still on \(screen) after tapping Feed (round \(round))")
+            }
+        }
+        shot("tab_retap_feed")
     }
 
     /// Settings from your page (the chapters demo renders your own page): the desk picker is
@@ -932,13 +954,15 @@ final class AppStoreScreenshotTests: XCTestCase {
             let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
             if box.waitForExistence(timeout: 5) { box.tap(); sleep(3); shot("month_box_\(desk)") }
         }
-        // The screening and its closing card are always Slate.
-        launch(["-rollDetailDemo"], desk: "slate")
-        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play reveal'")).firstMatch
-        if play.waitForExistence(timeout: 15) {
-            play.tap(); sleep(1); app.tap(); sleep(3); shot("screening")
-            for _ in 0..<8 { app.swipeLeft(); usleep(400_000) }
-            app.buttons["Done"].firstMatch.tap(); sleep(2); shot("closing_card")
+        // The screening and its closing card follow the desk too.
+        for desk in ["paper", "slate"] {
+            launch(["-rollDetailDemo"], desk: desk)
+            let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play reveal'")).firstMatch
+            if play.waitForExistence(timeout: 15) {
+                play.tap(); sleep(1); app.tap(); sleep(3); shot("screening_\(desk)")
+                for _ in 0..<8 { app.swipeLeft(); usleep(400_000) }
+                app.buttons["Done"].firstMatch.tap(); sleep(2); shot("closing_card_\(desk)")
+            }
         }
     }
 }

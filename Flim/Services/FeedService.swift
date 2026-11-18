@@ -113,6 +113,56 @@ final class FeedService {
         let id: UUID
     }
 
+    // MARK: - Friend graph cache
+
+    /// The account the follow sets belong to, so a read can be filed on disk under it.
+    private var graphOwner: UUID?
+    /// The follow sets came from disk (`SocialGraphCache`) and no read has replaced both halves
+    /// yet: good for showing counts, and nothing is written back from them.
+    private(set) var followSetsFromCache = false
+    /// Which half of a disk-restored graph is still waiting for its first read.
+    private var followingReadPending = true
+    private var followersReadPending = true
+    /// Whether the follow sets are worth counting: read this session, or restored from disk.
+    var followSetsKnown: Bool { followSetsFromCache || (!followingReadPending && !followersReadPending) }
+    /// Friends' two people lists as last loaded, so Friends opens on them at once.
+    private(set) var friendsLists: (followers: [UserProfile], following: [UserProfile])?
+
+    /// The last known friend graph for `userId`, on screen before any read comes back (owner,
+    /// 2026-11-18: counts sat at 0 or a dash for a while). Only fills what nothing has loaded.
+    func restoreSocialGraph(for userId: UUID) {
+        graphOwner = userId
+        guard let snapshot = SocialGraphCache.load(for: userId) else { return }
+        if followingIds.isEmpty, followerIds.isEmpty {
+            followingIds = snapshot.followingIds
+            confirmedFollowingIds = snapshot.followingIds
+            followerIds = snapshot.followerIds
+            followSetsFromCache = true
+        }
+        if friendsLists == nil, let followers = snapshot.followers, let following = snapshot.following {
+            friendsLists = (followers, following)
+        }
+    }
+
+    /// Friends' lists after a load, kept for the next visit and the next launch. A load that came
+    /// back with nobody at all (`fetchFollowers` reads a failure as empty) never replaces lists
+    /// that had people in them.
+    func cacheFriendsLists(userId: UUID, followers: [UserProfile], following: [UserProfile]) {
+        guard graphOwner == nil || graphOwner == userId else { return }
+        if followers.isEmpty, following.isEmpty, let known = friendsLists,
+           !known.followers.isEmpty || !known.following.isEmpty { return }
+        graphOwner = userId
+        friendsLists = (followers, following)
+        persistGraph()
+    }
+
+    private func persistGraph() {
+        // Only a whole graph is written: both halves read this session, never a cached half.
+        guard let owner = graphOwner, !followingReadPending, !followersReadPending else { return }
+        SocialGraphCache.save(.init(userId: owner, followingIds: followingIds, followerIds: followerIds,
+                                    followers: friendsLists?.followers, following: friendsLists?.following))
+    }
+
     // MARK: - Follows
 
     /// Returns whether the read landed; a failed one keeps the last known set.
@@ -123,6 +173,7 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: userId)
         guard AccountEpoch.isCurrent(epoch) else { return false }
+        if graphOwner == nil { graphOwner = userId }
         return applyFollowingRead(following)
     }
 
@@ -138,6 +189,9 @@ final class FeedService {
         guard let following else { return false }
         followingIds = following
         confirmedFollowingIds = following
+        followingReadPending = false
+        if followSetsFromCache { followSetsFromCache = followersReadPending }
+        persistGraph()
         return true
     }
 
@@ -178,6 +232,10 @@ final class FeedService {
         // empty one would drop every "Follows you" badge and "Follow back" label on screen.
         guard let followers else { return false }
         followerIds = followers
+        if graphOwner == nil { graphOwner = userId }
+        followersReadPending = false
+        if followSetsFromCache { followSetsFromCache = followingReadPending }
+        persistGraph()
         return true
     }
 
@@ -1072,6 +1130,11 @@ final class FeedService {
     var spotlightShelfGenerations: [UUID: Int] = [:]
 
     func resetForAccountChange() {
+        graphOwner = nil
+        followSetsFromCache = false
+        followingReadPending = true
+        followersReadPending = true
+        friendsLists = nil
         commentDrafts = [:]
         profileStatsCache = [:]
         profilePostsCache = [:]

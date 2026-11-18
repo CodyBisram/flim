@@ -126,9 +126,9 @@ struct SortDeckView: View {
     }
 
     var body: some View {
+        // 1.7: on the chosen desk, like every other screen (owner, 2026-11-18: always-Slate
+        // screens read as a stale desk).
         deckBody
-            // 1.7: always Slate, whatever the desk (Blend 1, 3e), so photographs read true.
-            .modifier(DeskAlwaysSlate())
     }
 
     private var deckBody: some View {
@@ -242,10 +242,10 @@ struct SortDeckView: View {
         Button { openCompose(for: photo) } label: {
             Label("Add a caption or tag people", systemImage: "square.and.pencil")
                 .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(Color.white.opacity(0.1), in: Capsule())
+                .background(FlimTheme.chip, in: Capsule())
         }
         .accessibilityLabel("Add a caption or tag people on this photo")
         .padding(.bottom, 6)
@@ -268,7 +268,7 @@ struct SortDeckView: View {
                     closeDeck(then: .profile(userId: uid))
                 }
                 .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .expandTapTarget(top: 14, bottom: 14)
             }
             .padding(.horizontal, 24)
@@ -311,7 +311,7 @@ struct SortDeckView: View {
             }
             HStack {
                 Button { closeDeck() } label: {
-                    Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
+                    Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(FlimTheme.textPrimary)
                 }
                 .accessibilityLabel("Close")
                 // The glyph is about 16pt: 14 either side makes 44, into the margin and the
@@ -322,7 +322,7 @@ struct SortDeckView: View {
                     Button { undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                             .flimFont(13, weight: .semibold)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                     }
                     // Same 44 of height as the X; the centred count between them is not a
                     // control, so the leading side can grow too.
@@ -365,7 +365,7 @@ struct SortDeckView: View {
             // you would check the photo in.
             .overlay { if isTop { dragLabels } }
             .clipShape(RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(FlimTheme.stroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 14, y: 8)
             .frame(width: size.width, height: size.height)
             .scaleEffect(isTop ? 1 : 1 - CGFloat(index) * 0.04)
@@ -447,7 +447,7 @@ struct SortDeckView: View {
                     .font(.system(size: size * 0.36, weight: .medium))
                     .foregroundStyle(tint)
                     .frame(width: size, height: size)
-                    .background(Color.white.opacity(0.08), in: Circle())
+                    .background(FlimTheme.chip, in: Circle())
                     .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 1))
             }
             // Every circle gets the same vertical slot (the largest, Delete's), centred within

@@ -126,21 +126,19 @@ struct ChapterRecapView: View {
 
     var body: some View {
         if AppInfo.is17 {
-            // 1.7: the box sits on the desk (Blend 4, 12a); playing it and its closing card go to
-            // Slate like a roll's screening (3e), each on its own, below.
+            // 1.7: the box, the player and the closing card all sit on the chosen desk.
             recapBody.modifier(DeskEnvironment())
         } else {
             recapBody
         }
     }
 
-    /// What a month plays on: Slate with its grain on 1.7 (the board's screening, 3e), so the
-    /// photographs read true whatever the desk; black on 1.6.
+    /// What a month plays on: the desk with its grain on 1.7; black on 1.6.
     @ViewBuilder private var screeningGround: some View {
         if AppInfo.is17 { DeskGround() } else { Color.black.ignoresSafeArea() }
     }
 
-    /// Slate for what plays, whatever the desk (on 1.6, the closing card too).
+    /// 1.6 only: dark for the closing card.
     private struct Screening: ViewModifier {
         func body(content: Content) -> some View {
             content.environment(\.colorScheme, .dark)
@@ -161,7 +159,6 @@ struct ChapterRecapView: View {
                     }
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screeningWidth = $0 }
                     .statusBarHidden()
-                    .modifier(DeskAlwaysSlate())
                 }
         } else {
             NavigationStack {
@@ -199,7 +196,6 @@ struct ChapterRecapView: View {
                     player
                 }
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screeningWidth = $0 }
-                .modifier(Screening())
                 .transition(.opacity)
                 .zIndex(1)
             }
@@ -956,7 +952,7 @@ struct ChapterRecapView: View {
             VStack(spacing: 0) {
                 playerHeader
                 Spacer(minLength: 0)
-                ProgressView().tint(.white)
+                ProgressView().tint(FlimTheme.textSecondary)
                 Spacer(minLength: 0)
             }
             .transition(.opacity)
@@ -1093,7 +1089,7 @@ struct ChapterRecapView: View {
                 .foregroundStyle(accent.opacity(0.8))
             Text("Nothing to play in this chapter yet.")
                 .flimFont(15, relativeTo: .subheadline)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
         }
     }
 

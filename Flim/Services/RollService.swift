@@ -59,6 +59,7 @@ final class RollService {
               let snapshot = RollSnapshotStore.load(for: userId) else { return }
         rolls = snapshot.rolls
         coverPaths = snapshot.coverPaths
+        if memberCounts.isEmpty, let counts = snapshot.memberCounts { memberCounts = counts }
     }
 
     /// Rewrites the on-disk snapshot from the current in-memory state. Called after every
@@ -68,7 +69,7 @@ final class RollService {
     /// to guard against rather than assume.
     private func persistSnapshot() {
         guard let snapshotUserId else { return }
-        RollSnapshotStore.save(.init(rolls: rolls, coverPaths: coverPaths), for: snapshotUserId)
+        RollSnapshotStore.save(.init(rolls: rolls, coverPaths: coverPaths, memberCounts: memberCounts), for: snapshotUserId)
     }
 
     // MARK: - Create
@@ -377,7 +378,11 @@ final class RollService {
         var counts: [UUID: Int] = [:]
         for row in rows { counts[row.roll_id, default: 0] += 1 }
         guard AccountEpoch.isCurrent(epoch) else { return }
+        // Every roll has at least its creator, so no rows at all is a failed read: keep the last
+        // known counts rather than blanking every "N members".
+        if counts.isEmpty, !rollIds.isEmpty { return }
         memberCounts = counts
+        persistSnapshot()
     }
 
     // MARK: - Reveal presence (async "communal" signal)
@@ -709,8 +714,7 @@ final class RollService {
 
     /// Reflects a creator-initiated `removeMember` locally once the server confirms it: the
     /// roster label (and anything else reading `memberCounts`) would otherwise lag until the
-    /// next `fetchRolls`. Persists the snapshot for parity with every other local mutation,
-    /// even though `memberCounts` itself isn't part of what gets serialized.
+    /// next `fetchRolls`. Persists the snapshot, which carries the counts too.
     func recordMemberRemoved(rollId: UUID) {
         if let current = memberCounts[rollId] {
             memberCounts[rollId] = max(0, current - 1)

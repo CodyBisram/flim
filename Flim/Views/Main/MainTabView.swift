@@ -214,7 +214,12 @@ struct MainTabView: View {
             get: { selected },
             set: { newValue in
                 if newValue == selected {
-                    scrollSignal[newValue, default: 0] += 1
+                    // 1.7: a tap on the tab you're in goes back to its first screen (owner,
+                    // 2026-11-18: You from deep in Friends returns to your page); on that
+                    // first screen it scrolls to the top, as before.
+                    if !(AppInfo.is17 && DeskStackRegistry.popToRoot(tab: newValue)) {
+                        scrollSignal[newValue, default: 0] += 1
+                    }
                 } else {
                     Haptics.tap()
                 }
@@ -253,6 +258,7 @@ struct MainTabView: View {
             DarkroomView(scrollToTop: scrollSignal[1, default: 0],
                          openSortDeckSignal: sortDeckSignal,
                          openPhotoId: $openPhotoId)
+                .deskStackBarRoom(tab: DeskTabBar.darkroom)
         }
     }
 
@@ -262,6 +268,7 @@ struct MainTabView: View {
         // `.navigationDestination(for: Roll.self)`, which this path pushes onto.
         NavigationStack(path: $rollsPath) {
             RollsView(scrollToTop: scrollSignal[2, default: 0], pendingPhotoIntent: $pendingRollPhoto)
+                .deskStackBarRoom(tab: DeskTabBar.rolls)
         }
     }
 
@@ -286,6 +293,7 @@ struct MainTabView: View {
                         onCommentsFocusConsumed: { focusCommentsPostId = decision.nextFocusPostId }
                     )
                 }
+                .deskStackBarRoom(tab: DeskTabBar.feed)
         }
     }
 
@@ -361,17 +369,19 @@ struct MainTabView: View {
             Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
                 CameraView().deskTabRoot(layout)
             }
+            // The four stacks keep the bar's room on their navigation controller instead
+            // (`deskStackBarRoom`), so screens pushed onto them get it too.
             Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) {
-                darkroomStack.deskTabRoot(layout)
+                darkroomStack.deskTabRoot(layout, stack: true)
             }
             Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
-                rollsStack.deskTabRoot(layout)
+                rollsStack.deskTabRoot(layout, stack: true)
             }
             Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) {
-                feedStack.deskTabRoot(layout)
+                feedStack.deskTabRoot(layout, stack: true)
             }
             Tab("You", systemImage: "person.crop.circle", value: DeskTabBar.you) {
-                youStack.deskTabRoot(layout)
+                youStack.deskTabRoot(layout, stack: true)
             }
         }
     }
@@ -390,11 +400,14 @@ struct MainTabView: View {
     /// Your own page, as its own tab (1.7). Pages and posts it opens push onto this stack.
     private var youStack: some View {
         NavigationStack {
-            if let uid = auth.currentUser?.id {
-                UserPageView(userId: uid)
-            } else {
-                DeskGround()
+            Group {
+                if let uid = auth.currentUser?.id {
+                    UserPageView(userId: uid)
+                } else {
+                    DeskGround()
+                }
             }
+            .deskStackBarRoom(tab: DeskTabBar.you)
         }
     }
 
@@ -1095,15 +1108,92 @@ private extension View {
     /// A 1.7 tab's root: hides the system tab bar here and on every screen pushed onto it (each
     /// push resolves the bar's visibility again, so it is set on the stack's whole subtree).
     @ViewBuilder
-    func deskTabRoot(_ layout: DeskLayout) -> some View {
+    func deskTabRoot(_ layout: DeskLayout, stack: Bool = false) -> some View {
         let hidden = toolbarVisibility(.hidden, for: .tabBar).environment(\.deskLayout, layout)
-        if layout.usesRail {
+        if layout.usesRail || stack {
             hidden
         } else {
             hidden.safeAreaInset(edge: .bottom, spacing: 0) {
                 DeskTabBarSpace()
             }
         }
+    }
+
+    /// The floating bar's room for a whole navigation stack, its root and every screen pushed
+    /// onto it. A `safeAreaInset` hung on the stack reaches only the root: a pushed screen kept
+    /// just the home indicator's 34pt, so the last row of a long list (Friends, owner
+    /// 2026-11-18) sat under the bar and could not be scrolled into view. Set on the navigation
+    /// controller's own `additionalSafeAreaInsets`, which UIKit hands to every child.
+    func deskStackBarRoom(tab: Int) -> some View {
+        modifier(DeskStackBarRoom(tab: tab))
+    }
+}
+
+private struct DeskStackBarRoom: ViewModifier {
+    let tab: Int
+    @Environment(\.deskLayout) private var layout
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func body(content: Content) -> some View {
+        let room: CGFloat = !AppInfo.is17 || layout.usesRail || DeskChrome.shared.hidesBar
+            ? 0 : DeskTabBar.height(for: typeSize) + DeskTabBar.bottomGap + 8
+        content.background { NavigationBarRoom(tab: tab, bottom: room).frame(width: 0, height: 0) }
+    }
+}
+
+/// Finds the navigation controller it sits in and sets the bottom of its additional safe area.
+private struct NavigationBarRoom: UIViewControllerRepresentable {
+    var tab: Int
+    var bottom: CGFloat
+
+    func makeUIViewController(context: Context) -> Setter { Setter() }
+
+    func updateUIViewController(_ setter: Setter, context: Context) {
+        setter.deskTab = tab
+        setter.bottom = bottom
+        setter.apply()
+    }
+
+    final class Setter: UIViewController {
+        var deskTab = -1
+        var bottom: CGFloat = 0
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            apply()
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            apply()
+        }
+
+        func apply() {
+            guard let nav = navigationController else { return }
+            DeskStackRegistry.register(nav, tab: deskTab)
+            if nav.additionalSafeAreaInsets.bottom != bottom { nav.additionalSafeAreaInsets.bottom = bottom }
+        }
+    }
+}
+
+/// Each 1.7 tab's navigation controller, so a tap on the tab you're in can take it back to its
+/// first screen.
+@MainActor
+enum DeskStackRegistry {
+    private final class Weak { weak var nav: UINavigationController?; init(_ nav: UINavigationController) { self.nav = nav } }
+    private static var stacks: [Int: Weak] = [:]
+
+    static func register(_ nav: UINavigationController, tab: Int) {
+        guard tab >= 0, stacks[tab]?.nav !== nav else { return }
+        stacks[tab] = Weak(nav)
+    }
+
+    /// Pops `tab`'s stack to its root. False when it was already there (or isn't known), so the
+    /// caller scrolls to the top instead.
+    static func popToRoot(tab: Int) -> Bool {
+        guard let nav = stacks[tab]?.nav, nav.viewControllers.count > 1 else { return false }
+        nav.popToRootViewController(animated: true)
+        return true
     }
 }
 

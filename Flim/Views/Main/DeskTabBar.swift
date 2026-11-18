@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// 1.7's tab bar (the Blend board, 1c): five tabs on a solid pill in the box tone, no glass.
-/// Darkroom, Rolls, Camera in the middle, Feed, You. The active tab takes ink and a 1.5pt
+/// Feed, Rolls, Camera in the middle, Darkroom, You (owner, 2026-11-18: Feed first, Darkroom
+/// beside You). The values below are unchanged, so routes don't care. The active tab takes ink and a 1.5pt
 /// underline under its label; the camera is the one filled circle, amber while it is showing.
 ///
 /// The tab values are `MainTabView`'s own (0 camera, 1 darkroom, 2 rolls, 3 feed), plus 4 for
@@ -66,10 +67,10 @@ struct DeskTabBar: View {
 
     @ViewBuilder
     private var items: some View {
-        item(Self.darkroom, "Darkroom", symbol: MainTabSymbol.darkroom, dot: false)
+        item(Self.feed, "Feed", symbol: MainTabSymbol.feed, dot: feedDot)
         item(Self.rolls, "Rolls", symbol: MainTabSymbol.rolls, dot: rollsDot)
         cameraButton
-        item(Self.feed, "Feed", symbol: MainTabSymbol.feed, dot: feedDot)
+        item(Self.darkroom, "Darkroom", symbol: MainTabSymbol.darkroom, dot: false)
         youItem
     }
 

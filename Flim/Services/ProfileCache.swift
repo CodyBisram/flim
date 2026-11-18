@@ -74,6 +74,70 @@ enum ProfileCache {
     /// Removes every cached profile. Called on every way out of an account, so nothing is left
     /// for the next person to use this phone.
     static func clearAll(root: URL? = defaultRoot()) {
+        // The friend graph goes with it: every way out of an account clears both.
+        SocialGraphCache.clearAll()
+        guard let root else { return }
+        try? FileManager.default.removeItem(at: root)
+    }
+}
+
+/// The signed-in account's friend graph as last read from the server: who you follow, who
+/// follows you, and the two people lists Friends shows. Kept on disk so a launch shows the
+/// friend and request counts, follow buttons and the Friends list at once instead of 0 or a dash
+/// while the reads come back (owner, 2026-11-18). Never the source of truth: every read that
+/// lands overwrites it, and nothing is ever sent from it.
+///
+/// The same rules as `ProfileCache`: one account only, the id checked on the way out, kept off
+/// backups, cleared on every way out of an account.
+enum SocialGraphCache {
+    struct Snapshot: Codable, Equatable {
+        var userId: UUID
+        var followingIds: Set<UUID> = []
+        var followerIds: Set<UUID> = []
+        /// Friends' people lists, nil until Friends has loaded once.
+        var followers: [UserProfile]?
+        var following: [UserProfile]?
+    }
+
+    static func defaultRoot() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("SocialGraphCache", isDirectory: true)
+    }
+
+    private static func fileURL(for userId: UUID, root: URL) -> URL {
+        root.appendingPathComponent("\(userId.uuidString.lowercased()).json")
+    }
+
+    static func load(for userId: UUID, root: URL? = defaultRoot()) -> Snapshot? {
+        guard let root,
+              let data = try? Data(contentsOf: fileURL(for: userId, root: root)),
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
+              snapshot.userId == userId
+        else { return nil }
+        return snapshot
+    }
+
+    static func save(_ snapshot: Snapshot, root: URL? = defaultRoot()) {
+        guard let root, let data = try? JSONEncoder().encode(snapshot) else { return }
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            var excluded = URLResourceValues()
+            excluded.isExcludedFromBackup = true
+            var dir = root
+            try? dir.setResourceValues(excluded)
+            let target = fileURL(for: snapshot.userId, root: root)
+            let others = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+            for file in others where file.lastPathComponent != target.lastPathComponent {
+                try? FileManager.default.removeItem(at: file)
+            }
+            try data.write(to: target,
+                           options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            // Best effort: a missing cache only means the next launch waits for the reads.
+        }
+    }
+
+    static func clearAll(root: URL? = defaultRoot()) {
         guard let root else { return }
         try? FileManager.default.removeItem(at: root)
     }

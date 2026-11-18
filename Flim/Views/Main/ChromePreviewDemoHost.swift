@@ -85,7 +85,6 @@ struct PagerPreviewDemoHost: View {
                        showsComments: true,
                        showsNightRack: ProcessInfo.processInfo.arguments.contains("-pagerNight"))
             .environment(auth)
-            .preferredColorScheme(.dark)
             .task { auth.currentUser = AppUser(id: Self.ownerId, createdAt: .now) }
     }
 

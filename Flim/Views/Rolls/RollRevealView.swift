@@ -87,9 +87,9 @@ struct RollRevealView: View {
     private var currentPhoto: Photo? { viewModel.playedDeck[safe: viewModel.index] }
 
     var body: some View {
+        // 1.7: on the chosen desk, like every other screen (owner, 2026-11-18: always-Slate
+        // screens read as a stale desk).
         deckBody
-            // 1.7: always Slate, whatever the desk (Blend 1, 3e), so photographs read true.
-            .modifier(DeskAlwaysSlate())
     }
 
     private var deckBody: some View {
@@ -107,7 +107,7 @@ struct RollRevealView: View {
 
     private var revealBody: some View {
         ZStack {
-            // 1.7: Slate with its grain (always Slate here), the board's screening (3e).
+            // 1.7: the desk with its grain, whichever desk is chosen.
             if AppInfo.is17 { DeskGround() } else { Color.black.ignoresSafeArea() }
 
             if viewModel.showCover {
@@ -122,7 +122,7 @@ struct RollRevealView: View {
                 // Still loading the deck. Much shorter now that playback starts on the cached
                 // thumbnail rather than waiting for the full rendition, but a bare black screen
                 // for even that wait read as a hang.
-                ProgressView().tint(.white)
+                ProgressView().tint(FlimTheme.textSecondary)
             }
         }
         .statusBarHidden()
@@ -367,7 +367,7 @@ struct RollRevealView: View {
                 // `fadeIn` curve does on the layer above. Everything else about the ceremony is
                 // untouched: the cover card, the rack, the wells ahead of you, the one-shot flag.
             } else {
-                ProgressView().tint(.white)
+                ProgressView().tint(FlimTheme.textSecondary)
             }
         }
         // The box, then the clip. Order matters: `aspectRatio` is what sizes the stack the blur
@@ -462,16 +462,16 @@ struct RollRevealView: View {
             if developed, let thumbPath = photo.thumbPath, let url = viewModel.urls[thumbPath] {
                 CachedImage(url: url, maxPixel: 120, cacheKey: thumbPath) { image in
                     image.resizable().scaledToFill()
-                } placeholder: { Color.white.opacity(0.06) }
+                } placeholder: { FlimTheme.well }
             } else if developed, let url = viewModel.urls[photo.viewPath] {
                 CachedImage(url: url, maxPixel: 120, cacheKey: photo.viewPath) { image in
                     image.resizable().scaledToFill()
-                } placeholder: { Color.white.opacity(0.06) }
+                } placeholder: { FlimTheme.well }
             } else {
                 // Not yet reached: the compact developing well, verbatim from the Darkroom's
                 // own rack.
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color(white: 0.063))
+                    .fill(FlimTheme.well)
                     .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(FlimTheme.stroke, lineWidth: 1))
                     .overlay {
                         Circle()
@@ -593,7 +593,7 @@ struct RollRevealView: View {
                     Text("Comments")
                         .flimFont(12.5, relativeTo: .footnote)
                 }
-                .foregroundStyle(Color(white: 0.6))
+                .foregroundStyle(FlimTheme.textSecondary)
             }
             .buttonStyle(.plain)
             Spacer(minLength: 8)
@@ -614,7 +614,7 @@ struct RollRevealView: View {
                     Image(systemName: reported ? "flag.fill" : "flag")
                         .font(.system(size: 13))
                         .contentTransition(.symbolEffect(.replace))
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(FlimTheme.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .disabled(reported)
@@ -973,7 +973,7 @@ struct RollRevealView: View {
                  ? "Every shot in this roll came out black or blurred. They're in the roll, marked Missed."
                  : "The shots in this roll were deleted.")
                 .flimFont(20, weight: .light, relativeTo: .title3)
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             Button {
@@ -1002,7 +1002,7 @@ struct RollRevealView: View {
             Text("DEVELOPED")
                 .flimFont(11, weight: .semibold, relativeTo: .caption2)
                 .tracking(3.5)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
 
             Group {
                 if AppInfo.is17 {
@@ -1011,7 +1011,7 @@ struct RollRevealView: View {
                     Text(rollName).flimFont(34, weight: .ultraLight, relativeTo: .largeTitle).tracking(2)
                 }
             }
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
                 .minimumScaleFactor(0.6)
@@ -1021,19 +1021,19 @@ struct RollRevealView: View {
             // A rule under the title, the width of the text above it. Gives the block an edge to
             // sit on, so the type is composed rather than floating in the middle of black.
             Rectangle()
-                .fill(Color.white.opacity(0.18))
+                .fill(FlimTheme.stroke)
                 .frame(width: 44, height: 1)
                 .padding(.top, 20)
 
             Text(viewModel.cover.metaLine)
                 .flimFont(15, weight: .medium, relativeTo: .body)
-                .foregroundStyle(Color(white: 0.82))
+                .foregroundStyle(FlimTheme.textSecondary)
                 .padding(.top, 20)
 
             if let dateLine = viewModel.cover.dateLine() {
                 Text(dateLine)
                     .flimFont(12.5, relativeTo: .footnote)
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(FlimTheme.textTertiary)
                     .padding(.top, 5)
             }
 
@@ -1061,7 +1061,7 @@ struct RollRevealView: View {
     private var coverProgress: some View {
         let width: CGFloat = 120
         ZStack(alignment: .leading) {
-            Capsule().fill(Color.white.opacity(0.16)).frame(width: width, height: 2)
+            Capsule().fill(FlimTheme.textPrimary.opacity(0.16)).frame(width: width, height: 2)
             TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { tl in
                 Capsule()
                     .fill(accent)

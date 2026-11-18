@@ -453,7 +453,8 @@ struct PhotoPagerView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
         }
-        .modifier(DeskAlwaysSlate())
+        // Follows the desk (owner, 2026-11-18): it was always Slate, which read as a stale desk
+        // when you came from a Paper screen.
         // 1.7's Post, for this one shot (Blend 3, 9b).
         .fullScreenCover(item: $deskPostPhoto) { photo in
             DeskPostView(photos: [photo],
@@ -463,8 +464,7 @@ struct PhotoPagerView: View {
 
     private var pagerBody: some View {
         ZStack {
-            // 1.7: Slate with its grain (always Slate here, `DeskAlwaysSlate`), as the board's
-            // screening and viewer are drawn; black on 1.6.
+            // 1.7: the desk with its grain, whichever desk is chosen; black on 1.6.
             if AppInfo.is17 { DeskGround() } else { Color.black.ignoresSafeArea() }
 
             if showsNightRack {
@@ -737,14 +737,14 @@ struct PhotoPagerView: View {
             HStack(spacing: 12) {
                 GlassIconButton { close() } label: {
                     Image(systemName: "xmark")
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                 }
                 .accessibilityLabel("Close")
                 Spacer()
                 if showsComments {
                     GlassIconButton { commentsPhoto = photo; showComments = true } label: {
                         Image(systemName: "bubble.right")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
                     }
                     .accessibilityLabel("Comments")
                 }
@@ -754,12 +754,12 @@ struct PhotoPagerView: View {
                 } label: {
                     Group {
                         if preparingShare {
-                            ProgressView().tint(.white).controlSize(.small)
+                            ProgressView().tint(FlimTheme.textPrimary).controlSize(.small)
                         } else {
                             Image(systemName: "square.and.arrow.up")
                         }
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                 }
                 .disabled(preparingShare)
                 .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
@@ -790,7 +790,7 @@ struct PhotoPagerView: View {
                     } label: {
                         GlassIcon {
                             Image(systemName: "ellipsis")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(FlimTheme.textPrimary)
                         }
                     }
                     .accessibilityLabel("More")
@@ -800,7 +800,7 @@ struct PhotoPagerView: View {
                     GlassIconButton { reportCurrent() } label: {
                         Image(systemName: reported ? "flag.fill" : "flag")
                             .contentTransition(.symbolEffect(.replace))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
                     }
                     .accessibilityLabel("Report photo")
                     .disabled(reported)
@@ -822,14 +822,14 @@ struct PhotoPagerView: View {
                 if !docked {
                     GlassIconButton { close() } label: {
                         Image(systemName: "xmark")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
                     }
                     .accessibilityLabel("Close")
                 }
 
                 Text(currentNightTitle)
                     .flimFont(15, weight: .medium)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .lineLimit(1)
 
                 Text("\(currentNightPosition) of \(currentNightPhotos.count)")
@@ -849,14 +849,14 @@ struct PhotoPagerView: View {
                     Button { share(photo) } label: {
                         Group {
                             if preparingShare {
-                                ProgressView().tint(accent).controlSize(.small)
+                                ProgressView().tint(FlimTheme.ink(accent)).controlSize(.small)
                             } else {
                                 Image(systemName: "square.and.arrow.up")
                                     .font(.system(size: 15, weight: .medium))
                             }
                         }
                         .frame(width: 19, height: 19)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .contentShape(Rectangle())
                     }
                     .disabled(preparingShare)
@@ -887,7 +887,7 @@ struct PhotoPagerView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .frame(width: 19, height: 19)
                             .contentShape(Rectangle())
                     }
@@ -962,7 +962,7 @@ struct PhotoPagerView: View {
                 if let name = rollName(photo.rollId) {
                     Text(name)
                         .flimFont(17, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .lineLimit(1)
                 }
 
@@ -1078,7 +1078,7 @@ struct PhotoPagerView: View {
                         Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
                             Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
                                 .flimFont(15, weight: .semibold, relativeTo: .body)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(FlimTheme.textPrimary)
                                 .opacity(memberNames[photo.userId] == nil ? 0 : 1)
                         }
                         .buttonStyle(.plain)
@@ -1115,7 +1115,7 @@ struct PhotoPagerView: View {
                             Image(systemName: "bubble.right").font(.system(size: 14))
                             Text(commentsRowLabel(count: currentCommentCount)).flimFont(12.5, relativeTo: .footnote)
                         }
-                        .foregroundStyle(Color(white: 0.6))
+                        .foregroundStyle(FlimTheme.textSecondary)
                     }
                     .buttonStyle(.plain)
                     Spacer(minLength: 8)
@@ -1138,10 +1138,10 @@ struct PhotoPagerView: View {
                                 Text(shared ? "Posted" : "Post")
                                     .flimFont(11, weight: .medium, relativeTo: .caption2)
                             }
-                            .foregroundStyle(shared ? Color(white: 0.5) : accent)
+                            .foregroundStyle(shared ? FlimTheme.textTertiary : FlimTheme.ink(accent))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 5)
-                            .overlay(Capsule().strokeBorder(shared ? Color.white.opacity(0.18) : accent,
+                            .overlay(Capsule().strokeBorder(shared ? FlimTheme.stroke : FlimTheme.ink(accent),
                                                             lineWidth: 1))
                         }
                         .buttonStyle(.plain)
@@ -1189,10 +1189,10 @@ struct PhotoPagerView: View {
                         Label(shared ? "Posted to your page" : "Post to your page",
                               systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
                             .flimFont(15, weight: .semibold)
-                            .foregroundStyle(shared ? .white : .black)
+                            .foregroundStyle(shared ? FlimTheme.textPrimary : .black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(shared ? Color.white.opacity(0.15) : accent, in: Capsule())
+                            .background(shared ? FlimTheme.chip : accent, in: Capsule())
                     }
                     .disabled(shared)
                 }
@@ -1215,11 +1215,11 @@ struct PhotoPagerView: View {
                     Text(pendingTags.isEmpty ? "Tag people" : "\(pendingTags.count) tagged")
                         .flimFont(14)
                     Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+                    Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(FlimTheme.textPrimary)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color.white.opacity(0.1), in: Capsule())
+                .background(FlimTheme.chip, in: Capsule())
             }
 
             HStack(spacing: 10) {
@@ -1227,16 +1227,16 @@ struct PhotoPagerView: View {
                     .lineLimit(1...3)
                     .focused($captionFocused)
                     .flimFont(15)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .tint(accent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.14), in: Capsule())
+                    .background(FlimTheme.chip, in: Capsule())
                 Button {
                     showShareComposer = false
                     captionFocused = false
                 } label: {
-                    Text("Cancel").flimFont(13).foregroundStyle(.white.opacity(0.6))
+                    Text("Cancel").flimFont(13).foregroundStyle(FlimTheme.textSecondary)
                 }
                 Button { confirmShare() } label: {
                     Text("Share")
@@ -1432,7 +1432,7 @@ struct PhotoPagerView: View {
                     if isDeveloping {
                         developingPlaceholder
                     } else {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(FlimTheme.textSecondary)
                     }
                 }
                 .id("page-\(photo.id)-\(retryTokens[photo.id, default: 0])")
@@ -1515,19 +1515,19 @@ struct PhotoPagerView: View {
     /// Retry, matching `FeedUnitCard.brokenWell`'s exact copy and shape.
     private func brokenPage(_ photo: Photo) -> some View {
         Rectangle()
-            .fill(Color.white.opacity(0.06))
+            .fill(FlimTheme.well)
             .overlay {
                 VStack(spacing: 11) {
                     Image(systemName: "photo.badge.exclamationmark")
                         .font(.system(size: 27, weight: .light))
-                        .foregroundStyle(Color.white.opacity(0.37))
+                        .foregroundStyle(FlimTheme.textTertiary)
                     Text("This shot didn't load")
                         .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
                     Button { retryFailedImage(photo) } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                             .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .padding(.horizontal, 16).padding(.vertical, 7)
                             .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
                     }
@@ -1800,10 +1800,10 @@ struct PhotoPagerView: View {
         } label: {
             Text("Post")
                 .flimFont(13, weight: .medium)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .padding(.horizontal, 14)
                 .frame(minHeight: 32)
-                .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(FlimTheme.ink(accent).opacity(0.55), lineWidth: 1))
         }
     }
 
@@ -1851,10 +1851,10 @@ struct PhotoPagerView: View {
         Group {
             Text("Tag")
                 .flimFont(13, weight: .medium)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .padding(.horizontal, 14)
                 .frame(minHeight: 32)
-                .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(FlimTheme.ink(accent).opacity(0.55), lineWidth: 1))
                 .opacity(isLoadingTags ? 0.45 : 1)
         }
     }
@@ -1872,13 +1872,13 @@ struct PhotoPagerView: View {
                     Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
                         Text("@\(name)")
                             .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(FlimTheme.textPrimary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens @\(name)'s profile")
                 }
                 Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                    .flimFont(12, weight: .medium).foregroundStyle(Color(white: 0.68))
+                    .flimFont(12, weight: .medium).foregroundStyle(FlimTheme.textSecondary)
             }
         }
         .opacity(scale > 1 ? 0 : 1)

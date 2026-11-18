@@ -197,6 +197,9 @@ struct ContentView: View {
             // paint instead of a blank tile through the whole first network round trip. Named
             // for `newId` only, never the departing `previousId`.
             if let newId { rolls.restore(for: newId) }
+            // The friend graph the same way: counts, follow buttons and Friends' list paint from
+            // the last read instead of 0 or a dash (owner, 2026-11-18).
+            if let newId { feed.restoreSocialGraph(for: newId) }
             // Covers launch with a restored session (previousId starts nil), sign-in, and a
             // straight account-to-account switch; see FeedSeenStore's own doc for why marks
             // must be namespaced by whoever is actually signed in.

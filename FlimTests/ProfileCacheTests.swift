@@ -91,3 +91,51 @@ struct ProfileCacheTests {
         #expect(ProfileCache.load(for: UUID(), root: root) == nil)
     }
 }
+
+/// The on-disk friend graph a launch shows counts and Friends from before the reads land. Same
+/// rule as the profile: one account's graph never shows for another.
+struct SocialGraphCacheTests {
+    private let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("SocialGraphCacheTests-\(UUID().uuidString)", isDirectory: true)
+
+    private func person(_ name: String) -> UserProfile {
+        UserProfile(id: UUID(), username: name, avatarPath: nil, bio: nil, displayName: name.capitalized,
+                    coverPath: nil, createdAt: Date(timeIntervalSince1970: 1_758_000_000))
+    }
+
+    @Test("a saved graph comes back unchanged, people lists included")
+    func roundTrip() {
+        defer { SocialGraphCache.clearAll(root: root) }
+        let a = person("mira"), b = person("theo")
+        let saved = SocialGraphCache.Snapshot(userId: UUID(), followingIds: [a.id, b.id], followerIds: [a.id],
+                                              followers: [a], following: [a, b])
+        SocialGraphCache.save(saved, root: root)
+        #expect(SocialGraphCache.load(for: saved.userId, root: root) == saved)
+    }
+
+    @Test("another account's graph is never read back")
+    func otherAccount() {
+        defer { SocialGraphCache.clearAll(root: root) }
+        SocialGraphCache.save(.init(userId: UUID(), followingIds: [UUID()]), root: root)
+        #expect(SocialGraphCache.load(for: UUID(), root: root) == nil)
+    }
+
+    @Test("saving one account's graph removes the last account's")
+    func oneAccountOnly() {
+        defer { SocialGraphCache.clearAll(root: root) }
+        let departed = SocialGraphCache.Snapshot(userId: UUID(), followingIds: [UUID()])
+        let current = SocialGraphCache.Snapshot(userId: UUID(), followerIds: [UUID()])
+        SocialGraphCache.save(departed, root: root)
+        SocialGraphCache.save(current, root: root)
+        #expect(SocialGraphCache.load(for: departed.userId, root: root) == nil)
+        #expect(SocialGraphCache.load(for: current.userId, root: root) == current)
+    }
+
+    @Test("clearing leaves nothing to read")
+    func clear() {
+        let saved = SocialGraphCache.Snapshot(userId: UUID(), followingIds: [UUID()])
+        SocialGraphCache.save(saved, root: root)
+        SocialGraphCache.clearAll(root: root)
+        #expect(SocialGraphCache.load(for: saved.userId, root: root) == nil)
+    }
+}
