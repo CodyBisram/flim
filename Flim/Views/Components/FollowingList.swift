@@ -67,7 +67,7 @@ struct FollowingList<Accessory: View>: View {
             Spacer()
             if mutualIds.contains(profile.id) {
                 Text("friend")
-                    .flimFont(11, weight: .medium, relativeTo: .caption).foregroundStyle(accent)
+                    .flimFont(11, weight: .medium, relativeTo: .caption).foregroundStyle(FlimTheme.ink(accent))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(accent.opacity(0.15), in: Capsule())
             }

@@ -633,7 +633,7 @@ struct RollsView: View {
                         .foregroundStyle(selected ? FlimTheme.textPrimary : FlimTheme.textSecondary)
                     Text(pickerTime(roll, now: now))
                         .flimFont(11, relativeTo: .caption2)
-                        .foregroundStyle(selected ? accent : FlimTheme.textSecondary)
+                        .foregroundStyle(selected ? FlimTheme.ink(accent) : FlimTheme.textSecondary)
                 }
                 .lineLimit(1)
                 // Selection is carried by the accent mark, never by contrast: unselected
@@ -727,7 +727,7 @@ struct RollsView: View {
         }
         // Inside the last hour the WHOLE line goes accent; the deadline is the message.
         return (
-            Text("Closes \(closesAt) · ").foregroundStyle(closing ? accent : FlimTheme.textSecondary)
+            Text("Closes \(closesAt) · ").foregroundStyle(closing ? FlimTheme.ink(accent) : FlimTheme.textSecondary)
             + Text(remaining).foregroundStyle(FlimTheme.ink(accent))
         )
         .flimFont(12.5, relativeTo: .footnote)

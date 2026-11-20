@@ -72,7 +72,7 @@ struct AnnouncementLine: View {
                NewAccountIntro.announcementToShow(announcement, userId: uid, usageKnown: usageKnown,
                                                   firstVisitLineShowing: firstVisitLineShowing,
                                                   alreadyUsed: alreadyUsed) != nil {
-                (Text(announcement.headline).foregroundStyle(accent)
+                (Text(announcement.headline).foregroundStyle(FlimTheme.ink(accent))
                  + Text(" " + announcement.detail).foregroundStyle(FlimTheme.textSecondary))
                     .flimFont(13, relativeTo: .footnote)
                     .fixedSize(horizontal: false, vertical: true)
@@ -136,7 +136,7 @@ struct InviteReminderLine: View {
 
     var body: some View {
         Button { showInvite = true } label: {
-            (Text(headline).foregroundStyle(accent)
+            (Text(headline).foregroundStyle(FlimTheme.ink(accent))
              + Text(" " + detail).foregroundStyle(FlimTheme.textSecondary))
                 .flimFont(13, relativeTo: .footnote)
                 .fixedSize(horizontal: false, vertical: true)

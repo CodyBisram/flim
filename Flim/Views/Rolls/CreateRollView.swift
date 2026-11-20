@@ -147,7 +147,7 @@ struct CreateRollView: View {
                             Label(copied ? "Copied" : "Copy code",
                                   systemImage: copied ? "checkmark" : "doc.on.doc")
                                 .flimFont(14, weight: .semibold)
-                                .foregroundStyle(copied ? accent : FlimTheme.textPrimary)
+                                .foregroundStyle(copied ? FlimTheme.ink(accent) : FlimTheme.textPrimary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
                                 .glassCapsule(interactive: true)

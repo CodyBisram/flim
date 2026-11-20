@@ -1392,7 +1392,7 @@ private struct RollPickerSheet: View {
                     } label: {
                         HStack {
                             Label("Personal", systemImage: "person.fill")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(FlimTheme.textPrimary)
                             Spacer()
                             if selected == nil {
                                 Image(systemName: "checkmark")
@@ -1410,7 +1410,7 @@ private struct RollPickerSheet: View {
                         } label: {
                             HStack {
                                 Label(roll.name, systemImage: "film.stack")
-                                    .foregroundStyle(isClosed ? FlimTheme.textTertiary : .white)
+                                    .foregroundStyle(isClosed ? FlimTheme.textTertiary : FlimTheme.textPrimary)
                                 if isClosed {
                                     Text("· developed")
                                         .flimFont(12)
@@ -1463,7 +1463,7 @@ private struct RollPickerSheet: View {
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                    Button("Cancel") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
         }

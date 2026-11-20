@@ -92,7 +92,7 @@ struct CaptureStatusChip: View {
     private var tint: Color {
         switch status {
         case .uploaded, .savedOnPhone: FlimTheme.success
-        case .uploading: .white   // what the spinner it replaced was: in progress, not a warning
+        case .uploading: FlimTheme.textPrimary   // what the spinner it replaced was: in progress, not a warning
         default: FlimTheme.warning(accent)
         }
     }
@@ -116,7 +116,7 @@ struct CaptureStatusChip: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(status.title)
                     .flimType(.label)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                 Text(status.detail(rollName: rollName))
                     .flimType(.micro)
                     .foregroundStyle(FlimTheme.textSecondary)
@@ -125,7 +125,7 @@ struct CaptureStatusChip: View {
             if status.canRetry, let onRetry {
                 Button("Retry", action: onRetry)
                     .flimType(.label)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .frame(minHeight: 44)
                     .padding(.leading, FlimSpace.xs)
             }

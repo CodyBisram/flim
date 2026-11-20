@@ -75,7 +75,7 @@ struct TagPhotoSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { onDone(); dismiss() }
-                        .foregroundStyle(accent).fontWeight(.semibold)
+                        .foregroundStyle(FlimTheme.ink(accent)).fontWeight(.semibold)
                 }
             }
         }
@@ -123,7 +123,7 @@ struct TagPhotoSheet: View {
                 }
                 Text(profile.username.map { "@\($0)" } ?? profile.name)
                     .flimFont(11, relativeTo: .caption2)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(FlimTheme.textPrimary)
                     .lineLimit(1)
             }
             .frame(width: 62)

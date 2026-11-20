@@ -112,7 +112,7 @@ struct ConsequenceSheet: View {
                 .flimFont(10, relativeTo: .caption2)
                 .tracking(1.5)
                 .textCase(.uppercase)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
             Text(consequence.title)
                 .flimFont(23, weight: .light, relativeTo: .title2)
                 .foregroundStyle(FlimTheme.textPrimary)

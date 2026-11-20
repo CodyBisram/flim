@@ -2468,7 +2468,8 @@ Text("Darkroom")
                     Circle().fill(accent.opacity(0.12)).frame(width: 112, height: 112)
                     Image(systemName: "sparkles")
                         .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundStyle(FlimTheme.ink(accent))
+                        // The bright accent: this takeover is black whatever the desk.
+                        .foregroundStyle(accent)
                         .symbolEffect(.pulse)
                 }
                 .scaleEffect(revealAnim ? 1 : 0.4)

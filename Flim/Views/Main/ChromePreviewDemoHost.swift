@@ -97,10 +97,17 @@ struct PagerPreviewDemoHost: View {
     /// viewer has a real file URL to load.
     static func makeFixture() -> Fixture {
         var fixture = Fixture(photos: [], urls: [:])
+        // All four within one midday, so they always group as one day: hours back from now put
+        // the oldest in "Last night" before about 8 AM and the Darkroom split them 3 and 1.
+        let calendar = Calendar.current
+        let todayNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: .now) ?? .now
+        let noon = Date.now >= todayNoon.addingTimeInterval(3600)
+            ? todayNoon
+            : calendar.date(byAdding: .day, value: -1, to: todayNoon) ?? todayNoon
         for index in 0..<4 {
             let id = UUID()
             let path = "pagerDemo/p\(index).jpg"
-            let takenAt = Date.now.addingTimeInterval(TimeInterval(-3600 * (index + 1)))
+            let takenAt = noon.addingTimeInterval(TimeInterval(-1200 * index))
             fixture.photos.append(Photo(id: id, userId: ownerId, rollId: nil, storagePath: path,
                                         thumbPath: path, feedPath: path, takenAt: takenAt,
                                         developsAt: .distantPast, isDeveloped: true, caption: nil, isSorted: true))

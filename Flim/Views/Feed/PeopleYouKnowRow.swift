@@ -67,7 +67,7 @@ struct PeopleYouKnowRow: View {
                         Spacer()
                         Button("See all", action: onSeeAll)
                             .flimFont(13, relativeTo: .footnote)
-                            .foregroundStyle(accent)
+                            .foregroundStyle(FlimTheme.ink(accent))
                             .frame(minHeight: 44)
                     }
                     ForEach(visiblePeople, id: \.profile.id) { entry in

@@ -72,7 +72,9 @@ struct FlimToast: View {
     var body: some View {
         Label(text, systemImage: symbol ?? kind.symbol)
             .flimType(.label)
-            .foregroundStyle(.white)
+            // The desk's ink, not white: glass turns light on Paper, and white words on it
+            // vanished (the Seals cap notice, owner 2026-11-18). White on 1.6, as before.
+            .foregroundStyle(FlimTheme.textPrimary)
             .multilineTextAlignment(alignment)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -120,13 +122,13 @@ private struct FlimToastSurface: ViewModifier {
         if reduceTransparency {
             content
                 .background(FlimTheme.sheetSurfaceSolid, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1))
         } else if #available(iOS 26, *) {
             content.glassCapsule()
         } else if hairline {
             content
                 .glassCapsule()
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1))
         } else {
             content.glassCapsule()
         }

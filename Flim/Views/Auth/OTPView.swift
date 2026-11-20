@@ -94,7 +94,7 @@ struct OTPView: View {
                                  ? "Send a new code in \(resendCountdown)s"
                                  : (isResending ? "Sending…" : "Send a new code"))
                                 .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                                .foregroundStyle(resendCountdown > 0 ? FlimTheme.textTertiary : accent)
+                                .foregroundStyle(resendCountdown > 0 ? FlimTheme.textTertiary : FlimTheme.ink(accent))
                         }
                         .disabled(resendCountdown > 0 || isResending)
 

@@ -250,7 +250,7 @@ private struct BadgePickerContent: View {
                         if isSaving {
                             ProgressView().tint(accent)
                         } else {
-                            Text("Save").foregroundStyle(nothingToSave ? FlimTheme.textTertiary : accent)
+                            Text("Save").foregroundStyle(nothingToSave ? FlimTheme.textTertiary : FlimTheme.ink(accent))
                         }
                     }
                     .disabled(isSaving || nothingToSave)

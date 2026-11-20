@@ -42,7 +42,7 @@ struct FeedbackSheet: View {
                             if let url = AppInfo.feedbackMailURL {
                                 Button("Email us instead") { openURL(url) }
                                     .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                                    .foregroundStyle(accent)
+                                    .foregroundStyle(FlimTheme.ink(accent))
                             }
                         }
                     }

@@ -284,7 +284,7 @@ struct ErrorState: View {
             } label: {
                 Text(retrying ? "Retrying…" : "Try again")
                     .font(.system(size: buttonSize, weight: .semibold))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
                     .padding(.horizontal, 22)
                     .padding(.vertical, 11)
                     .glassCapsule(interactive: true)

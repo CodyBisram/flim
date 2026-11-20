@@ -523,6 +523,30 @@ final class Desk17UITests: XCTestCase {
         shot("seals_chosen_slate")
     }
 
+    /// A third seal on Paper raises the cap notice, in the desk's ink: white words on Paper's
+    /// light glass could not be read (owner, 2026-11-18).
+    func testSealCapNoticeReadsOnPaper() {
+        app.terminate()
+        app.launchArguments = ["-badgePickerDemo", "-desk", "paper"]
+        app.launch()
+        let custom = app.buttons["Custom"].firstMatch
+        XCTAssertTrue(custom.waitForExistence(timeout: 15))
+        sleep(4)
+        custom.tap()
+        let notice = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Up to 2 seals'")).firstMatch
+        for name in ["Founder", "Full Set", "First In", "Kept One", "Open Door", "Regular", "Recruiter", "Roll Maker"] {
+            let seal = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", name)).firstMatch
+            if seal.exists, seal.isHittable { seal.tap(); usleep(300_000) }
+            if notice.exists { break }
+        }
+        XCTAssertTrue(notice.waitForExistence(timeout: 3), "the cap notice never showed")
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "seal-cap-notice-paper"
+        capture.lifetime = .keepAlways
+        add(capture)
+        shot("seal_cap_paper")
+    }
+
     /// The Darkroom is one timeline (owner, 2026-11-14): scrolling down runs from this month into
     /// the ones before it, each named where it begins, with nothing to tap to reach the next.
     func testDarkroomIsOneContinuousTimeline() {

@@ -38,7 +38,7 @@ struct BlockedUsersSheet: View {
                                     Circle().fill(accent.opacity(0.18)).frame(width: 36, height: 36)
                                         .overlay {
                                             Text((p.username ?? "?").prefix(1).uppercased())
-                                                .flimFont(15, weight: .semibold, relativeTo: .subheadline).foregroundStyle(accent)
+                                                .flimFont(15, weight: .semibold, relativeTo: .subheadline).foregroundStyle(FlimTheme.ink(accent))
                                         }
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(p.handle).flimFont(15, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
@@ -76,7 +76,7 @@ struct BlockedUsersSheet: View {
             .flimInlineTitle("Blocked Users")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.tint(accent)
+                    Button("Done") { dismiss() }.tint(FlimTheme.ink(accent))
                 }
             }
         }

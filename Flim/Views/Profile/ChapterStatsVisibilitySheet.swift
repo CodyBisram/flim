@@ -102,7 +102,7 @@ private struct ChapterStatsVisibilityContent: View {
                         if isSaving {
                             ProgressView().tint(accent)
                         } else {
-                            Text("Save").foregroundStyle(accent)
+                            Text("Save").foregroundStyle(FlimTheme.ink(accent))
                         }
                     }
                     .disabled(isSaving)

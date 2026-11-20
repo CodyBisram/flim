@@ -63,7 +63,7 @@ struct DarkroomDayUnitView: View {
                 if let pillText = unit.developingPillText() {
                     Text(pillText)
                         .flimFont(11, weight: .medium, relativeTo: .caption2)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -455,7 +455,7 @@ struct DarkroomSortBanner: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(count) shot\(count == 1 ? "" : "s") to sort")
                         .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                     Text(subtitle)
                         .flimFont(11, relativeTo: .caption2)
                         .foregroundStyle(FlimTheme.textTertiary)
@@ -464,7 +464,7 @@ struct DarkroomSortBanner: View {
                 previewDeck
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
             }
             .padding(.top, 9)
             .padding(.bottom, 9)

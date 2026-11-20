@@ -33,7 +33,7 @@ struct EditCaptionSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { onSave(); dismiss() }
-                        .foregroundStyle(accent).fontWeight(.semibold)
+                        .foregroundStyle(FlimTheme.ink(accent)).fontWeight(.semibold)
                 }
             }
             .onAppear { focused = true }

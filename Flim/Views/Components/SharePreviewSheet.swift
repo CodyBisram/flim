@@ -294,7 +294,7 @@ struct SharePreviewSheet: View {
                 // still sit across the row.
                 Text("\(option.label) · \(option.ratio)")
                     .flimFont(11, weight: .medium, relativeTo: .caption2)
-                    .foregroundStyle(selected ? accent : FlimTheme.textTertiary)
+                    .foregroundStyle(selected ? FlimTheme.ink(accent) : FlimTheme.textTertiary)
                     .lineLimit(1)
             }
             .frame(width: 66)
@@ -388,7 +388,7 @@ struct SharePreviewSheet: View {
                     .flimFont(15, weight: .medium, relativeTo: .body)
                     .contentTransition(.opacity)
             }
-            .foregroundStyle(accent)
+            .foregroundStyle(FlimTheme.ink(accent))
             .frame(maxWidth: .infinity)
             .frame(minHeight: 46)
             // Outlined, not the filled accent capsule this sheet used to have: it matches the

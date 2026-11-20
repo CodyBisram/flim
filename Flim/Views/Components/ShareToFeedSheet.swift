@@ -326,7 +326,7 @@ struct ShareToFeedSheet: View {
                 Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
                 Text("Add people").flimFont(13, weight: .medium, relativeTo: .subheadline)
             }
-            .foregroundStyle(accent)
+            .foregroundStyle(FlimTheme.ink(accent))
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
             .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
@@ -364,7 +364,7 @@ struct ShareToFeedSheet: View {
         Button { share() } label: {
             Text("Post to your page")
                 .flimFont(15, weight: .semibold, relativeTo: .body)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 38)
                 .overlay(Capsule().strokeBorder(accent, lineWidth: 1.5))
@@ -460,7 +460,7 @@ struct AddPeopleSheet: View {
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(accent).fontWeight(.semibold)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.ink(accent)).fontWeight(.semibold)
                 }
             }
         }

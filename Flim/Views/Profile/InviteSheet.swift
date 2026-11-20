@@ -34,12 +34,12 @@ struct InviteSheet: View {
                     Text("INVITE-ONLY")
                         .flimFont(11, weight: .medium, design: .monospaced, relativeTo: .caption2)
                         .tracking(3)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                         .padding(.top, 18)
 
                     Text(headline)
                         .flimFont(28, weight: .light, relativeTo: .title)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FlimTheme.textPrimary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                         .padding(.top, 10)
@@ -101,7 +101,7 @@ struct InviteSheet: View {
             .toolbarColorScheme(AppInfo.is17 ? nil : .dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.textPrimary)
                 }
             }
             .task {
@@ -202,7 +202,7 @@ struct InviteSheet: View {
             // the app already burns its date imprints in.
             Text(String(format: "%02d", number))
                 .flimFont(16, weight: .medium, design: .monospaced, relativeTo: .title3)
-                .foregroundStyle(isUnused ? accent : FlimTheme.textTertiary)
+                .foregroundStyle(isUnused ? FlimTheme.ink(accent) : FlimTheme.textTertiary)
                 // Shares the same shrink contract as the lines below it: without this, the number
                 // alone grows unchecked at accessibility text sizes and pushes the three-line
                 // stack past the fixed 92pt frame, bleeding into the sprocket rail.
@@ -263,7 +263,7 @@ struct InviteSheet: View {
                 Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
                     .font(.system(size: 13))
                     .contentTransition(.symbolEffect(.replace))
-                    .foregroundStyle(codeCopied ? accent : FlimTheme.textTertiary)
+                    .foregroundStyle(codeCopied ? FlimTheme.ink(accent) : FlimTheme.textTertiary)
             }
         }
         .buttonStyle(.plain)

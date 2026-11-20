@@ -55,7 +55,7 @@ struct DarkroomYearRow: View {
                     Text(monthName)
                         .flimFont(17, weight: .light)
                         .tracking(0.4)
-                        .foregroundStyle(isAnchor ? accent : FlimTheme.textPrimary)
+                        .foregroundStyle(isAnchor ? FlimTheme.ink(accent) : FlimTheme.textPrimary)
                     Spacer(minLength: 8)
                     if let meta {
                         Text(meta)
@@ -261,7 +261,7 @@ struct DarkroomAllTimeRow: View {
             Text(Self.monthInitials[month - 1])
                 .flimFont(8)
                 .tracking(0.3)
-                .foregroundStyle(isAnchor ? accent : (AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.36)))
+                .foregroundStyle(isAnchor ? FlimTheme.ink(accent) : (AppInfo.is17 ? FlimTheme.textTertiary : Color(white: 0.36)))
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())

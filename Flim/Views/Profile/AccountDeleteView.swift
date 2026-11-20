@@ -109,7 +109,7 @@ struct AccountDeleteView: View {
                     Spacer(minLength: 6)
                     Button("Try again") { beginHoldCommit() }
                         .flimFont(13, weight: .semibold)
-                        .foregroundStyle(accent)
+                        .foregroundStyle(FlimTheme.ink(accent))
                 }
                 .padding(.horizontal, 15).padding(.vertical, 13)
                 .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))

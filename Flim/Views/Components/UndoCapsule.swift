@@ -35,7 +35,8 @@ struct UndoCapsuleHost: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(staged.title)
                     .flimFont(14)
-                    .foregroundStyle(.white)
+                    // The desk's ink, as the toast: white vanished on Paper's light glass.
+                    .foregroundStyle(FlimTheme.textPrimary)
                 if let subtitle = staged.subtitle {
                     Text(subtitle)
                         .flimFont(11.5, relativeTo: .caption)
@@ -45,7 +46,7 @@ struct UndoCapsuleHost: View {
             .lineLimit(1)
             Button("Undo") { center.undo() }
                 .flimFont(14, weight: .semibold)
-                .foregroundStyle(accent)
+                .foregroundStyle(FlimTheme.ink(accent))
                 .padding(.leading, 2)
         }
         .padding(.leading, 16).padding(.trailing, 18).padding(.vertical, 12)
@@ -61,14 +62,14 @@ struct UndoCapsuleHost: View {
             let remaining = max(0, deadline.timeIntervalSince(context.date))
             let fraction = remaining / UndoCenter.window
             ZStack {
-                Circle().stroke(Color.white.opacity(0.16), lineWidth: 2.5)
+                Circle().stroke(FlimTheme.stroke, lineWidth: 2.5)
                 Circle()
                     .trim(from: 0, to: fraction)
                     .stroke(accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text("\(Int(remaining.rounded(.up)))")
                     .flimFont(9, weight: .semibold, relativeTo: .caption2)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(FlimTheme.ink(accent))
             }
             .frame(width: 22, height: 22)
         }

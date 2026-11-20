@@ -72,7 +72,7 @@ struct SquareCropSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(working ? "Saving…" : "Use") { use() }
                         .flimFont(16, weight: .semibold)
-                        .foregroundStyle(image == nil || working ? FlimTheme.textTertiary : accent)
+                        .foregroundStyle(image == nil || working ? FlimTheme.textTertiary : FlimTheme.ink(accent))
                         .disabled(image == nil || working)
                 }
             }

@@ -326,7 +326,7 @@ struct ActivityFeedView: View {
             } else {
                 Text(section.title)
                     .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                    .foregroundStyle(section == .new ? accent : FlimTheme.textSecondary)
+                    .foregroundStyle(section == .new ? FlimTheme.ink(accent) : FlimTheme.textSecondary)
             }
             Spacer()
         }
