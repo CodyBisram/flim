@@ -34,7 +34,7 @@ struct DarkroomEmptyMonthDemoHost: View {
             Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) { Color.black }
             Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) { Color.black }
         }
-        .tint(accent)
+        .tint(FlimTheme.ink(accent))   // as MainTabView tints the app
         .preferredColorScheme(.dark)
     }
 

@@ -131,6 +131,7 @@ struct MainTabView: View {
     /// here only to time the notification primer after it; see `maybeShowNotifPrimer`.
     @AppStorage("hasSeenCameraCoach") private var hasSeenCameraCoach = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
+    private var observedAccent: Color { (FlimAccent(rawValue: accentColor) ?? .amber).color }
     /// True only once the person has genuinely decided (tapped "Turn on notifications" or "Not
     /// now"), never merely because the sheet was shown. A swipe-away leaves this false, see
     /// `shouldPresentNotifPrimer` and the `.sheet` below.
@@ -374,7 +375,8 @@ struct MainTabView: View {
     private func deskTabView(_ layout: DeskLayout) -> some View {
         TabView(selection: selection) {
             Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
-                CameraView().deskTabRoot(layout)
+                // The bright accent: the camera is black whatever the desk.
+                CameraView().deskTabRoot(layout).tint(observedAccent)
             }
             // The four stacks keep the bar's room on their navigation controller instead
             // (`deskStackBarRoom`), so screens pushed onto them get it too.
@@ -500,7 +502,10 @@ struct MainTabView: View {
         // Tint via the OBSERVED accentColor (not the static accent) so the tab bar
         // re-tints the moment the user picks a new accent, the static read never invalidates
         // this view, which left the old color until a relaunch.
-        .tint((FlimAccent(rawValue: accentColor) ?? .amber).color)
+        // 1.7: through `ink`, so what takes the tint without a colour of its own (the system
+        // "Back" in a navigation bar, toggles, plain buttons) reads on Paper. Slate and 1.6 keep
+        // the bright accent; the camera tab, black on either desk, sets it back (deskTabView).
+        .tint(FlimTheme.ink(observedAccent))
         // The tab bar stays whole while a list scrolls. iOS 26's minimize-on-scroll (the four
         // tabs folding into one) was tried on build 421 and rejected by the owner the same day:
         // do not add `.tabBarMinimizeBehavior` back. (No `.id()` on the TabView either, see

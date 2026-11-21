@@ -88,7 +88,7 @@ struct RollDetailDemoHost: View {
             }
             Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) { Color.black }
         }
-        .tint(accent)
+        .tint(FlimTheme.ink(accent))   // as MainTabView tints the app
         .task {
             guard path.isEmpty else { return }
             rolls.memberCounts[fixture.roll.id] = 1
