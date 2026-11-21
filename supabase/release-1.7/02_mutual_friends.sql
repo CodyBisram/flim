@@ -7,6 +7,9 @@
 -- ORDER (owner, 2026-11-14): 1.7 live on the App Store, THEN app_release_gate.minimum_version
 -- set to '1.7' so every 1.6 install must update, THEN this. 1.6 would show a Follow button that
 -- no longer shows anyone's posts. Never before the minimum version is raised.
+-- APPLIED to production 2026-11-21, after 1.7 went live and minimum_version became '1.7', with
+-- FRIENDS_MUTUAL=1 set the same minute (now supabase/migrations/2026-11-21_17_mutual_friends.sql,
+-- and in supabase/schema.sql).
 -- Already on FLIM Dev as section 1 of supabase/migrations-v2/2026-10-30.
 -- THE SAME DAY IT IS APPLIED: append this file to supabase/schema.sql and move it into
 -- supabase/migrations/ with the date, or a fresh bootstrap keeps the one-way can_see_posts_of
