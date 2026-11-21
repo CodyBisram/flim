@@ -121,6 +121,7 @@ const CAMPAIGNS: Record<string, Resolver> = {
   "invites-left-preview-b": invitesLeftPreviewB,
   "update-1.6": update16Cohort,
   "update-1.6-preview": update16Preview,
+  "update-1.7": update17Cohort,
   "founding-full": foundingFullCohort,
   "founding-full-preview": foundingFullPreview,
   "thank-you-preview": thankYouPreviewCohort,
@@ -683,6 +684,30 @@ async function update16Cohort(): Promise<Recipient[]> {
     .filter((u) => u.username !== "cody" && u.username !== "applereview")
     .filter((u) => versionBelow(versionOf.get(u.id), "1.6.0"))
     .map((u) => ({ userId: u.id, title: UPDATE_16_TITLE, body: UPDATE_16_BODY, route: { t: "feed" } }));
+}
+
+// ------------------------------------------------------------
+// update-1.7: FLIM 1.7 is on the App Store (owner's copy, 2026-11-21). The same audience and tap
+// as update-1.6: everyone reachable whose app last reported a version below 1.7, or none. Send
+// only once app_release_gate.minimum_version is 1.7, so the tap lands on the update screen, and
+// after FRIENDS_MUTUAL is on, so "friends by request" is already true when they open it.
+
+const UPDATE_17_TITLE = `${APP_NAME} 1.7 is here`;
+const UPDATE_17_BODY = "A new look, Paper or Slate, and friends by request. Update to check it out.";
+
+async function update17Cohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
+  const { data: versions, error } = await supabase.from("client_versions").select("user_id, version");
+  // A failed read must not read as "nobody has updated" and push everyone.
+  if (error) throw new Error(`client_versions read failed: ${error.message}`);
+  const versionOf = new Map(((versions ?? []) as { user_id: string; version: string }[])
+    .map((r) => [r.user_id, r.version]));
+  const { data: users, error: e2 } = await supabase.from("users").select("id, username").in("id", reachable);
+  if (e2) throw new Error(`users read failed: ${e2.message}`);
+  return ((users ?? []) as { id: string; username: string }[])
+    .filter((u) => u.username !== "cody" && u.username !== "applereview")
+    .filter((u) => versionBelow(versionOf.get(u.id), "1.7.0"))
+    .map((u) => ({ userId: u.id, title: UPDATE_17_TITLE, body: UPDATE_17_BODY, route: { t: "feed" } }));
 }
 
 // ------------------------------------------------------------

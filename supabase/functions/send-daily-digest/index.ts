@@ -49,6 +49,14 @@ const APNS_HOST = (Deno.env.get("APNS_ENVIRONMENT") ?? "sandbox") === "productio
 /// connection cannot hold the run past its lease (see send-social-push).
 const APNS_TIMEOUT_MS = 10_000;
 
+// Friends are mutual in 1.7 (supabase/release-1.7/02_mutual_friends.sql): a one-way follow is a
+// request, and can_see_posts_of shows neither side the other's posts. This function reads posts
+// with the service role, past RLS, so it has to apply the same rule itself, or the noon digest
+// would name, and show the newest photo of, someone who never added the recipient back. Same
+// switch as send-social-push: FLIM Beta has always been mutual, production turns on with
+// FRIENDS_MUTUAL=1 (a project-wide secret) at the moment its database does.
+const FRIENDS_MUTUAL = APNS_BUNDLE_ID === "com.flim.app.beta" || Deno.env.get("FRIENDS_MUTUAL") === "1";
+
 /// How long between digests for one person. 20 rather than 24 so a run that drifts slightly later
 /// each day (cron jitter, a slow pass) doesn't skip a whole day by arriving 23h58m after the last.
 const DIGEST_INTERVAL_HOURS = 20;
@@ -552,6 +560,9 @@ Deno.serve(async (req: Request) => {
       supabase.from("posts")
         .select("id, user_id, created_at, feed_path, thumb_path")
         .eq("hidden", false)
+        // A put-away post (1.7) stays on its author's page and leaves everyone else's, the rule
+        // post_visible_to applies to every client read.
+        .eq("put_away", false)
         .gte("created_at", maxWindowStart.toISOString())
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
@@ -565,14 +576,39 @@ Deno.serve(async (req: Request) => {
 
   const posterIds = [...new Set(recentPosts.map((p) => p.user_id as string))];
 
-  // Who follows those posters. One query, then grouped, for the same reason.
-  const { data: followRows } = await supabase
-    .from("follows")
-    .select("follower_id, following_id")
-    .in("following_id", posterIds);
+  // Who follows those posters. One read, then grouped, for the same reason. Paged and fail-closed
+  // like the reads above: it used to be a single select whose error read as "nobody follows
+  // anyone" and whose rows stopped at PostgREST's 1000 (follows had 969 rows on 2026-11-13).
+  const { rows: followRows, failed: followsFailed } = await fetchAllPages<{ follower_id: string; following_id: string }>(
+    (from, to) =>
+      supabase.from("follows").select("follower_id, following_id")
+        .in("following_id", posterIds)
+        .order("follower_id", { ascending: true }).order("following_id", { ascending: true })
+        .range(from, to),
+    "follows",
+  );
+  if (followsFailed) return new Response("follows read failed; no digests sent", { status: 200 });
+
+  // Mutual: also who those posters follow, so a poster counts for someone only when they follow
+  // that person back. Fail closed too: a partial read would drop friends, never add strangers,
+  // but a run on half the graph is still a wrong digest.
+  const posterFollows = new Set<string>();   // "poster|recipient"
+  if (FRIENDS_MUTUAL) {
+    const { rows: backRows, failed: backFailed } = await fetchAllPages<{ follower_id: string; following_id: string }>(
+      (from, to) =>
+        supabase.from("follows").select("follower_id, following_id")
+          .in("follower_id", posterIds)
+          .order("follower_id", { ascending: true }).order("following_id", { ascending: true })
+          .range(from, to),
+      "follows_back",
+    );
+    if (backFailed) return new Response("follows read failed; no digests sent", { status: 200 });
+    for (const f of backRows) posterFollows.add(`${f.follower_id}|${f.following_id}`);
+  }
 
   const followingByUser = new Map<string, Set<string>>();
-  for (const f of followRows ?? []) {
+  for (const f of followRows) {
+    if (FRIENDS_MUTUAL && !posterFollows.has(`${f.following_id}|${f.follower_id}`)) continue;
     const set = followingByUser.get(f.follower_id) ?? new Set<string>();
     set.add(f.following_id);
     followingByUser.set(f.follower_id, set);
