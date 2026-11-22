@@ -1,8 +1,7 @@
 /* Shared across every page.
 
-   Dark is the darkroom under the safelight. Light is the contact sheet on the
-   light table. The control names the condition you are switching to, so the
-   button says what pressing it does.
+   The app's two desks: Slate (dark) and Paper (light). The control names the
+   desk you are switching to, so the button says what pressing it does.
 
    The matching pre-paint snippet lives inline in each page's <head>, because a
    deferred file would apply the saved theme a frame too late and flash. */
@@ -23,12 +22,12 @@
 
   function paint() {
     var next = current() === "dark" ? "light" : "dark";
-    if (label) label.textContent = next === "light" ? "Lighttable" : "Safelight";
+    if (label) label.textContent = next === "light" ? "Paper" : "Slate";
     button.setAttribute(
       "aria-label",
       next === "light"
-        ? "Switch to the light table, the light theme"
-        : "Switch to the safelight, the dark theme"
+        ? "Switch to Paper, the light desk"
+        : "Switch to Slate, the dark desk"
     );
   }
 

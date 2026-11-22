@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0c0908" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#e7e3da" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#1c1917" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f3e7dc" media="(prefers-color-scheme: light)" />
   <title>FLIM, the disposable camera for your closest friends</title>
-  <meta name="description" content="FLIM is a disposable camera app. One film look and no filters to pick, a feed of only the people you follow, shared rolls that develop for everyone at once, and a chapter of every month you shared. Invite only, on iPhone." />
+  <meta name="description" content="FLIM is a disposable camera app. One film look and no filters to pick, a feed of just your friends, shared rolls that open for everyone at once, and a box for every month on your page. New in 1.7: built for iPhone Duo, Paper or Slate, and seals. Invite only, on iPhone." />
   <meta property="og:site_name" content="FLIM" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://flim-app.com/" />
@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=DM+Mono:wght@300;400;500&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap" />
   <link rel="stylesheet" href="/style.css" />
   <script>
     // Applied before first paint so the chosen condition does not flash.
@@ -40,12 +40,12 @@
 <body>
   <header>
     <div class="wrap">
-      <a class="logo" href="/">FL<span>I</span>M</a>
+      <a class="logo" href="/">FLIM</a>
       <nav>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
         <a href="/support">Support</a>
-        <button class="themer" id="themer" type="button"><span>Lighttable</span></button>
+        <button class="themer" id="themer" type="button"><span>Paper</span></button>
       </nav>
     </div>
   </header>
@@ -54,13 +54,12 @@
     <section class="frame" data-frame="01">
       <div class="hero">
         <div>
-          <p class="eyebrow">Invite only, iPhone</p>
+          <p class="eyebrow">New in <span class="amber">1.7</span> &middot; Invite only, iPhone</p>
           <h1>A disposable camera for your closest friends.</h1>
           <!-- One job: the look. The darkroom-versus-roll mechanic used to be
                explained here AND in the rolls frame, word for word; the specs table
-               in the next frame carries it now (your shots ready now, a roll in
-               twelve hours). The gate line below still says invite-only before
-               anyone installs. -->
+               in the next frames carries it now. The gate line below still says
+               invite-only before anyone installs. -->
           <p class="lede">
             Point and shoot, and the frame comes back wearing one film look you never
             had to choose. Share it and it leaves with the date burned into the
@@ -68,7 +67,7 @@
           </p>
           <div class="actions">
             <a class="cta" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Download on the App Store</a>
-            <a class="cta cta--quiet" href="#look">See how it works</a>
+            <a class="cta cta--quiet" href="#new">What&rsquo;s new in 1.7</a>
           </div>
           <!-- Said here rather than only at the form, because someone who installs
                first and discovers the gate at sign-in has already been let down. -->
@@ -87,14 +86,40 @@
           <!-- Labelled as a roll, because that is the only thing that counts down.
                Unlabelled, the countdown read as what happens to every photo. -->
           <figcaption class="print__caption">
-            <span class="status" id="status">Roll developing</span>
+            <span class="status" id="status">Roll sealed</span>
             <span class="print__timer" id="timer">12:00:00</span>
           </figcaption>
         </figure>
       </div>
     </section>
 
-    <section class="frame reveal" id="look" data-frame="02">
+    <!-- 1.7 in one frame, in the order the launch reel tells it: the Duo first,
+         then the two desks, the tabs, and seals. -->
+    <section class="frame reveal" id="new" data-frame="02">
+      <div class="split">
+        <div>
+          <p class="eyebrow">New in 1.7</p>
+          <h2>A new look. The same FLIM.</h2>
+          <p class="body">
+            FLIM is built for iPhone Duo now: open it up and the feed sits on one
+            side with the comments right beside it. Pick a desk, Paper or Slate, a
+            light one and a dark one, both with a little grain. Your page has its
+            own tab, the camera sits in the middle, and badges are now seals: pick
+            one to show on your page. Same feed, same friends, a few things easier
+            to reach.
+          </p>
+        </div>
+        <dl class="specs">
+          <div class="spec"><dt>iPhone Duo</dt><dd>Two columns open</dd></div>
+          <div class="spec"><dt>Desks</dt><dd>Paper or Slate</dd></div>
+          <div class="spec"><dt>Tabs</dt><dd>Camera in the middle</dd></div>
+          <div class="spec"><dt>Your page</dt><dd>Its own tab</dd></div>
+          <div class="spec"><dt>Badges</dt><dd>Now seals</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="frame reveal" id="look" data-frame="03">
       <div class="split">
         <div>
           <p class="eyebrow">The look</p>
@@ -113,23 +138,69 @@
           <div class="spec"><dt>Film</dt><dd>One stock</dd></div>
           <div class="spec"><dt>Frame</dt><dd>3:4</dd></div>
           <div class="spec"><dt>Your shots</dt><dd>Ready now</dd></div>
-          <div class="spec"><dt>Shared roll</dt><dd>12 hours</dd></div>
+          <div class="spec"><dt>Shared roll</dt><dd>Sealed till it opens</dd></div>
           <div class="spec"><dt>Filters</dt><dd>None</dd></div>
         </dl>
       </div>
     </section>
 
-    <section class="frame reveal" data-frame="03">
+    <!-- Friends by request since 1.7: a follow back is what makes a friend, and
+         only friends see each other's posts. -->
+    <section class="frame reveal" data-frame="04">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Your feed</p>
+          <h2>Just your friends.</h2>
+          <p class="body">
+            Add someone and they get a request. Once they add you back, you are
+            friends, and you see each other&rsquo;s posts in your feed and on your
+            pages. React with any emoji, leave a comment, reply, pull someone in
+            with an @mention. Nothing arrives from a stranger, and nothing is
+            ordered by anything cleverer than when it was taken.
+          </p>
+        </div>
+        <dl class="specs">
+          <div class="spec"><dt>Friends</dt><dd>By request</dd></div>
+          <div class="spec"><dt>React</dt><dd>Any emoji</dd></div>
+          <div class="spec"><dt>Comment</dt><dd>Reply and @mention</dd></div>
+          <div class="spec"><dt>Order</dt><dd>Newest first</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- Month boxes replaced chapters in 1.7: the same month, kept on a shelf on
+         your page, with a cover you choose and shots you can put away. -->
+    <section class="frame reveal" data-frame="05">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Every month</p>
+          <h2>Every month, its own box.</h2>
+          <p class="body">
+            Your page keeps a box for every month you posted, on a shelf. Open one
+            and it plays back shot by shot, then ends on the month in numbers. You
+            choose its cover, which of those numbers other people see, and you can
+            put away any shot you would rather keep to yourself.
+          </p>
+        </div>
+        <dl class="specs">
+          <div class="spec"><dt>Boxes</dt><dd>One per month</dd></div>
+          <div class="spec"><dt>Cover</dt><dd>You choose</dd></div>
+          <div class="spec"><dt>Numbers</dt><dd>You pick what shows</dd></div>
+          <div class="spec"><dt>Put away</dt><dd>Only you see it</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="frame reveal" data-frame="06">
       <div class="split">
         <div>
           <p class="eyebrow">Shared rolls</p>
           <h2>Everyone shoots into the same roll.</h2>
           <p class="body">
             Start a roll and bring your friends in. Everyone shoots into it and
-            nobody sees a thing, not even their own frames. Twelve hours later the
-            whole roll develops at once, for all of you, and you find out together
-            what the night actually looked like. Shoot five of the same thing and
-            the roll keeps the sharpest.
+            nobody sees a thing, not even their own frames. Then it opens for all
+            of you at the same moment, and you find out together what the night
+            actually looked like.
           </p>
         </div>
         <div>
@@ -148,72 +219,24 @@
       </div>
     </section>
 
-    <!-- The feed had never appeared on this site at all. Follow, react, comment and
-         @mention are half the App Store description and the thing people open daily,
-         and the section below it ("no discover tab, no algorithm") was answering a
-         question the page had not yet let anyone ask. -->
-    <section class="frame reveal" data-frame="04">
-      <div class="split">
-        <div>
-          <p class="eyebrow">Your feed</p>
-          <h2>The people you follow, and nobody else.</h2>
-          <p class="body">
-            Post the frames you want seen and they go to your page. Follow your
-            friends, react with any emoji, leave a comment, pull someone into it
-            with an @mention. Nothing arrives from a stranger, and nothing is
-            ordered by anything cleverer than when it was taken.
-          </p>
-        </div>
-        <dl class="specs">
-          <div class="spec"><dt>Follow</dt><dd>Your friends</dd></div>
-          <div class="spec"><dt>React</dt><dd>Any emoji</dd></div>
-          <div class="spec"><dt>Comment</dt><dd>And @mention</dd></div>
-          <div class="spec"><dt>Order</dt><dd>Newest first</dd></div>
-          <div class="spec"><dt>Chapters</dt><dd>Every month</dd></div>
-        </dl>
-      </div>
-    </section>
-
-    <!-- Shipped in 1.5.1 and the marquee of that release; the page had no trace of it. -->
-    <section class="frame reveal" data-frame="05">
-      <div class="split">
-        <div>
-          <p class="eyebrow">Every month</p>
-          <h2>The month you shared, as a chapter.</h2>
-          <p class="body">
-            On the first of the month, the month you posted arrives on your page. Open
-            it and it plays like a reveal, then ends on the month in numbers: your most
-            reacted shot, your biggest fan, the hour you shoot at, the day you shot the
-            most. You choose which of those numbers other people see. Every past month
-            is already there.
-          </p>
-        </div>
-        <dl class="specs">
-          <div class="spec"><dt>Arrives</dt><dd>1st of the month</dd></div>
-          <div class="spec"><dt>Frames</dt><dd>Chosen on your phone</dd></div>
-          <div class="spec"><dt>Numbers</dt><dd>You pick what shows</dd></div>
-          <div class="spec"><dt>Share</dt><dd>As a contact sheet</dd></div>
-        </dl>
-      </div>
-    </section>
-
     <!-- "No discover tab, no algorithm, no strangers" overstated it: the feed has a
-         people finder with a suggested list and username search. What is true, and
-         what matters, is that nothing ranks the feed and nothing reaches you from
-         someone you did not follow. -->
-    <section class="frame reveal" data-frame="06">
+         people finder with a suggested list and username search, and Spotlight
+         shows a few chosen frames to everyone each week. What is true, and what
+         matters, is that nothing ranks the feed and nothing reaches you from
+         someone who is not your friend. -->
+    <section class="frame reveal" data-frame="07">
       <p class="eyebrow">Who is here</p>
       <h2>Invite only. Everyone here was let in by a friend.</h2>
       <p class="body">
-        There is no public feed and nothing ranks what you see. Your feed is the
-        people you follow, and your photographs are seen by the people who follow
-        you. Everyone on FLIM got in with a code from someone who was already here.
-        Your own photographs and every roll you are in can leave the app; a
-        friend's page stays here.
+        There is no public feed and nothing ranks what you see. Your posts are seen
+        by your friends, and your friends&rsquo; posts are what you see. Everyone on
+        FLIM got in with a code from someone who was already here. Your own
+        photographs and every roll you are in can leave the app; a friend&rsquo;s
+        page stays here.
       </p>
     </section>
 
-    <section class="frame reveal" id="request" data-frame="07">
+    <section class="frame reveal" id="request" data-frame="08">
       <div class="split">
         <div>
           <p class="eyebrow">Not invited yet</p>
@@ -240,7 +263,7 @@
       </div>
     </section>
 
-    <section class="frame reveal" data-frame="08">
+    <section class="frame reveal" data-frame="09">
       <div class="split">
         <div>
           <p class="eyebrow">Contact</p>
@@ -302,7 +325,7 @@
 
       function finish() {
         timer.textContent = clock(0);
-        status.textContent = "Roll developed";
+        status.textContent = "Roll open";
       }
 
       if (still) {

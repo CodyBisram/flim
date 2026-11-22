@@ -1,14 +1,16 @@
 /* ==========================================================================
    FLIM
 
-   Two themes, two real darkroom lighting conditions rather than one palette
-   inverted:
+   The app's two desks, as in 1.7:
 
-     dark  = the darkroom under the safelight. Warm, dim, where film waits.
-     light = the contact sheet on the light table. Bright, neutral, where you
-             finally see what you got.
+     Slate = the dark desk. Warm near-black, cream ink.
+     Paper = the light desk. Warm cream, dark brown ink.
 
-   That is the product loop, so the theme control is part of the metaphor.
+   Same tokens as the app (Flim/Views/Desk.swift, the Blend board), the same
+   5% grain over the desk and never over a picture, and the same two faces:
+   Libre Caslon Text for titles, IBM Plex Mono for data, the system face for
+   reading. Amber is the accent: bright on Slate, deepened on Paper so it
+   reads, the way FlimTheme.ink does it in the app.
    ========================================================================== */
 
 /* --- Tokens --------------------------------------------------------------- */
@@ -17,91 +19,106 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0c0908;
-  --bg-2: #14100c;
-  --bg-3: #1b1611;
+  --bg: #1c1917;          /* desk */
+  --bg-2: #2a2420;        /* box: cards, fields, the spec table */
+  --bg-3: #332c27;
 
-  --text: #f4efe7;
-  --text-dim: #a79c8e;
-  --text-faint: #6e6558;
+  --text: #f3e7dc;        /* ink */
+  --text-dim: #b9aea3;    /* ink 2 */
+  --text-faint: #948980;  /* ink 3, 4.5:1 on the desk */
 
-  --accent: #e8a44c;
-  --accent-ink: #1a1206;
-  --accent-soft: rgba(232, 164, 76, 0.14);
+  --accent: #fabd5c;      /* amber, bright */
+  --accent-ink: #1c1917;
+  --accent-soft: rgba(250, 189, 92, 0.14);
 
-  --line: rgba(244, 239, 231, 0.1);
-  --line-strong: rgba(244, 239, 231, 0.2);
-  --perf: rgba(244, 239, 231, 0.16);
+  --solid: #f3e7dc;       /* the filled control: cream on Slate */
+  --on-solid: #1c1917;
 
-  --glow: rgba(232, 164, 76, 0.13);
-  --mount: #f2ece2;
-  --mount-ink: #2a2118;
-  --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  --line: rgba(243, 231, 220, 0.14);
+  --line-strong: rgba(243, 231, 220, 0.24);
+  --perf: rgba(243, 231, 220, 0.16);
 
-  /* An exposed frame is dark whatever the room is lit like, so the emulsion
-     keeps its own colour in both themes. */
-  --emulsion-a: #1b1611;
-  --emulsion-b: #0f0b08;
-  --emulsion-edge: rgba(244, 239, 231, 0.09);
+  --glow: rgba(250, 189, 92, 0.09);
+  --mount: #f3e7dc;
+  --mount-ink: #2a2420;
+  --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.75);
+
+  --grain-blend: screen;
+
+  /* An exposed frame is dark whatever the desk, so the emulsion keeps its own
+     colour in both themes. */
+  --emulsion-a: #2a2420;
+  --emulsion-b: #161311;
+  --emulsion-edge: rgba(243, 231, 220, 0.1);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #e7e3da;
-  --bg-2: #f5f2ec;
-  --bg-3: #fffdf9;
+  --bg: #f3e7dc;
+  --bg-2: #e8d9cb;
+  --bg-3: #fbf3ea;
 
-  --text: #14100c;
-  --text-dim: #5a5248;
-  --text-faint: #857c70;
+  --text: #2a2420;
+  --text-dim: #5e534a;
+  --text-faint: #6f6256;
 
-  --accent: #a6660f;
-  --accent-ink: #fffdf9;
-  --accent-soft: rgba(166, 102, 15, 0.1);
+  --accent: #835e21;      /* amber, deepened for Paper */
+  --accent-ink: #f3e7dc;
+  --accent-soft: rgba(131, 94, 33, 0.1);
 
-  --line: rgba(20, 16, 12, 0.13);
-  --line-strong: rgba(20, 16, 12, 0.24);
-  --perf: rgba(20, 16, 12, 0.16);
+  --solid: #2a2420;       /* dark ink on Paper */
+  --on-solid: #f3e7dc;
 
-  --glow: rgba(166, 102, 15, 0.07);
-  --mount: #fffdf9;
-  --mount-ink: #2a2118;
-  --shadow: 0 24px 50px -24px rgba(43, 33, 22, 0.35);
+  --line: #e2d3c4;
+  --line-strong: rgba(42, 36, 32, 0.22);
+  --perf: rgba(42, 36, 32, 0.16);
 
-  --emulsion-a: #2b241c;
-  --emulsion-b: #191310;
-  --emulsion-edge: rgba(20, 16, 12, 0.28);
+  --glow: rgba(250, 189, 92, 0.12);
+  --mount: #fbf6ef;
+  --mount-ink: #2a2420;
+  --shadow: 0 24px 50px -24px rgba(42, 36, 32, 0.35);
+
+  --grain-blend: multiply;
+
+  --emulsion-a: #2a2420;
+  --emulsion-b: #191513;
+  --emulsion-edge: rgba(42, 36, 32, 0.28);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
 
-    --bg: #e7e3da;
-    --bg-2: #f5f2ec;
-    --bg-3: #fffdf9;
+    --bg: #f3e7dc;
+    --bg-2: #e8d9cb;
+    --bg-3: #fbf3ea;
 
-    --text: #14100c;
-    --text-dim: #5a5248;
-    --text-faint: #857c70;
+    --text: #2a2420;
+    --text-dim: #5e534a;
+    --text-faint: #6f6256;
 
-    --accent: #a6660f;
-    --accent-ink: #fffdf9;
-    --accent-soft: rgba(166, 102, 15, 0.1);
+    --accent: #835e21;
+    --accent-ink: #f3e7dc;
+    --accent-soft: rgba(131, 94, 33, 0.1);
 
-    --line: rgba(20, 16, 12, 0.13);
-    --line-strong: rgba(20, 16, 12, 0.24);
-    --perf: rgba(20, 16, 12, 0.16);
+    --solid: #2a2420;
+    --on-solid: #f3e7dc;
 
-    --glow: rgba(166, 102, 15, 0.07);
-    --mount: #fffdf9;
-    --mount-ink: #2a2118;
-    --shadow: 0 24px 50px -24px rgba(43, 33, 22, 0.35);
+    --line: #e2d3c4;
+    --line-strong: rgba(42, 36, 32, 0.22);
+    --perf: rgba(42, 36, 32, 0.16);
 
-    --emulsion-a: #2b241c;
-    --emulsion-b: #191310;
-    --emulsion-edge: rgba(20, 16, 12, 0.28);
+    --glow: rgba(250, 189, 92, 0.12);
+    --mount: #fbf6ef;
+    --mount-ink: #2a2420;
+    --shadow: 0 24px 50px -24px rgba(42, 36, 32, 0.35);
+
+    --grain-blend: multiply;
+
+    --emulsion-a: #2a2420;
+    --emulsion-b: #191513;
+    --emulsion-edge: rgba(42, 36, 32, 0.28);
   }
 }
 
@@ -110,12 +127,15 @@
   --pad: clamp(20px, 5vw, 40px);
   --spine: 60px;
 
-  --display: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --body: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --display: "Libre Caslon Text", Georgia, "Times New Roman", serif;
+  --body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Film grain, generated rather than shipped as an asset. */
+  /* Film grain, generated rather than shipped as an asset. Used at full
+     strength inside the print; the desk grain below is 5%, as in the app. */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  /* The desk grain: white noise, one value per pixel, like the app's tile. */
+  --desk-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.9' numOctaves='1' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
 /* --- Base ----------------------------------------------------------------- */
@@ -139,7 +159,6 @@ body {
   font-family: var(--body);
   font-size: 17px;
   line-height: 1.6;
-  font-variation-settings: "wdth" 100;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
   display: flex;
@@ -163,6 +182,21 @@ body::before {
   right: 0;
   height: 70vh;
   background: radial-gradient(90% 100% at 50% -10%, var(--glow), transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* The desk grain, as in the app: a fixed noise layer at 5% over the desk,
+   multiplied on Paper and screened on Slate. It sits under the content, so it
+   never lands on a picture: the print and the frames draw over it. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: var(--desk-grain);
+  background-size: 256px 256px;
+  opacity: 0.05;
+  mix-blend-mode: var(--grain-blend);
   pointer-events: none;
   z-index: 0;
 }
@@ -209,18 +243,17 @@ header .wrap {
   min-height: 64px;
 }
 
+/* The wordmark, set like the app's end card: FLIM in Caslon, one colour. */
 .logo {
   font-family: var(--display);
-  font-weight: 800;
-  font-size: 19px;
-  font-variation-settings: "wdth" 118;
-  letter-spacing: 0.2em;
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: 0.08em;
   color: var(--text);
   white-space: nowrap;
   padding: 8px 0;
 }
 .logo:hover { text-decoration: none; }
-.logo span { color: var(--accent); }
 
 nav {
   display: flex;
@@ -237,8 +270,8 @@ nav a {
 }
 nav a:hover { color: var(--text); text-decoration: none; }
 
-/* Theme control. Names the condition you are switching to, in the language of
-   the darkroom, because that is what the two themes actually are. */
+/* Theme control. Names the desk you are switching to, Paper or Slate, as the
+   app's Settings does. */
 .themer {
   display: inline-flex;
   align-items: center;
@@ -327,6 +360,10 @@ nav a:hover { color: var(--text); text-decoration: none; }
   margin-bottom: 20px;
 }
 
+/* A version or a new thing, in the accent: "1.7" beside the wordmark on the
+   app's end card. */
+.amber { color: var(--accent); }
+
 /* --- Hero ----------------------------------------------------------------- */
 
 .hero {
@@ -341,11 +378,10 @@ nav a:hover { color: var(--text); text-decoration: none; }
    room to break onto three lines. */
 h1 {
   font-family: var(--display);
-  font-weight: 800;
-  font-variation-settings: "wdth" 110;
-  font-size: clamp(36px, 5.6vw, 60px);
-  line-height: 0.98;
-  letter-spacing: -0.02em;
+  font-weight: 400;
+  font-size: clamp(36px, 5.4vw, 58px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 
@@ -369,9 +405,9 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 700;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-weight: 600;
   font-size: 16px;
   padding: 15px 30px;
   border-radius: 999px;
@@ -389,8 +425,8 @@ h1 {
 .cta--quiet {
   background: transparent;
   color: var(--text);
+  font-weight: 500;
   border: 1px solid var(--line-strong);
-  font-weight: 600;
 }
 .cta--quiet:hover {
   background: var(--accent-soft);
@@ -515,11 +551,10 @@ h1 {
 
 .frame h2 {
   font-family: var(--display);
-  font-weight: 700;
-  font-variation-settings: "wdth" 108;
-  font-size: clamp(27px, 4vw, 42px);
-  line-height: 1.06;
-  letter-spacing: -0.015em;
+  font-weight: 400;
+  font-size: clamp(27px, 3.8vw, 40px);
+  line-height: 1.14;
+  letter-spacing: -0.01em;
   max-width: 20ch;
   text-wrap: balance;
 }
@@ -722,9 +757,8 @@ footer a:hover { color: var(--text); }
 }
 .doc h2 {
   font-family: var(--display);
-  font-weight: 700;
-  font-variation-settings: "wdth" 106;
-  font-size: 22px;
+  font-weight: 400;
+  font-size: 23px;
   line-height: 1.25;
   letter-spacing: -0.01em;
   margin: 44px 0 12px;
@@ -756,7 +790,7 @@ footer a:hover { color: var(--text); }
   text-align: center;
   transition: filter 0.18s ease, background-color 0.18s ease;
 }
-.btn-primary { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.btn-primary { background: var(--solid); color: var(--on-solid); font-weight: 600; }
 .btn-primary:hover { text-decoration: none; filter: brightness(1.07); }
 .btn-secondary { color: var(--text); border: 1px solid var(--line-strong); font-weight: 500; }
 .btn-secondary:hover { text-decoration: none; background: var(--accent-soft); }
