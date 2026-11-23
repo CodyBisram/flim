@@ -424,14 +424,14 @@ final class FeedService {
         do {
             try await supabase.from("follows")
                 .insert(F(follower_id: userId, following_id: targetId)).execute()
-            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.insert(targetId) }
+            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.insert(targetId); persistGraph() }
             return true
         } catch let error as PostgrestError where error.code == "23505" {
             // follows' PK is (follower_id, following_id): a duplicate insert means the row
             // already exists server-side (e.g. a stale followingIds read racing this call), so
             // the desired end state already holds, leave the optimistic insert in place rather
             // than rolling back a follow that's actually there.
-            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.insert(targetId) }
+            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.insert(targetId); persistGraph() }
             return true
         } catch {
             // The insert never landed (offline, RLS), without this the button was stuck
@@ -447,6 +447,7 @@ final class FeedService {
     func noteFollowMadeElsewhere(_ targetId: UUID) {
         followingIds.insert(targetId)
         confirmedFollowingIds.insert(targetId)
+        persistGraph()
     }
 
     /// A reaction written outside this service (a reaction button under a notification), shown as
@@ -475,7 +476,7 @@ final class FeedService {
                 .eq("follower_id", value: userId.uuidString)
                 .eq("following_id", value: targetId.uuidString)
                 .execute()
-            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.remove(targetId) }
+            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.remove(targetId); persistGraph() }
             return true
         } catch {
             // Same as above, mirrored: the delete never landed, so put the follow back.
