@@ -281,8 +281,11 @@ struct V2FriendsPlace: View {
             findAppeared = false
             showFind = true
             try? await Task.sleep(for: .milliseconds(1200))
-            if findAppeared || Task.isCancelled { return }
+            if findAppeared { return }
+            // Reset even if this task was cancelled mid-sleep (a tab switch flips its id): the
+            // cover is already up, and leaving it presented is worse than a spent offer.
             showFind = false
+            if Task.isCancelled { return }
         }
     }
 

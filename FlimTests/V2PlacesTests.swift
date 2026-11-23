@@ -94,6 +94,23 @@ struct V2PlacesTests {
         #expect(V2When.relativeDay(Self.at(9, day: 23), now: now, calendar: Self.calendar) != "yesterday")
     }
 
+    private static func photo(developsAt: Date) -> Photo {
+        Photo(id: UUID(), userId: UUID(), rollId: nil, storagePath: "p/\(UUID()).jpg",
+              thumbPath: nil, feedPath: nil, takenAt: developsAt.addingTimeInterval(-60),
+              developsAt: developsAt, isDeveloped: false, caption: nil, isSorted: true)
+    }
+
+    @Test("the Darkroom's kept count excludes a roll shot still waiting to reveal")
+    func readyKeptCount() {
+        let now = Date.now
+        let notReady = Self.photo(developsAt: now.addingTimeInterval(3_600))
+        let ready = Self.photo(developsAt: now.addingTimeInterval(-3_600))
+        #expect(V2DarkroomPlace.readyKeptCount(total: 5, latestKept: [notReady, ready]) == 4)
+        #expect(V2DarkroomPlace.readyKeptCount(total: 5, latestKept: [ready]) == 5)
+        // Never negative, even if the total round trip lagged behind the page read.
+        #expect(V2DarkroomPlace.readyKeptCount(total: 0, latestKept: [notReady]) == 0)
+    }
+
     @Test("a roll's time left reads in the largest whole unit")
     func timeLeft() {
         let now = Self.at(12)
@@ -123,6 +140,9 @@ struct V2PlacesTests {
         #expect(V2RollTime.clock(Self.at(22), now: now, calendar: Self.calendar).hasPrefix("TONIGHT "))
         // A morning opening the same day is "today", never "tonight".
         #expect(V2RollTime.clock(Self.at(11), now: Self.at(8), calendar: Self.calendar).hasPrefix("TODAY "))
+        // The app's 4am day boundary, not midnight: a roll opening at 2 AM while it's still
+        // 11 PM the same night is still today's, not tomorrow's.
+        #expect(V2RollTime.clock(Self.at(2, day: 28), now: Self.at(23), calendar: Self.calendar).hasPrefix("TODAY "))
     }
 
     @Test("the open time reads today, tonight or tomorrow as the box says it")
@@ -130,6 +150,9 @@ struct V2PlacesTests {
         #expect(V2RollTime.label(Self.at(22), now: Self.at(15), calendar: Self.calendar).hasPrefix("tonight, "))
         #expect(V2RollTime.label(Self.at(11), now: Self.at(8), calendar: Self.calendar).hasPrefix("today, "))
         #expect(V2RollTime.label(Self.at(18, day: 28), now: Self.at(15), calendar: Self.calendar).hasPrefix("tomorrow, "))
+        // Same 4am boundary as the lid's clock: a 2 AM opening set from 11 PM the same night
+        // reads "today", never "tomorrow".
+        #expect(V2RollTime.label(Self.at(2, day: 28), now: Self.at(23), calendar: Self.calendar).hasPrefix("today, "))
     }
 
     @Test("every badge has a seal ring line, under twelve characters as the handoff asks")

@@ -369,7 +369,17 @@ struct V2DarkroomPlace: View {
         // A shot in a roll that hasn't opened stays face down until it does, yours included, as
         // the App Store Darkroom keeps it among the developing ones.
         if let k { kept = k.photos.filter(\.isReady) }
-        if let c { keptCount = c }
+        if let c { keptCount = Self.readyKeptCount(total: c, latestKept: k?.photos ?? []) }
+    }
+
+    /// `personalPhotoCount` counts every kept photo (`is_sorted = true`) with no `develops_at`
+    /// filter; a roll shot is kept the instant it is taken, before its roll reveals, and stays
+    /// held out of `kept`'s own `isReady` filter until then. A roll opens within days of being
+    /// shot, so any photo still waiting is necessarily among the most recently kept and always
+    /// surfaces in this same latest-first page, so subtracting it here keeps the two numbers
+    /// honest without a second round trip.
+    static func readyKeptCount(total: Int, latestKept: [Photo]) -> Int {
+        max(0, total - latestKept.filter { !$0.isReady }.count)
     }
 }
 

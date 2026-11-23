@@ -1176,9 +1176,13 @@ enum V2RollTime {
     /// "tonight, 6 PM", "tomorrow, 6 PM", "Tuesday, 6 PM", "7 Oct, 6 PM" (prototype).
     static func label(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let time = date.formatted(.dateTime.hour().minute())
+        // The app's 4am day boundary (`FeedUnit.dayKey`), not a midnight calendar day: a roll
+        // opening at 2 AM is still tonight's, the same night it was set.
+        let today = FeedUnit.dayKey(for: now, calendar: calendar)
         // "tonight" only from the evening on: a roll opening at 9 in the morning opens "today".
-        if calendar.isDate(date, inSameDayAs: now) { return "\(calendar.component(.hour, from: date) >= 17 ? "tonight" : "today"), \(time)" }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
+        if FeedUnit.dayKey(for: date, calendar: calendar) == today { return "\(calendar.component(.hour, from: date) >= 17 ? "tonight" : "today"), \(time)" }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           FeedUnit.dayKey(for: date, calendar: calendar) == FeedUnit.dayKey(for: tomorrow, calendar: calendar) {
             return "tomorrow, \(time)"
         }
         if date.timeIntervalSince(now) < 6 * 86_400 { return "\(date.formatted(.dateTime.weekday(.wide))), \(time)" }
@@ -1196,9 +1200,12 @@ enum V2RollTime {
     /// "TOMORROW 18:00", "7 OCT 18:00" on the box's lid (prototype).
     static func clock(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let time = Self.lidTime.string(from: date)
+        // Same 4am boundary as `label`, so the lid never disagrees with the card's own words.
+        let today = FeedUnit.dayKey(for: now, calendar: calendar)
         let day: String
-        if calendar.isDate(date, inSameDayAs: now) { day = calendar.component(.hour, from: date) >= 17 ? "TONIGHT" : "TODAY" }
-        else if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) { day = "TOMORROW" }
+        if FeedUnit.dayKey(for: date, calendar: calendar) == today { day = calendar.component(.hour, from: date) >= 17 ? "TONIGHT" : "TODAY" }
+        else if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+                FeedUnit.dayKey(for: date, calendar: calendar) == FeedUnit.dayKey(for: tomorrow, calendar: calendar) { day = "TOMORROW" }
         else { day = date.formatted(.dateTime.day().month(.abbreviated)).uppercased() }
         return "\(day) \(time)"
     }
