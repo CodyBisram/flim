@@ -493,8 +493,9 @@ final class Desk17UITests: XCTestCase {
         shot("phone_month_screening")
     }
 
-    /// Your page's header sits just under the bar's glyphs, and chosen seals are outlined in
-    /// their own shapes (owner, 2026-11-14), on Slate as the owner's phone runs it.
+    /// Your page's header sits just under the bar's glyphs, and its one seal (or, with none, a
+    /// Seals pill) opens Seals; on Slate as the owner's phone runs it. Choosing a seal is covered by
+    /// SealsUITests (1.7.1: one seal, chosen from its card).
     func testPageHeaderAndChosenSeals() {
         app.terminate()
         app.launchArguments = ["-chaptersPreviewDemo", "-desk", "slate"]
@@ -505,46 +506,6 @@ final class Desk17UITests: XCTestCase {
         XCTAssertTrue(app.buttons["Seals"].firstMatch.exists, "the seal doesn't open Seals")
         sleep(2)
         shot("page_header_slate")
-
-        app.terminate()
-        app.launchArguments = ["-badgePickerDemo", "-desk", "slate"]
-        app.launch()
-        let custom = app.buttons["Custom"].firstMatch
-        XCTAssertTrue(custom.waitForExistence(timeout: 15))
-        sleep(6)
-        custom.tap()
-        for name in ["Founder", "Full Set", "First In"] {
-            let seal = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", name)).firstMatch
-            if seal.exists { seal.tap(); break }
-        }
-        let second = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Kept One' OR label CONTAINS[c] 'Open Door'")).firstMatch
-        if second.exists { second.tap() }
-        sleep(1)
-        shot("seals_chosen_slate")
-    }
-
-    /// A third seal on Paper raises the cap notice, in the desk's ink: white words on Paper's
-    /// light glass could not be read (owner, 2026-11-18).
-    func testSealCapNoticeReadsOnPaper() {
-        app.terminate()
-        app.launchArguments = ["-badgePickerDemo", "-desk", "paper"]
-        app.launch()
-        let custom = app.buttons["Custom"].firstMatch
-        XCTAssertTrue(custom.waitForExistence(timeout: 15))
-        sleep(4)
-        custom.tap()
-        let notice = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Up to 2 seals'")).firstMatch
-        for name in ["Founder", "Full Set", "First In", "Kept One", "Open Door", "Regular", "Recruiter", "Roll Maker"] {
-            let seal = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", name)).firstMatch
-            if seal.exists, seal.isHittable { seal.tap(); usleep(300_000) }
-            if notice.exists { break }
-        }
-        XCTAssertTrue(notice.waitForExistence(timeout: 3), "the cap notice never showed")
-        let capture = XCTAttachment(screenshot: app.screenshot())
-        capture.name = "seal-cap-notice-paper"
-        capture.lifetime = .keepAlways
-        add(capture)
-        shot("seal_cap_paper")
     }
 
     /// The Darkroom is one timeline (owner, 2026-11-14): scrolling down runs from this month into
@@ -683,22 +644,17 @@ final class Desk17UITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 5), "Back to the roll did not return to the roll")
     }
 
-    /// The Seals drawer (Blend 1, 4f): earned seals three across in their shapes, the rest
-    /// pressed blind below; in Custom a tapped seal is ringed.
+    /// The Seals sheet (Blend 5, 1a/1b): earned seals three across in their shapes, the rest
+    /// pressed blind below with their progress. Tapping one opens its card (SealsUITests).
     func testSealsDrawerIsAGridOfSeals() {
         app.terminate()
         app.launchArguments = ["-badgePickerDemo", "-desk", "paper"]
         app.launch()
-        let custom = app.buttons["Custom"].firstMatch
-        XCTAssertTrue(custom.waitForExistence(timeout: 15), "the Seals drawer did not open")
-        sleep(6)   // the demo's seals are all new and develop in, one after another
-        shot("seals")
-        custom.tap()
-        let first = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Founder'")).firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 5), "no Founder seal to choose")
-        first.tap()
+        XCTAssertTrue(app.staticTexts["Seals"].waitForExistence(timeout: 15), "the Seals sheet did not open")
+        let founder = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Founder,'")).firstMatch
+        XCTAssertTrue(founder.waitForExistence(timeout: 5), "no Founder seal in the sheet")
         sleep(1)
-        shot("seals_chosen")
+        shot("seals")
         app.swipeUp()
         sleep(1)
         shot("seals_blind")
@@ -978,6 +934,30 @@ final class AppStoreScreenshotTests: XCTestCase {
             let box = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'Plays the month.'")).firstMatch
             if box.waitForExistence(timeout: 5) { box.tap(); sleep(3); shot("month_box_\(desk)") }
         }
+        captureScreenings()
+    }
+
+    /// The Duo's open display turned sideways, where the panes split in two, drawn at its size
+    /// with `-deskFrame` (the simulator can't unfold). Run on the Duo simulator, the widest frame
+    /// to scale into; the frame sits below its trailing status column.
+    func testCaptureDuoOpen() {
+        let open = ["-deskFrame", "890x626"]
+        for desk in ["slate", "paper"] {
+            launch(["-chromePreviewDemo", "-tabDarkroom", "-darkroomFixture"] + open, desk: desk)
+            _ = app.staticTexts["1 of 4"].firstMatch.waitForExistence(timeout: 15)
+            sleep(3); shot("duo_darkroom_\(desk)")
+
+            launch(["-chromePreviewDemo", "-tabFeed"] + open, desk: desk)
+            _ = app.staticTexts["Comments"].firstMatch.waitForExistence(timeout: 15)
+            sleep(3); shot("duo_feed_\(desk)")
+
+            launch(["-chromePreviewDemo", "-tabRolls", "-rollsFixture"] + open, desk: desk)
+            _ = app.buttons["Members"].firstMatch.waitForExistence(timeout: 15)
+            sleep(3); shot("duo_rolls_\(desk)")
+        }
+    }
+
+    private func captureScreenings() {
         // The screening and its closing card follow the desk too.
         for desk in ["paper", "slate"] {
             launch(["-rollDetailDemo"], desk: desk)

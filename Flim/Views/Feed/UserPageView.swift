@@ -66,6 +66,14 @@ struct UserPageView: View {
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showBadgePicker = false
+    /// 1.7.1: your seals docked left of the fold on the Duo's open display, in place of the
+    /// Seals sheet, with a seal's card over the right column.
+    @State private var dockedSeals: SealsDrawer?
+    /// 1.7.1: the card for the seal beside someone else's name. On the phone and the Duo's outer
+    /// display it covers the screen (`coverSealCard`); on the open display it sits in the right
+    /// half (`dockedSealCard`).
+    @State private var coverSealCard: SealCardSubject?
+    @State private var dockedSealCard: SealCardSubject?
     /// The storage path behind `coverURL`, whichever of its three sources produced it. See load().
     @State private var coverPath: String?
 
@@ -314,8 +322,9 @@ struct UserPageView: View {
     /// Which of a not-followed page's posts the viewer is tagged in; read in `load()`.
     @State private var taggedInPostIds: Set<UUID> = []
 
-    /// Exactly what a stranger sees on this profile right now, at most four, oldest-fetched
-    /// order preserved. `identity.badges` for a stranger's own row is already this list
+    /// Exactly what a stranger sees on this profile right now, at most four, in the server's
+    /// order on 1.7 (the seal on their page first; 1.7's header shows only that one) and oldest
+    /// first on 1.6. `identity.badges` for a stranger's own row is already this list
     /// (`profile_badges`'s non-owner branch resolves it server-side), but for `isSelf` that same
     /// row returns EVERY earned badge — the picker's own source list, not this page's — so this
     /// re-derives the profile's four from `effectiveDisplayedBadgeIds` instead. A failed round
@@ -366,12 +375,20 @@ struct UserPageView: View {
                     // the right, on the same margins as the other docked columns.
                     let fold = max(0, (geo.size.width - DeskTabBar.railSpace) / 2)
                     HStack(alignment: .top, spacing: 0) {
-                        pageScroll {
-                            pageHeader(topInset: geo.safeAreaInsets.top)
-                            pageShelves
+                        if let drawer = dockedSeals {
+                            // Blend 5, 1d: your seals hold the left of the fold; a seal's card
+                            // sits over the right column, and tapping another swaps it.
+                            SealsPanel(drawer: drawer, marksOpen: true) { closeDockedSeals() }
+                                .frame(width: max(0, fold - 14))
+                                .transition(.opacity)
+                        } else {
+                            pageScroll {
+                                pageHeader(topInset: geo.safeAreaInsets.top)
+                                pageShelves
+                            }
+                            .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
+                            .frame(width: max(0, fold - 14))
                         }
-                        .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
-                        .frame(width: max(0, fold - 14))
                         Group {
                             if let chapter = dockedChapter {
                                 // "Opening a box replaces the right column."
@@ -386,7 +403,22 @@ struct UserPageView: View {
                         }
                         .padding(.leading, 30)
                         .padding(.trailing, 20)
+                        .overlay {
+                            if let drawer = dockedSeals, let kind = drawer.openKind {
+                                SealCardDocked(onDismiss: { drawer.close() }) {
+                                    SealCard(subject: drawer.subject(for: kind), docked: true,
+                                             develops: drawer.developing.contains(kind.rawValue),
+                                             onClose: { drawer.close() },
+                                             putOnPage: { await drawer.putOnPage(kind.rawValue) })
+                                        .id(kind)
+                                        .transition(.opacity)
+                                }
+                                .transition(.opacity)
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: dockedSeals?.openKind)
                     }
+                    .animation(.easeInOut(duration: 0.2), value: dockedSeals == nil)
                 } else {
                     pageScroll {
                         pageHeader(topInset: geo.safeAreaInsets.top)
@@ -395,7 +427,23 @@ struct UserPageView: View {
                     }
                     .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
                 }
+                // Blend 5b, 4d: someone else's seal card on the Duo's open display, over the desk
+                // on the right of the fold.
+                if let subject = dockedSealCard {
+                    let fold = max(0, (geo.size.width - DeskTabBar.railSpace) / 2)
+                    HStack(spacing: 0) {
+                        Color.clear.frame(width: fold).allowsHitTesting(false)
+                        SealCardDocked(onDismiss: { dockedSealCard = nil }) {
+                            SealCard(subject: subject, docked: true, onClose: { dockedSealCard = nil })
+                                .id(subject.id)
+                        }
+                        .padding(.leading, 16)
+                    }
+                    .transition(.opacity)
+                    .zIndex(1)
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: dockedSealCard?.id)
             // Following is what opens someone's photographs: fetch them once the follow row
             // has LANDED, not on the optimistic flip, or the request can beat the insert
             // and legitimately return nothing (audit A1). Unfollowing closes them again, at
@@ -420,9 +468,20 @@ struct UserPageView: View {
             .onDisappear { dismissSwapInstantly() }
             // Folding the Duo with a box open in the column carries it to the full screen.
             .onChange(of: docksMonths) { _, docks in
+                // Your seals go back to being the Seals sheet.
+                if !docks, dockedSeals != nil {
+                    dockedSeals = nil
+                    showBadgePicker = true
+                }
                 guard !docks, let chapter = dockedChapter else { return }
                 dockedChapter = nil
                 openChapter = chapter
+            }
+            // And someone else's seal card goes back to floating over the screen.
+            .onChange(of: deskLayout) { _, layout in
+                guard layout != .open, let subject = dockedSealCard else { return }
+                dockedSealCard = nil
+                presentSealCover(subject)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -499,9 +558,21 @@ struct UserPageView: View {
         // profile was already back on screen, a pop and reflow right where the eye was resting.
         // The onDismiss reload stays as the Cancel path's refresh and as the catch-all.
         .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
-            BadgePickerSheet(onSaved: { Task { await load() } })
+            BadgePickerSheet(onSaved: { Task { await load() } }, signupNumber: profile?.signupOrdinal)
+        }
+        // Someone else's seal card (1.7.1), over the whole screen: presented without the system's
+        // slide (`presentSealCover`), so the card rises on its own over a fading dim.
+        .fullScreenCover(item: $coverSealCard) { subject in
+            FloatingSealCardCover(subject: subject) {
+                var quiet = Transaction()
+                quiet.disablesAnimations = true
+                withTransaction(quiet) { coverSealCard = nil }
+            }
         }
         .onChange(of: showBadgePicker) { _, showing in
+            // 1.7.1 marks seals seen one card at a time, so closing the sheet says nothing about
+            // the rest: the page trusts the server (and FeedService's per-seal window) instead.
+            guard !AppInfo.is17 else { return }
             guard showing else {
                 // Arm the clamp window at dismissal START, not in onDismiss. dismiss() flips
                 // this flag immediately and then the slide-down plays for ~0.4s before onDismiss
@@ -688,35 +759,40 @@ struct UserPageView: View {
                 }
                 Spacer(minLength: 8)
                 if isSelf {
-                    // Your seal opens Seals, with the red dot when one is new (owner, 2026-11-15:
-                    // the Seals button was the seal said twice). No seal yet, an empty one.
-                    Button { Haptics.tap(); showBadgePicker = true } label: {
+                    // Your one seal opens Seals, with the red dot when one is new (owner,
+                    // 2026-11-15: the Seals button was the seal said twice). With no seal on the
+                    // page there is no placeholder glyph (Blend 5b, 5c), only the Seals pill.
+                    Button { openSeals() } label: {
                         Group {
                             if let seal = displayedBadges.first {
-                                DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, scale: 1.15)
+                                DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, size: 60)
                             } else {
-                                Image(systemName: "seal")
-                                    .font(.system(size: 30, weight: .light))
-                                    .foregroundStyle(FlimTheme.textTertiary)
-                                    .frame(width: 44, height: 44)
+                                DeskPill("Seals", style: .box, small: true)
                             }
                         }
                         .overlay(alignment: .topTrailing) {
                             if unseenBadgeCount > 0 {
-                                Circle().fill(FlimTheme.newRed).frame(width: 9, height: 9).offset(x: 2, y: -2)
+                                Circle()
+                                    .fill(FlimTheme.newRed)
+                                    .frame(width: 9, height: 9)
+                                    .background(Circle().fill(FlimTheme.bg).frame(width: 13, height: 13))
+                                    .offset(x: displayedBadges.isEmpty ? 2 : 0, y: displayedBadges.isEmpty ? -2 : 0)
                             }
                         }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Seals")
-                    .accessibilityValue(unseenBadgeCount > 0 ? "New seal to see" : "")
+                    .accessibilityValue(ownSealSpokenValue)
                 } else if let seal = displayedBadges.first, !isBlocked {
-                    // The leading seal, pressed into the page (Blend 1, 4a); a tap explains it.
-                    Button { badgeTapped(seal) } label: {
-                        DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, scale: 1.15)
+                    // Their one seal, pressed into the page (Blend 5b, part 4); a tap opens its
+                    // card: their line and date, never their name, then where you stand on it.
+                    Button { openTheirSeal(seal) } label: {
+                        DeskSeal(badge: seal, signupNumber: profile?.signupOrdinal, size: 56)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Says what this seal is for")
+                    .accessibilityHint("Opens its card")
                 }
             }
             if !isSelf && !isBlocked && followsMe && !isFollowing {
@@ -970,12 +1046,81 @@ struct UserPageView: View {
     /// it closes (`badgesLocallySeenUntil`), the count is clamped to zero: the page KNOWS those
     /// badges are seen or about to be, and local knowledge outranks a stale read.
     private func unseenBadgeCount(from fetched: Int) -> Int {
+        // 1.7.1: a new seal stays new until its own card opens; see `onChange(of: showBadgePicker)`.
+        if AppInfo.is17 { return fetched }
         if showBadgePicker { return 0 }
         if let until = badgesLocallySeenUntil, Date() < until { return 0 }
         return fetched
     }
 
-    // MARK: - Badge swap-in    // MARK: - Badge swap-in
+    // MARK: - Seals (1.7.1)
+
+    /// What VoiceOver says after "Seals" on your page: the seal that's on it, and whether one is
+    /// new.
+    private var ownSealSpokenValue: String {
+        var parts: [String] = []
+        if let seal = displayedBadges.first { parts.append("\(seal.kind.label) is on your page") }
+        if unseenBadgeCount > 0 { parts.append("new seal to see") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Your seal (or the Seals pill) opens Seals: the sheet, or on the Duo's open display the
+    /// list docked left of the fold (Blend 5, 1d).
+    private func openSeals() {
+        Haptics.tap()
+        guard docksMonths else { showBadgePicker = true; return }
+        let drawer = SealsDrawer.live(auth: auth, feed: feed, signupNumber: profile?.signupOrdinal)
+        drawer.onSaved = { Task { await load() } }
+        dockedSeals = drawer
+        Task { await drawer.load() }
+    }
+
+    private func closeDockedSeals() {
+        dockedSeals = nil
+        Task { await load() }
+    }
+
+    /// The seal beside someone else's name opens its card at once with their half; where you
+    /// stand on it (you hold it too, or your progress) follows when it has been read.
+    private func openTheirSeal(_ seal: ProfileBadge) {
+        Haptics.tap()
+        let subject = SealCardSubject(kind: seal.kind, signupNumber: profile?.signupOrdinal,
+                                      owner: .theirs(earnedAt: seal.earnedAt, viewer: .loading))
+        if deskLayout == .open {
+            dockedSealCard = subject
+        } else {
+            presentSealCover(subject)
+        }
+        Task {
+            let viewer = await viewerStanding(on: seal.kind)
+            let filled = SealCardSubject(kind: seal.kind, signupNumber: subject.signupNumber,
+                                         owner: .theirs(earnedAt: seal.earnedAt, viewer: viewer))
+            if coverSealCard?.id == subject.id { coverSealCard = filled }
+            if dockedSealCard?.id == subject.id { withAnimation(.easeInOut(duration: 0.2)) { dockedSealCard = filled } }
+        }
+    }
+
+    /// Presents someone else's seal card over the screen without the system's slide.
+    private func presentSealCover(_ subject: SealCardSubject) {
+        var quiet = Transaction()
+        quiet.disablesAnimations = true
+        withTransaction(quiet) { coverSealCard = subject }
+    }
+
+    /// Whether you hold a seal too, or how far along you are on it. Read when a card opens, never
+    /// with the page: most visits never tap the seal. A failed read says nothing about you
+    /// (`.unknown`), never "your progress" on data it doesn't have.
+    private func viewerStanding(on kind: ProfileBadgeKind) async -> SealCardSubject.Viewer {
+        guard let uid = auth.currentUser?.id else { return .unknown }
+        async let mine = feed.fetchProfileBadgesIfLoaded(uid)
+        async let progress = feed.fetchOwnSealProgressIfLoaded()
+        guard let held = await mine else { return .unknown }
+        if held.contains(where: { $0.kind == kind }) { return .holds }
+        guard let progress = await progress else { return .unknown }
+        return .working(progress[kind.rawValue])
+    }
+
+    // MARK: - Badge swap-in
 
     /// The line that takes the handle's place while a badge is explaining itself.
     ///

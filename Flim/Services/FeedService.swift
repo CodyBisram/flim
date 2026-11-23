@@ -585,21 +585,32 @@ final class FeedService {
 
     // MARK: - Profile identity (badges, film stats)
 
-    /// The earned-only badge list for any profile, oldest first (see `ProfileIdentity`).
+    /// The earned-only badge list for any profile (see `ProfileIdentity`). In 1.7 it keeps the
+    /// server's order: someone else's resolved list leads with the seal on their page (their
+    /// choice, else their rarest), so the first row IS the one to show. 1.6 sorts it oldest first,
+    /// as it always did.
+    ///
     /// `profile_badges` is `SECURITY DEFINER` and callable about anyone; a failure (offline, or
     /// the RPC not deployed yet) degrades to an empty list rather than surfacing an error, this
-    /// strip is decoration on a profile, never something worth blocking the page on.
+    /// strip is decoration on a profile, never something worth blocking the page on. Callers that
+    /// must tell "none" from "couldn't tell" use `fetchProfileBadgesIfLoaded`.
     func fetchProfileBadges(_ id: UUID) async -> [ProfileBadge] {
+        let badges = await fetchProfileBadgesIfLoaded(id) ?? []
+        return AppInfo.is17 ? badges : badges.sorted { $0.earnedAt < $1.earnedAt }
+    }
+
+    /// The same list in the server's order, or nil when the read failed. 1.7.1's seals use this:
+    /// offline must read as "couldn't load", never as "you have none".
+    func fetchProfileBadgesIfLoaded(_ id: UUID) async -> [ProfileBadge]? {
         struct Params: Encodable { let p_profile_id: UUID }
         struct Row: Decodable { let badge_id: String; let earned_at: Date }
-        let rows: [Row] = (try? await supabase
+        guard let rows: [Row] = try? await supabase
             .rpc("profile_badges", params: Params(p_profile_id: id))
-            .execute().value) ?? []
-        return rows
-            .compactMap { row in
-                ProfileBadgeKind(rawValue: row.badge_id).map { ProfileBadge(id: row.badge_id, kind: $0, earnedAt: row.earned_at) }
-            }
-            .sorted { $0.earnedAt < $1.earnedAt }
+            .execute().value
+        else { return nil }
+        return rows.compactMap { row in
+            ProfileBadgeKind(rawValue: row.badge_id).map { ProfileBadge(id: row.badge_id, kind: $0, earnedAt: row.earned_at) }
+        }
     }
 
     /// The signed-in account's own resolved "what a stranger sees on my profile right now" badge
@@ -656,7 +667,14 @@ final class FeedService {
     func refreshUnseenBadgeCount() async {
         guard !badgesLocallySeen else { unseenBadgeCount = 0; return }
         let epoch = AccountEpoch.current
-        let count: Int = (try? await supabase.rpc("unseen_badge_count").execute().value) ?? 0
+        // While a seal opened a moment ago is inside its window, a bare count can't say whether it
+        // still includes that seal; the ids can, so count those instead.
+        let count: Int
+        if anySealSeenLocally {
+            count = await fetchOwnUnseenBadgeIds().count
+        } else {
+            count = (try? await supabase.rpc("unseen_badge_count").execute().value) ?? 0
+        }
         guard AccountEpoch.isCurrent(epoch) else { return }
         unseenBadgeCount = count
     }
@@ -674,10 +692,15 @@ final class FeedService {
     /// time critical. See `MainTabView`'s once-per-launch call, next to `Usage.log(.appOpen)`.
     func refreshOwnBadges() async {
         let epoch = AccountEpoch.current
-        let count: Int = (try? await supabase.rpc("refresh_own_badges").execute().value) ?? 0
+        var count: Int = (try? await supabase.rpc("refresh_own_badges").execute().value) ?? 0
         guard AccountEpoch.isCurrent(epoch) else { return }
         // Ratcheting still ran server-side (that is this function's real job); only the count
-        // write defers to local knowledge inside the window.
+        // write defers to local knowledge inside the window. A seal opened a moment ago may still
+        // be in that count, so inside its window the count comes from the ids instead.
+        if !badgesLocallySeen, anySealSeenLocally {
+            count = await fetchOwnUnseenBadgeIds().count
+            guard AccountEpoch.isCurrent(epoch) else { return }
+        }
         unseenBadgeCount = badgesLocallySeen ? 0 : count
     }
 
@@ -691,8 +714,9 @@ final class FeedService {
         struct Row: Decodable { let badge_id: String }
         let rows: [Row] = (try? await supabase.rpc("own_unseen_badges").execute().value) ?? []
         // Only badges this build can show: one earned on a newer server would otherwise light
-        // "New badge to see" for a picker that has nothing to reveal.
-        return Set(rows.map(\.badge_id).filter { ProfileBadgeKind(rawValue: $0) != nil })
+        // "New badge to see" for a picker that has nothing to reveal. A seal whose card was just
+        // opened stays seen whatever a stale read says (`markOwnBadgeSeen`).
+        return Set(rows.map(\.badge_id).filter { ProfileBadgeKind(rawValue: $0) != nil && !sealSeenLocally($0) })
     }
 
     /// Marks every currently-unseen badge as seen for the signed-in account, and clears the tab
@@ -728,6 +752,53 @@ final class FeedService {
         _ = try? await supabase.rpc("mark_own_badges_seen").execute()
         guard AccountEpoch.isCurrent(epoch) else { return }
         unseenBadgeCount = 0
+    }
+
+    // MARK: - Seals, one at a time (1.7.1)
+
+    /// Seals marked seen one by one, each held for a window so a read that predates the mark's
+    /// commit can't relight its dot (the same race `badgesSeenLocallyUntil` answers for the
+    /// whole set).
+    private var sealsSeenLocallyUntil: [String: Date] = [:]
+
+    private func sealSeenLocally(_ id: String) -> Bool {
+        guard let until = sealsSeenLocallyUntil[id] else { return false }
+        return Date() < until
+    }
+
+    private var anySealSeenLocally: Bool {
+        let now = Date()
+        return sealsSeenLocallyUntil.values.contains { now < $0 }
+    }
+
+    /// Marks one of your seals seen: 1.7.1's sheet keeps a new seal's red dot until its card is
+    /// opened, so seen-marking is per seal (`mark_own_badge_seen`). The dots drop at once; the
+    /// count is then re-read so it matches the server. A failed write (offline, or the RPC not
+    /// deployed yet) leaves the seal unseen on the server, and its dot comes back once the local
+    /// window ends, which is the honest answer.
+    func markOwnBadgeSeen(_ id: String) async {
+        sealsSeenLocallyUntil[id] = Date().addingTimeInterval(15)
+        unseenBadgeCount = max(0, unseenBadgeCount - 1)
+        let epoch = AccountEpoch.current
+        struct Params: Encodable { let p_badge_id: String }
+        let landed = (try? await supabase.rpc("mark_own_badge_seen", params: Params(p_badge_id: id)).execute()) != nil
+        guard AccountEpoch.isCurrent(epoch), landed else { return }
+        await refreshUnseenBadgeCount()
+    }
+
+    /// How far the signed-in account is on each seal it hasn't earned, keyed by badge id
+    /// (`own_seal_progress()`, 1.7.1). Empty on any failure, including the RPC not existing on
+    /// the server yet: the sheet and cards then show no progress at all rather than a wrong one.
+    func fetchOwnSealProgress() async -> [String: SealProgress] {
+        await fetchOwnSealProgressIfLoaded() ?? [:]
+    }
+
+    /// The same, or nil when the read failed: someone else's seal card shows nothing about you
+    /// rather than guess.
+    func fetchOwnSealProgressIfLoaded() async -> [String: SealProgress]? {
+        guard let rows: [SealProgressRow] = try? await supabase.rpc("own_seal_progress").execute().value
+        else { return nil }
+        return SealProgress.index(rows)
     }
 
     /// Raw, newest-tagged-first ids of everyone the caller has tagged on their OWN posts, not yet
@@ -1160,6 +1231,9 @@ final class FeedService {
         isLoadingMoreFeed = false
         isLoadingFeed = false
         unseenBadgeCount = 0
+        // The seen windows belong to the account that opened them.
+        badgesSeenLocallyUntil = nil
+        sealsSeenLocallyUntil = [:]
         spotlightStripWeeks = []
         ownSpotlightEntry = nil
         ownSpotlightChosen = [:]

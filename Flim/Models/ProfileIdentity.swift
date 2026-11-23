@@ -22,7 +22,8 @@ struct ProfileIdentity: Equatable {
     /// nil for the App Review account, which holds no number and no Founding 100 seat
     /// (2026-09-29): its page shows its badges without a number.
     var signupNumber: Int?
-    /// Only ever the badges this account has actually earned, oldest first. There is
+    /// Only ever the badges this account has actually earned: in the server's order in 1.7 (for
+    /// someone else, the seal on their page first), oldest first in 1.6. There is
     /// deliberately no locked/greyed state anywhere in the UI for the rest of the catalog: a
     /// visible locked badge turns a profile into a to-do list.
     var badges: [ProfileBadge]

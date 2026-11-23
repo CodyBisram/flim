@@ -66,7 +66,9 @@
 		1B95A6133C27944647107AC7 /* KeyboardDismiss.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B5A93AEC9F3404C135FBFB4 /* KeyboardDismiss.swift */; };
 		1E299CD15DB0DF1256C1C04B /* RollDetailDemoHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4814024C4A3A6941353B8213 /* RollDetailDemoHost.swift */; };
 		1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */; };
+		1ED2AC209BFF691FD7B3906E /* SealsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31367DDFA76072484917B0D6 /* SealsSheet.swift */; };
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
+		2128F129649A95D30A698B1A /* SealCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD45BC82B158E798FF591A7 /* SealCopy.swift */; };
 		2276CD913E4D77FF2A13F256 /* ChapterPreviewDemoHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA57412BE95150F69BC6A903 /* ChapterPreviewDemoHost.swift */; };
 		232A43F389F6547C475A1F7B /* RollRevealAttributesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */; };
 		23F2010B73FBABA515524BB3 /* DarkroomJumpTokenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE13365DE47073797011C212 /* DarkroomJumpTokenTests.swift */; };
@@ -129,6 +131,7 @@
 		45DE74E630BF0B9AF1B648DF /* VersionGateNudgeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D6CE2A66AC5924234B0396 /* VersionGateNudgeSheet.swift */; };
 		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
 		4713DA3E90251C2890E86E86 /* RollRevealViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */; };
+		476EBD817A1332FE4925FB72 /* SealCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E360A6C01812CF9572CD696B /* SealCopyTests.swift */; };
 		480A7F9CE307F6711822BF6B /* LiveActivityReachTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207687A2D2C8D45CDE4E9D76 /* LiveActivityReachTests.swift */; };
 		4962A7C68588BA438263619A /* OptimisticToggleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCC33CFC44E0153FEB0BA790 /* OptimisticToggleTests.swift */; };
 		4ABE573DCE381CB6C4B16525 /* PushImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FBF232157CF43D0B62FDD2 /* PushImage.swift */; };
@@ -183,6 +186,7 @@
 		6268B0F95CE70FA2D1758B8F /* V2Print.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD816BEDD3994255482DE645 /* V2Print.swift */; };
 		6382C893A78608D3D0B60CFF /* FeedUnitCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9249229E385AAD5E2A06EBB0 /* FeedUnitCard.swift */; };
 		639FB97BC126F5777CD2756E /* ProfileIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE9BA20CF1F6844CD64B78B /* ProfileIdentity.swift */; };
+		65097D488E6399ABBCF9F45E /* SealCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D6E29990B97C0FFCE734218 /* SealCard.swift */; };
 		658E404079ECBDF7043F42D0 /* MentionSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC2BCF4765864C0FBC18FD1 /* MentionSuggestions.swift */; };
 		66801953743EB7F02EC5C0D7 /* V2PlacesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 040E2B0F85351FE337645FA2 /* V2PlacesTests.swift */; };
 		677E53FF7558F00EF53191E1 /* PendingInviteRedeemedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39BF564647A39785A6BD0AB9 /* PendingInviteRedeemedTests.swift */; };
@@ -307,6 +311,7 @@
 		B9AB819C9DB0A80D36255196 /* TagSaveOutcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF88DC660A8BC9D5C2936AA /* TagSaveOutcomeTests.swift */; };
 		B9FBD2885C49E04CFBD7EF9D /* RefreshToCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EB6F429DB5837568077F0F6 /* RefreshToCompletion.swift */; };
 		BA1E1C41DC6C68F2C59DE345 /* PhotoExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5622C06FFBA7B1EA73A5AE90 /* PhotoExport.swift */; };
+		BA25F01BF18BAAF40B8AFB1D /* SealsDemoHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7689949ACCD50BB1BFF72877 /* SealsDemoHost.swift */; };
 		BACFE47465494884E5B13E03 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96B446A6375C5A93FF333204 /* NotificationService.swift */; };
 		BB6BDEA19FBF1F3F069D1B18 /* ShareImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE73B765C41AB33B6D7D43F4 /* ShareImage.swift */; };
 		BB7AEBC77F757897FBADFF16 /* NotificationNudgeBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CCCC0A3CD7055C89C2E82CA /* NotificationNudgeBanner.swift */; };
@@ -376,6 +381,7 @@
 		E593751C4C8AE813D0BD6368 /* RenditionRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76B80C9D40244DBAC934AF30 /* RenditionRepairTests.swift */; };
 		E5B151EFEC27FA9D3CB5233A /* RevealPacingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A923FA718B31337070352717 /* RevealPacingTests.swift */; };
 		E6E4B775A8E6634B8BE7E14C /* BurstGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48E604C6FB5140A9788F87E4 /* BurstGrouping.swift */; };
+		E77BFEE8582F826339F8916C /* SealsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0641A2844A5106C9921AA2BB /* SealsUITests.swift */; };
 		E81323F1C0309E98E8807773 /* OFL-ibmplexmono.txt in Resources */ = {isa = PBXBuildFile; fileRef = 0637F7E13D1A6B414A60C262 /* OFL-ibmplexmono.txt */; };
 		E88A22503479924C6120E0D7 /* ConsequenceCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C590B63A4012D64C717271 /* ConsequenceCopyTests.swift */; };
 		E8A759C436FB3D29C6F3C797 /* Desk17UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9FAD2BAA25964AA40FBF6D /* Desk17UITests.swift */; };
@@ -491,6 +497,7 @@
 		059C902C744871D28E4F21AF /* SquareCropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareCropSheet.swift; sourceTree = "<group>"; };
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
 		0637F7E13D1A6B414A60C262 /* OFL-ibmplexmono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-ibmplexmono.txt"; sourceTree = "<group>"; };
+		0641A2844A5106C9921AA2BB /* SealsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealsUITests.swift; sourceTree = "<group>"; };
 		0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGlyphTests.swift; sourceTree = "<group>"; };
 		081F4059E80A5C95CCB5D97A /* V2FlowsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2FlowsUITests.swift; sourceTree = "<group>"; };
 		08372C6B3E56E414F82301D9 /* V2Group.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Group.swift; sourceTree = "<group>"; };
@@ -499,6 +506,7 @@
 		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		0B10C6663F963898FEE63F64 /* FlimAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimAppTests.swift; sourceTree = "<group>"; };
 		0CA8CC252CF277D4D6AABC7F /* V2DeskChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2DeskChoice.swift; sourceTree = "<group>"; };
+		0D6E29990B97C0FFCE734218 /* SealCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealCard.swift; sourceTree = "<group>"; };
 		0F444E23E43188221328A495 /* RollsPathActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsPathActionTests.swift; sourceTree = "<group>"; };
 		0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedView.swift; sourceTree = "<group>"; };
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
@@ -564,6 +572,7 @@
 		2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersSheet.swift; sourceTree = "<group>"; };
 		2DDF52A98F82403864BA86D2 /* RollRevealAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAttributes.swift; sourceTree = "<group>"; };
 		30A2A137530439FA94D61FA2 /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
+		31367DDFA76072484917B0D6 /* SealsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealsSheet.swift; sourceTree = "<group>"; };
 		3160152C151C46D58498F19D /* RollRevealCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealCard.swift; sourceTree = "<group>"; };
 		3262E790C5DB22687DA92F08 /* NotificationPermissionEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPermissionEventTests.swift; sourceTree = "<group>"; };
 		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
@@ -680,6 +689,7 @@
 		743DC077F394FDA8492B4BD3 /* PhotosNeedingSignedURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosNeedingSignedURLTests.swift; sourceTree = "<group>"; };
 		75C61E7AE94F80685E08BEDD /* RenderLookTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderLookTool.swift; sourceTree = "<group>"; };
 		76460B44FFEC9EF9911DEF8B /* V2Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Theme.swift; sourceTree = "<group>"; };
+		7689949ACCD50BB1BFF72877 /* SealsDemoHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealsDemoHost.swift; sourceTree = "<group>"; };
 		76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePreviewSheet.swift; sourceTree = "<group>"; };
 		76B80C9D40244DBAC934AF30 /* RenditionRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenditionRepairTests.swift; sourceTree = "<group>"; };
 		787B53E8F03E149E24C22211 /* DarkroomMonthClosingRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthClosingRow.swift; sourceTree = "<group>"; };
@@ -709,6 +719,7 @@
 		887740F010C7010E90BF5DFF /* ChapterRecapPagerMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterRecapPagerMappingTests.swift; sourceTree = "<group>"; };
 		88F0B8C5B056D1D3786284B1 /* DarkroomMonthSummaryV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthSummaryV2.swift; sourceTree = "<group>"; };
 		89A9182958073A17DB4EB031 /* DeskPostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskPostView.swift; sourceTree = "<group>"; };
+		8AD45BC82B158E798FF591A7 /* SealCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealCopy.swift; sourceTree = "<group>"; };
 		8AF7A9B3928342965F5CD02F /* RemotePushReregistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePushReregistrationTests.swift; sourceTree = "<group>"; };
 		8B1D734336418D8747D99B43 /* EmojiBackfillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiBackfillTests.swift; sourceTree = "<group>"; };
 		8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionSaveOutcomeTests.swift; sourceTree = "<group>"; };
@@ -845,6 +856,7 @@
 		E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViewTests.swift; sourceTree = "<group>"; };
 		E2E8672AE8BCF45B32EC5C30 /* ChapterCurationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterCurationCache.swift; sourceTree = "<group>"; };
 		E2F0B084A4472F8DCAA74627 /* ChapterCuratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterCuratorTests.swift; sourceTree = "<group>"; };
+		E360A6C01812CF9572CD696B /* SealCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealCopyTests.swift; sourceTree = "<group>"; };
 		E36FE0B8735BA0AADE0C8C7C /* ProfileCropGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCropGeometryTests.swift; sourceTree = "<group>"; };
 		E3C590B63A4012D64C717271 /* ConsequenceCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsequenceCopyTests.swift; sourceTree = "<group>"; };
 		E3F4E837376ECF8180532F9E /* ConsequenceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsequenceSheet.swift; sourceTree = "<group>"; };
@@ -1055,6 +1067,7 @@
 				A4245DD3CF7CE2C57E658EAA /* RollImminence.swift */,
 				2DDF52A98F82403864BA86D2 /* RollRevealAttributes.swift */,
 				3160152C151C46D58498F19D /* RollRevealCard.swift */,
+				8AD45BC82B158E798FF591A7 /* SealCopy.swift */,
 				0FA5444D3CDCB4379BF00F72 /* Social.swift */,
 				7C6E8518EB4C4E400A8B9938 /* Spotlight.swift */,
 				C83B56B27D38D1F33442EDBD /* WidgetSnapshot.swift */,
@@ -1078,6 +1091,7 @@
 				A3CDB5E87575F8455D173AF4 /* ChromeScreenshotUITests.swift */,
 				5E9FAD2BAA25964AA40FBF6D /* Desk17UITests.swift */,
 				4A67344782B4FE71ABC8BBD1 /* FeedCommentsReturnUITests.swift */,
+				0641A2844A5106C9921AA2BB /* SealsUITests.swift */,
 				78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */,
 				081F4059E80A5C95CCB5D97A /* V2FlowsUITests.swift */,
 			);
@@ -1115,6 +1129,9 @@
 				DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */,
 				DFDDFBCCC6F6F043DCE3C4D7 /* ProfileIdentityView.swift */,
 				DC34A455324DEE2A431A7720 /* ProfileView.swift */,
+				0D6E29990B97C0FFCE734218 /* SealCard.swift */,
+				7689949ACCD50BB1BFF72877 /* SealsDemoHost.swift */,
+				31367DDFA76072484917B0D6 /* SealsSheet.swift */,
 				059C902C744871D28E4F21AF /* SquareCropSheet.swift */,
 			);
 			path = Profile;
@@ -1473,6 +1490,7 @@
 				59600C468EC84C1B685DC31D /* RollSnapshotStoreTests.swift */,
 				0F444E23E43188221328A495 /* RollsPathActionTests.swift */,
 				4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */,
+				E360A6C01812CF9572CD696B /* SealCopyTests.swift */,
 				1BFC8CFD92B4F94277E5880B /* ShareToFeedSheetTests.swift */,
 				0468434B3C641D2DCB6BE2D7 /* SignedURLStoreTests.swift */,
 				F633B062C33A01F1DEA380AC /* SpotlightTests.swift */,
@@ -1817,6 +1835,7 @@
 				B41748B01C12B5094E9B9BF2 /* RollSnapshotStoreTests.swift in Sources */,
 				B24553011D30469838CCA923 /* RollTests.swift in Sources */,
 				10EC7E27256BC1E6E8359DAE /* RollsPathActionTests.swift in Sources */,
+				476EBD817A1332FE4925FB72 /* SealCopyTests.swift in Sources */,
 				55270E18B1D6C49F02C7C77D /* ShareToFeedSheetTests.swift in Sources */,
 				974360CA7307549DBE96DC56 /* SignedURLStoreTests.swift in Sources */,
 				9B457EC91053CD99BE4DAADD /* SpotlightTests.swift in Sources */,
@@ -2024,6 +2043,10 @@
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
 				AD4926555CC9EFA49CCB8C06 /* RollSnapshotStore.swift in Sources */,
 				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
+				65097D488E6399ABBCF9F45E /* SealCard.swift in Sources */,
+				2128F129649A95D30A698B1A /* SealCopy.swift in Sources */,
+				BA25F01BF18BAAF40B8AFB1D /* SealsDemoHost.swift in Sources */,
+				1ED2AC209BFF691FD7B3906E /* SealsSheet.swift in Sources */,
 				BB6BDEA19FBF1F3F069D1B18 /* ShareImage.swift in Sources */,
 				4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */,
 				600275ED04C4A5523C2558B0 /* ShareToFeedSheet.swift in Sources */,
@@ -2109,6 +2132,7 @@
 				B34922D1031DDD9B32AE7E0B /* ChromeScreenshotUITests.swift in Sources */,
 				E8A759C436FB3D29C6F3C797 /* Desk17UITests.swift in Sources */,
 				571CFC27DC155BF450C24645 /* FeedCommentsReturnUITests.swift in Sources */,
+				E77BFEE8582F826339F8916C /* SealsUITests.swift in Sources */,
 				B4474A58359A89EEFA669FE9 /* ShareSheetUITests.swift in Sources */,
 				87568EF0BD598743BDC3D1ED /* V2FlowsUITests.swift in Sources */,
 			);
@@ -2156,7 +2180,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -2244,7 +2268,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2357,7 +2381,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
@@ -2424,7 +2448,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG FLIM_17";
@@ -2557,7 +2581,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -2601,7 +2625,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2629,7 +2653,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG FLIM_17";
@@ -2735,7 +2759,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
@@ -2764,7 +2788,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
@@ -2788,7 +2812,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2811,7 +2835,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2840,7 +2864,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
