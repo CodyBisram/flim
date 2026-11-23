@@ -135,6 +135,7 @@ const CAMPAIGNS: Record<string, Resolver> = {
   "spotlight-weekend-update": spotlightWeekendUpdateCohort,
   "spotlight-weekly": spotlightWeeklyCohort,
   "spotlight-weekly-preview": spotlightWeeklyPreview,
+  "spotlight-last-call": spotlightLastCallCohort,
 };
 
 /// The claim ledger's key for a campaign, when it is not the campaign's own name. A recurring
@@ -145,6 +146,7 @@ const CAMPAIGNS: Record<string, Resolver> = {
 const LEDGER_KEYS: Record<string, (now: Date) => string> = {
   "spotlight-weekly": (now) => `spotlight-weekly:${currentSpotlightWeekKey(now)}`,
   "spotlight-weekly-preview": (now) => `spotlight-weekly-preview:${currentSpotlightWeekKey(now)}`,
+  "spotlight-last-call": (now) => `spotlight-last-call:${currentSpotlightWeekKey(now)}`,
 };
 
 /// Founding 100 is running out (2026-09-25: 24 seats, about four a week). The badge is the one
@@ -837,6 +839,56 @@ async function spotlightWeeklyCohort(now: Date): Promise<Recipient[]> {
     .filter((u) => !versionBelow(versionOf.get(u.id), "1.6.0"))
     .filter((u) => !entered.has(u.id))
     .map((u) => ({ userId: u.id, title, body, route: { t: "camera" } }));
+}
+
+// ------------------------------------------------------------
+// spotlight-last-call (2026-11-22, a Sunday afternoon, copy approved by the owner in chat): the
+// week's last call, hours before Spotlight closes (Monday 04:00 America/New_York). Same cohort as
+// spotlight-weekly (reachable, on 1.6.0 or later, nothing put up this week, the owner and the
+// review account left out), split by whether they have a frame that can still go up: shot this
+// week, or developed this week (`_spotlight_frame_fits_week`'s rule). Those with one are sent to
+// the Darkroom to post it; those without are sent to the camera. Claimed per Spotlight week, so a
+// rerun inside the week sends nothing and a later Sunday can use it again.
+
+const SPOTLIGHT_LAST_CALL_TITLE = "Spotlight closes tonight";
+const SPOTLIGHT_LAST_CALL_BODY_HAS_FRAME =
+  "Post your best frame from this week and send it to Spotlight. It goes up tomorrow.";
+const SPOTLIGHT_LAST_CALL_BODY_NO_FRAME =
+  "There's still time. Shoot something good tonight and send it to Spotlight when you post.";
+
+/// Monday 04:00 America/New_York for a Spotlight week key, in either EST or EDT.
+function spotlightWeekStart(week: string): Date {
+  const guess = new Date(`${week}T09:00:00Z`);
+  const hour = +new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hourCycle: "h23" })
+    .format(guess);
+  return new Date(guess.getTime() - (hour - 4) * 3600 * 1000);
+}
+
+async function spotlightLastCallCohort(now: Date): Promise<Recipient[]> {
+  const week = currentSpotlightWeekKey(now);
+  const start = spotlightWeekStart(week).toISOString();
+  const versionOf = await versionsByUser();
+  const { data: entries, error } = await supabase
+    .from("spotlight_entries").select("user_id").eq("week_key", week).is("removed_at", null);
+  if (error) throw new Error(`spotlight_entries read failed: ${error.message}`);
+  const entered = new Set(((entries ?? []) as { user_id: string }[]).map((e) => e.user_id));
+  const people = (await reachableNamedUsers())
+    .filter((u) => !versionBelow(versionOf.get(u.id), "1.6.0"))
+    .filter((u) => !entered.has(u.id));
+  if (people.length === 0) return [];
+  // Throws on a failed read (fetchAllPages): an empty set would send everyone to the camera.
+  const frames = await fetchAllPages<{ user_id: string }>(
+    (from, to) =>
+      supabase.from("photos").select("user_id")
+        .in("user_id", people.map((u) => u.id)).eq("hidden", false)
+        .or(`taken_at.gte.${start},and(develops_at.gte.${start},develops_at.lte.${now.toISOString()})`)
+        .order("id", { ascending: true }).range(from, to),
+    "photos",
+  );
+  const hasFrame = new Set(frames.map((r) => r.user_id));
+  return people.map((u) => hasFrame.has(u.id)
+    ? { userId: u.id, title: SPOTLIGHT_LAST_CALL_TITLE, body: SPOTLIGHT_LAST_CALL_BODY_HAS_FRAME, route: { t: "darkroom" } }
+    : { userId: u.id, title: SPOTLIGHT_LAST_CALL_TITLE, body: SPOTLIGHT_LAST_CALL_BODY_NO_FRAME, route: { t: "camera" } });
 }
 
 /// This week's spotlight-weekly push to the owner alone, the camera tap included. Claimed per
