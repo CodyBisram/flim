@@ -57,6 +57,9 @@ struct BadgePickerSheet: View {
     var onSaved: (() -> Void)? = nil
     /// Your signup number, for Founding 100's "No 23" in 1.7's seals.
     var signupNumber: Int? = nil
+    /// 1.7.1: a drawer already open (docked on the Duo's open display, then folded), so the sheet
+    /// shows the same seals and the same open card instead of starting over.
+    var drawer: SealsDrawer? = nil
     /// The `UndoCenter` key the staged "hide every badge" save carries, so a direct save made
     /// inside its window can supersede it; see `BadgePickerContent.commit()`.
     static let clearUndoKey = "profile-displayed-badges"
@@ -79,7 +82,7 @@ struct BadgePickerSheet: View {
         if AppInfo.is17 {
             // 1.7.1's Seals sheet (docs/SEALS_1_7_1.md): one seal on your page, every seal
             // explains itself in a card. Below is 1.6's picker, unchanged.
-            LiveSealsSheet(signupNumber: signupNumber, onSaved: onSaved)
+            LiveSealsSheet(signupNumber: signupNumber, onSaved: onSaved, existing: drawer)
         } else {
             v1Body
         }

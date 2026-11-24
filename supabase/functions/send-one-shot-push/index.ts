@@ -864,6 +864,18 @@ function spotlightWeekStart(week: string): Date {
   return new Date(guess.getTime() - (hour - 4) * 3600 * 1000);
 }
 
+/// `_spotlight_frame_fits_week` for the current week, given a frame already known developed and
+/// the week's start. "Now" is inside the week, so on or after `start` means this week.
+function spotlightFrameFitsNow(takenAt: string, developsAt: string | null, start: string): boolean {
+  const taken = Date.parse(takenAt);
+  const weekStart = Date.parse(start);
+  if (Number.isNaN(taken)) return false;
+  if (taken >= weekStart) return true;
+  if (developsAt === null) return false;
+  const develops = Date.parse(developsAt);
+  return develops >= weekStart && develops <= taken + 8 * 24 * 3600 * 1000;
+}
+
 async function spotlightLastCallCohort(now: Date): Promise<Recipient[]> {
   const week = currentSpotlightWeekKey(now);
   const start = spotlightWeekStart(week).toISOString();
@@ -877,15 +889,23 @@ async function spotlightLastCallCohort(now: Date): Promise<Recipient[]> {
     .filter((u) => !entered.has(u.id));
   if (people.length === 0) return [];
   // Throws on a failed read (fetchAllPages): an empty set would send everyone to the camera.
-  const frames = await fetchAllPages<{ user_id: string }>(
+  // A frame counts only if it could be sent right now: developed (a roll shot Sunday that opens
+  // Monday is still sealed, nothing to post), and inside this week by put_up_for_spotlight's own
+  // rule, `_spotlight_frame_fits_week`: shot this week, or developed this week within 8 days of
+  // the shot (nightly review, 2026-11-23). PostgREST can't compare two columns, so the 8-day
+  // bound is applied here.
+  const nowIso = now.toISOString();
+  const frames = await fetchAllPages<{ user_id: string; taken_at: string; develops_at: string | null }>(
     (from, to) =>
-      supabase.from("photos").select("user_id")
+      supabase.from("photos").select("user_id, taken_at, develops_at")
         .in("user_id", people.map((u) => u.id)).eq("hidden", false)
-        .or(`taken_at.gte.${start},and(develops_at.gte.${start},develops_at.lte.${now.toISOString()})`)
+        .lte("develops_at", nowIso)
+        .or(`taken_at.gte.${start},develops_at.gte.${start}`)
         .order("id", { ascending: true }).range(from, to),
     "photos",
   );
-  const hasFrame = new Set(frames.map((r) => r.user_id));
+  const hasFrame = new Set(frames.filter((r) => spotlightFrameFitsNow(r.taken_at, r.develops_at, start))
+    .map((r) => r.user_id));
   return people.map((u) => hasFrame.has(u.id)
     ? { userId: u.id, title: SPOTLIGHT_LAST_CALL_TITLE, body: SPOTLIGHT_LAST_CALL_BODY_HAS_FRAME, route: { t: "darkroom" } }
     : { userId: u.id, title: SPOTLIGHT_LAST_CALL_TITLE, body: SPOTLIGHT_LAST_CALL_BODY_NO_FRAME, route: { t: "camera" } });

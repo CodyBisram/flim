@@ -69,6 +69,8 @@ struct UserPageView: View {
     /// 1.7.1: your seals docked left of the fold on the Duo's open display, in place of the
     /// Seals sheet, with a seal's card over the right column.
     @State private var dockedSeals: SealsDrawer?
+    /// The docked drawer, handed to the Seals sheet when the Duo folds, open card and all.
+    @State private var handedOffSeals: SealsDrawer?
     /// 1.7.1: the card for the seal beside someone else's name. On the phone and the Duo's outer
     /// display it covers the screen (`coverSealCard`); on the open display it sits in the right
     /// half (`dockedSealCard`).
@@ -468,8 +470,10 @@ struct UserPageView: View {
             .onDisappear { dismissSwapInstantly() }
             // Folding the Duo with a box open in the column carries it to the full screen.
             .onChange(of: docksMonths) { _, docks in
-                // Your seals go back to being the Seals sheet.
-                if !docks, dockedSeals != nil {
+                // Your seals go back to being the Seals sheet, the same drawer, so a card open
+                // in it stays open over the sheet (nightly review, 2026-11-23).
+                if !docks, let drawer = dockedSeals {
+                    handedOffSeals = drawer
                     dockedSeals = nil
                     showBadgePicker = true
                 }
@@ -477,8 +481,16 @@ struct UserPageView: View {
                 dockedChapter = nil
                 openChapter = chapter
             }
-            // And someone else's seal card goes back to floating over the screen.
+            // And someone else's seal card goes back to floating over the screen, or, unfolding,
+            // from the screen into the right half (nightly review, 2026-11-23).
             .onChange(of: deskLayout) { _, layout in
+                if layout == .open, let subject = coverSealCard {
+                    var quiet = Transaction()
+                    quiet.disablesAnimations = true
+                    withTransaction(quiet) { coverSealCard = nil }
+                    dockedSealCard = subject
+                    return
+                }
                 guard layout != .open, let subject = dockedSealCard else { return }
                 dockedSealCard = nil
                 presentSealCover(subject)
@@ -557,8 +569,9 @@ struct UserPageView: View {
         // dismiss, the new pill set and the vanished "new badges" pill landed a beat after the
         // profile was already back on screen, a pop and reflow right where the eye was resting.
         // The onDismiss reload stays as the Cancel path's refresh and as the catch-all.
-        .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
-            BadgePickerSheet(onSaved: { Task { await load() } }, signupNumber: profile?.signupOrdinal)
+        .sheet(isPresented: $showBadgePicker, onDismiss: { handedOffSeals = nil; Task { await load() } }) {
+            BadgePickerSheet(onSaved: { Task { await load() } }, signupNumber: profile?.signupOrdinal,
+                             drawer: handedOffSeals)
         }
         // Someone else's seal card (1.7.1), over the whole screen: presented without the system's
         // slide (`presentSealCover`), so the card rises on its own over a fading dim.

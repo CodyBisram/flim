@@ -337,6 +337,9 @@ struct SealsSheet: View {
 struct LiveSealsSheet: View {
     var signupNumber: Int?
     var onSaved: (() -> Void)?
+    /// A drawer handed over from the Duo's docked Seals: shown as it is, open card included,
+    /// rather than read again from scratch.
+    var existing: SealsDrawer? = nil
 
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -345,7 +348,7 @@ struct LiveSealsSheet: View {
 
     var body: some View {
         Group {
-            if let drawer {
+            if let drawer = drawer ?? existing {
                 SealsSheet(drawer: drawer) { dismiss() }
             } else {
                 Color.clear
@@ -355,7 +358,7 @@ struct LiveSealsSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task {
-            guard drawer == nil else { return }
+            guard drawer == nil, existing == nil else { return }
             let made = SealsDrawer.live(auth: auth, feed: feed, signupNumber: signupNumber)
             made.onSaved = onSaved
             drawer = made
