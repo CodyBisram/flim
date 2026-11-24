@@ -2180,7 +2180,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -2268,7 +2268,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2381,7 +2381,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
@@ -2448,7 +2448,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG FLIM_17";
@@ -2581,7 +2581,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -2625,7 +2625,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).RollActivityWidget";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2653,7 +2653,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG FLIM_17";
@@ -2759,7 +2759,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
@@ -2788,7 +2788,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;
@@ -2812,7 +2812,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2835,7 +2835,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID).NotificationService";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -2864,7 +2864,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.7.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FLIM_BUNDLE_ID)";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore $(FLIM_BUNDLE_ID)";
 				SDKROOT = iphoneos;

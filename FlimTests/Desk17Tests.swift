@@ -65,6 +65,15 @@ final class DeskFriendStateTests: XCTestCase {
         XCTAssertEqual(R.deskState(following: false, followsMe: true), .add)
         XCTAssertEqual(R.deskState(following: false, followsMe: false), .add)
         XCTAssertEqual(R.deskLabel(.add), "Add friend")
+        XCTAssertEqual(R.deskLabel(.add, followsMe: true), "Add back")
+        XCTAssertEqual(R.deskLabel(.friends, followsMe: true), "Friends")
+    }
+
+    /// A follow in Activity is a request in 1.7, never "started following you" (2026-11-24).
+    func testActivityFollowRowReadsAsARequest() {
+        typealias R = FeedService.FollowRelationship
+        XCTAssertEqual(R.activityFollowText(isFriend: false), "asked to be friends")
+        XCTAssertEqual(R.activityFollowText(isFriend: true), "is your friend now")
     }
 }
 

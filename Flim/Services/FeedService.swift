@@ -390,12 +390,21 @@ final class FeedService {
             return .add
         }
 
-        static func deskLabel(_ state: DeskState) -> String {
+        /// `followsMe` turns Add friend into Add back: they asked first, so tapping it accepts.
+        static func deskLabel(_ state: DeskState, followsMe: Bool = false) -> String {
             switch state {
             case .friends: "Friends"
             case .requested: "Requested"
-            case .add: "Add friend"
+            case .add: followsMe ? "Add back" : "Add friend"
             }
+        }
+
+        /// The Activity row for a follow. In 1.7 a follow is a friend request: "asked to be
+        /// friends" until you add them back, then "is your friend now". 1.6 said "started
+        /// following you" (owner, 2026-11-24: read as if requests had been bypassed).
+        static func activityFollowText(isFriend: Bool) -> String {
+            guard AppInfo.is17 else { return "started following you" }
+            return isFriend ? "is your friend now" : "asked to be friends"
         }
 
         /// Whether a profile header should show the "Follows you" disclosure pill.
@@ -480,6 +489,25 @@ final class FeedService {
         } catch {
             // Same as above, mirrored: the delete never landed, so put the follow back.
             if AccountEpoch.isCurrent(epoch) { followingIds.insert(targetId) }
+            return false
+        }
+    }
+
+    /// Declines someone's friend request (1.7.11): deletes THEIR follow of you, which RLS lets
+    /// only `decline_friend_request` do. Quiet: no push, their button goes back to Add friend.
+    /// The server removes only a pending request, never a friendship. Not optimistic: the row
+    /// leaves the list when the server says it's gone.
+    func declineRequest(from requesterId: UUID) async -> Bool {
+        struct Params: Encodable { let p_requester: UUID }
+        let epoch = AccountEpoch.current
+        do {
+            let _: Bool = try await supabase
+                .rpc("decline_friend_request", params: Params(p_requester: requesterId))
+                .execute().value
+            // false = already gone (declined elsewhere, or they took it back): the same outcome.
+            if AccountEpoch.isCurrent(epoch) { followerIds.remove(requesterId) }
+            return true
+        } catch {
             return false
         }
     }

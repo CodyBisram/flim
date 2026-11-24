@@ -392,7 +392,13 @@ struct ActivityFeedView: View {
                 // opens the profile (see the note on `row`), and it was what cost the typography.
                 ActivityLine(
                     handle: actor.handle,
-                    action: activityActionText(item.kind),
+                    action: {
+                        if case .follow = item.kind {
+                            // Mutual = friends; the row exists because they follow you.
+                            return FeedService.FollowRelationship.activityFollowText(isFriend: feed.isFollowing(actor.id))
+                        }
+                        return activityActionText(item.kind)
+                    }(),
                     onHandle: { profileRoute = ProfileRoute(id: actor.id) },
                     onBody: { openDestination(item) }
                 )
@@ -469,10 +475,40 @@ struct ActivityFeedView: View {
     /// Replaces the static "someone followed you" icon: a real follow-back button if you don't
     /// already follow them, nothing at all if you do. The old icon (a generic person+plus) showed
     /// unconditionally, implying "add this person" even on rows where you'd already followed back.
+    /// 1.7.11: a follow row is a friend request until you add them back, so it carries Decline
+    /// beside Add back, like the Requests tab. Declined, the row leaves (the follow it was about
+    /// is gone from the server too).
     @ViewBuilder
     private func followBackControl(_ actor: UserProfile) -> some View {
         if !feed.isFollowing(actor.id) {
-            FollowButton(userId: actor.id, onFailure: { showToast($0) })
+            HStack(spacing: 4) {
+                if AppInfo.is17 {
+                    Button("Decline") { declineRequest(actor) }
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 4)
+                        .buttonStyle(.plain)
+                }
+                FollowButton(userId: actor.id, onFailure: { showToast($0) })
+            }
+        }
+    }
+
+    private func declineRequest(_ actor: UserProfile) {
+        Haptics.tap()
+        Task {
+            if await feed.declineRequest(from: actor.id) {
+                withAnimation {
+                    items.removeAll { item in
+                        if case .follow = item.kind { return item.actor?.id == actor.id }
+                        return false
+                    }
+                }
+            } else {
+                Haptics.error()
+                showToast("That didn't go through. Check your connection and try again.")
+            }
         }
     }
 

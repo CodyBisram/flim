@@ -813,7 +813,7 @@ struct UserPageView: View {
                 // button (owner, 2026-11-14: two Add friend buttons on a stranger's page).
                 let state = FeedService.FollowRelationship.deskState(following: isFollowing, followsMe: followsMe)
                 Button { toggleFollow() } label: {
-                    DeskPill(FeedService.FollowRelationship.deskLabel(state),
+                    DeskPill(FeedService.FollowRelationship.deskLabel(state, followsMe: followsMe),
                              systemImage: state == .add ? "person.badge.plus" : (state == .friends ? "checkmark" : nil),
                              style: state == .add ? .solid : .box)
                 }
@@ -2008,7 +2008,8 @@ struct FollowButton: View {
             }
         } label: {
             if AppInfo.is17 {
-                deskLabel(FeedService.FollowRelationship.deskState(following: following, followsMe: feed.followsMe(userId)))
+                deskLabel(FeedService.FollowRelationship.deskState(following: following, followsMe: feed.followsMe(userId)),
+                          followsMe: feed.followsMe(userId))
             } else {
                 Text(FeedService.FollowRelationship.buttonLabel(following: following, followsMe: feed.followsMe(userId)))
                     .flimFont(13, weight: .semibold, relativeTo: .subheadline)
@@ -2029,8 +2030,8 @@ extension FollowButton {
     /// 1.7's three states (Blend 1, 4b): Add friend solid, Requested outlined, Friends with a tick
     /// on the box tone.
     @ViewBuilder
-    fileprivate func deskLabel(_ state: FeedService.FollowRelationship.DeskState) -> some View {
-        let title = FeedService.FollowRelationship.deskLabel(state)
+    fileprivate func deskLabel(_ state: FeedService.FollowRelationship.DeskState, followsMe: Bool) -> some View {
+        let title = FeedService.FollowRelationship.deskLabel(state, followsMe: followsMe)
         HStack(spacing: 5) {
             Text(title)
             if state == .friends { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }

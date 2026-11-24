@@ -116,7 +116,7 @@ targets:
         # 1.0 shipped to the App Store and Apple closes a version's TestFlight train once
         # it's been approved (ASC rejected further 1.0 uploads with "Invalid Pre-Release
         # Train... previously approved version"). Bump this again for the next release.
-        MARKETING_VERSION: "1.7.1"
+        MARKETING_VERSION: "1.7.11"
         CURRENT_PROJECT_VERSION: "1"
       # FLIM Beta (Debug-Beta, Release-Beta) is where 1.7 is built: FLIM_17 turns on its desks,
       # tab bar and screens (AppInfo.is17), against the FLIM Dev server. The App Store app's
@@ -229,7 +229,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: "1.7.1"
+        MARKETING_VERSION: "1.7.11"
         CURRENT_PROJECT_VERSION: "1"
       configs:
         Debug: &widget_debug
@@ -278,7 +278,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: "1.7.1"
+        MARKETING_VERSION: "1.7.11"
         CURRENT_PROJECT_VERSION: "1"
       configs:
         Debug: &nse_debug

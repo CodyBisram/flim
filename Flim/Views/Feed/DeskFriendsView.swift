@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// 1.7's Friends (Blend 1, 4c): one count, "friends", and requests in a second tab. Friends are
-/// mutual follows; someone who follows you and you don't follow back is asking (Add, Not now);
-/// someone you follow who hasn't followed back is a request you sent (Cancel). "Not now" hides
-/// the request on this phone without telling them; they can still be added from their page.
+/// mutual follows; someone who follows you and you don't follow back is asking (Add, Decline);
+/// someone you follow who hasn't followed back is a request you sent (Cancel). Decline (1.7.11)
+/// removes the request on the server without telling them; they can ask again. 1.7.0's "Not
+/// now" only hid it on this phone, and anyone hidden that way stays hidden (`hidden`).
 struct DeskFriendsView: View {
     enum Tab: Hashable { case friends, requests }
 
@@ -177,7 +178,7 @@ struct DeskFriendsView: View {
                 ForEach(shownIncoming) { person in
                     row(person, detail: person.name) {
                         HStack(spacing: 6) {
-                            Button("Not now") { hide(person) }
+                            Button("Decline") { decline(person) }
                                 .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                                 .foregroundStyle(FlimTheme.textSecondary)
                                 .frame(minHeight: 44)
@@ -199,7 +200,7 @@ struct DeskFriendsView: View {
                 }
             }
             if !shownIncoming.isEmpty {
-                Text("Not now hides the request without telling them. You can still add them later from their page.")
+                Text("Decline removes the request without telling them. They can still ask again later.")
                     .flimFont(14, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .padding(16)
@@ -287,11 +288,15 @@ struct DeskFriendsView: View {
         feed.cacheFriendsLists(userId: uid, followers: followers, following: following)
     }
 
-    private func hide(_ person: UserProfile) {
-        guard let uid = auth.currentUser?.id else { return }
+    private func decline(_ person: UserProfile) {
         Haptics.tap()
-        withAnimation { _ = hidden.insert(person.id) }
-        UserDefaults.standard.set(hidden.map(\.uuidString), forKey: Self.hiddenKey(uid))
+        Task {
+            if await feed.declineRequest(from: person.id) {
+                withAnimation { followers.removeAll { $0.id == person.id } }
+            } else {
+                showNotice("That didn't go through. Check your connection and try again.")
+            }
+        }
     }
 
     private func add(_ person: UserProfile) {
