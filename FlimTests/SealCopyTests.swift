@@ -166,6 +166,20 @@ struct SealCopyTests {
         }
     }
 
+    @Test("the founding seal's ring sits mid-band and its name and date sit mid-circle")
+    func foundingSealIsCentred() {
+        // Ring: capitals between the outer rule's inner edge and the inner rule's outer edge.
+        let ringCap = capHeight(SealArt.monoFont(SealArt.arcSize))
+        let bandMiddle = ((46 - 0.8) + (31 + 0.45)) / 2
+        #expect(abs(SealArt.arcRadius + ringCap / 2 - bandMiddle) < 0.5)
+        // Name and date: one block centred on 50, earned or blind.
+        let layout = SealArt.layout(.round)
+        let nameCap = capHeight(SealArt.caslonFont(SealCopy.defaultNameSize))
+        #expect(abs((layout.name - nameCap + layout.date) / 2 - 50) < 0.5)
+        let blindName = layout.name + layout.blindShift
+        #expect(abs(blindName - nameCap / 2 - 50) < 0.5)
+    }
+
     @Test("every name and date fits inside its shape at its own size")
     func namesAndDatesFit() {
         for kind in ProfileBadgeKind.allCases {

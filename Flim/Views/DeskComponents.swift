@@ -282,7 +282,9 @@ struct SealArt {
 
     static func layout(_ shape: SealShape) -> Layout {
         switch shape {
-        case .round: Layout(ring: nil, name: 55, date: 66, blindShift: 0)
+        // The name and date sit as one block on the circle's middle (caps top 39.7, date
+        // baseline 60.25, centre 50); blind, the name alone is centred.
+        case .round: Layout(ring: nil, name: 49.25, date: 60.25, blindShift: 5.5)
         case .laurel: Layout(ring: 33.5, name: 55, date: 67, blindShift: 4)
         case .shield: Layout(ring: 30, name: 55, date: 68, blindShift: 4)
         case .lozenge: Layout(ring: 40.5, name: 55, date: 66.5, blindShift: 1)
@@ -306,7 +308,10 @@ struct SealArt {
     static let ringTracking: CGFloat = 0.14
     static let arcTracking: CGFloat = 0.16
     static let arcSize: CGFloat = 7
-    static let arcRadius: CGFloat = 38.5
+    /// The ring's baseline radius: its capitals (4.9 tall) sit in the middle of the band between
+    /// the outer rule (inner edge 45.2) and the inner rule (outer edge 31.45). The reel's 38.5 put
+    /// the baseline on the band's middle, so the letters crowded the outer rule.
+    static let arcRadius: CGFloat = 36
     static let dateSize: CGFloat = 6
 
     /// The fourteen laurel leaves: centre and rotation in degrees.
@@ -494,8 +499,8 @@ struct SealArt {
         }
     }
 
-    /// The founding seals' ring, set along `M 11.5 50 A 38.5 38.5 0 0 1 88.5 50` (the top half of
-    /// a 38.5 circle, left to right) and centred on it the way an SVG textPath with
+    /// The founding seals' ring, set along the top half of an `arcRadius` circle, left to right
+    /// (the reel's `M 11.5 50 A 38.5 38.5 0 0 1 88.5 50`, brought in), and centred on it the way an SVG textPath with
     /// `startOffset="50%"` and `text-anchor="middle"` is: each glyph's middle placed on the arc
     /// and turned to its tangent, baseline on the path.
     private func drawArc(_ text: String, in cg: CGContext) {
