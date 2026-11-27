@@ -488,7 +488,12 @@ struct PhotoPagerView: View {
                         pager.padding(.vertical, 8)
                         rackSection
                     }
-                    Spacer(minLength: 0)
+                    // Wrapped exactly like the spacer above, and that is the fix, not tidiness. A
+                    // frame-wrapped Spacer is no longer a Spacer to the VStack, just a flexible
+                    // view, and it takes the spare room before a bare Spacer gets any. With only
+                    // the top one wrapped (5f58ccb, for the Duo), a phone gave it all ~180pt and
+                    // this one none: the photo sank and the status row sat on the home indicator.
+                    Spacer(minLength: 0).frame(maxHeight: .infinity)
                 }
                 .frame(maxHeight: .infinity)
             } else if showsRollRack {
