@@ -136,6 +136,7 @@ const CAMPAIGNS: Record<string, Resolver> = {
   "spotlight-weekly": spotlightWeeklyCohort,
   "spotlight-weekly-preview": spotlightWeeklyPreview,
   "spotlight-last-call": spotlightLastCallCohort,
+  "thanksgiving": thanksgivingCohort,
 };
 
 /// The claim ledger's key for a campaign, when it is not the campaign's own name. A recurring
@@ -288,6 +289,24 @@ async function thankYouPreviewCohort(): Promise<Recipient[]> {
 async function thankYouCohort(): Promise<Recipient[]> {
   const ids = await reachableUsers();
   return ids.map((id) => ({ userId: id, title: THANK_YOU_TITLE, body: THANK_YOU_BODY, route: { t: "profile", id } }));
+}
+
+// ------------------------------------------------------------
+// thanksgiving (2026-11-26, Thanksgiving evening, the owner's copy): everyone reachable, the owner
+// included, App Review left out. The tap opens the camera, which is what the last line asks for.
+
+const THANKSGIVING_TITLE = "Thankful for you \u{1F983}";
+const THANKSGIVING_BODY =
+  "Happy Thanksgiving from Cody \u{1F9E1} Every frame you've shared and every person you brought in " +
+  "turned a little camera app into a group of friends. Grab one of the table tonight \u{1F4F8}";
+
+async function thanksgivingCohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
+  const { data, error } = await supabase.from("users").select("id, username").in("id", reachable);
+  if (error) throw new Error(`users read failed: ${error.message}`);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => u.username !== "applereview")
+    .map((u) => ({ userId: u.id, title: THANKSGIVING_TITLE, body: THANKSGIVING_BODY, route: { t: "camera" } }));
 }
 
 /// Everyone reachable who has never taken a single photograph.
